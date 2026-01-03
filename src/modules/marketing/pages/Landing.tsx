@@ -130,7 +130,7 @@ export default function Landing() {
               key={r.role}
               onClick={() => navigate(`/login?role=${r.role}`)}
               className="group p-10 text-center bg-white rounded-2xl transition-all duration-300 cursor-pointer
-                         hover:-translate-y-1 hover:bg-green-50/60 hover:border-green-200 hover:shadow-xl hover:shadow-green-200/40
+                         hover:-translate-y-1 hover:bg-green-50/60 hover:border-green-300 hover:shadow-xl hover:shadow-green-200/40
                          border-2 border-transparent hover:border-[#01411C]"
             >
               <div className="bg-green-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4 transition-colors group-hover:bg-green-200">
