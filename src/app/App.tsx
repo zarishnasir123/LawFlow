@@ -10,7 +10,11 @@ function App() {
       Your all-in-one solution for legal case management changed test by zarish
     </h2>
 
-    <h1>don't remove h1. keep this always</h1>
+    <h1>hi added and remove it</h1>
+    <h2>
+      This is a sample application to demonstrate the use of React with TypeScript.
+    </h2>
+
      
     </>
   )
