@@ -74,37 +74,38 @@ export default function Landing() {
       </section>
 
       {/* Features Section */}
-      <section className="mx-auto max-w-6xl px-4 py-16">
+      <section className="mx-auto max-w-7xl px-6 lg:px-8 py-16">
         <h3 className="text-3xl font-bold text-center mb-12 text-gray-900">System Features</h3>
 
-        <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-8 lg:gap-10">
           {[
             {
-              icon: <FileText className="h-7 w-7 text-[#01411C]" />,
+              icon: <FileText className="h-8 w-8 text-[#01411C]" />,
               title: "Client Portal",
               desc: "Upload documents, track case status, and communicate with your lawyer in real-time.",
             },
             {
-              icon: <Gavel className="h-7 w-7 text-[#01411C]" />,
+              icon: <Gavel className="h-8 w-8 text-[#01411C]" />,
               title: "Lawyer Tools",
               desc: "AI-powered document templates, case preparation, and client management tools.",
             },
             {
-              icon: <Scale className="h-7 w-7 text-[#01411C]" />,
+              icon: <Scale className="h-8 w-8 text-[#01411C]" />,
               title: "Registrar System",
               desc: "Review submissions, approve cases, schedule hearings, and manage court workflows.",
             },
             {
-              icon: <Shield className="h-7 w-7 text-[#01411C]" />,
+              icon: <Shield className="h-8 w-8 text-[#01411C]" />,
               title: "Admin Control",
               desc: "Manage registrars, document templates, and view comprehensive system statistics.",
             },
           ].map((f) => (
             <div
               key={f.title}
-              className="p-8 bg-white border border-green-100 rounded-2xl hover:shadow-lg transition-shadow"
+              className="group p-10 bg-white border border-green-100 rounded-2xl transition-all duration-300
+                         hover:-translate-y-1 hover:border-green-200 hover:bg-green-50/60 hover:shadow-xl hover:shadow-green-200/40"
             >
-              <div className="bg-green-100 w-14 h-14 rounded-lg flex items-center justify-center mb-4">
+              <div className="bg-green-100 w-16 h-16 rounded-lg flex items-center justify-center mb-4 transition-colors group-hover:bg-green-200">
                 {f.icon}
               </div>
               <h4 className="mb-2 font-semibold text-[#01411C]">{f.title}</h4>
@@ -128,10 +129,11 @@ export default function Landing() {
             <button
               key={r.role}
               onClick={() => navigate(`/login?role=${r.role}`)}
-              className="p-10 text-center bg-white rounded-2xl hover:shadow-xl transition-all cursor-pointer
+              className="group p-10 text-center bg-white rounded-2xl transition-all duration-300 cursor-pointer
+                         hover:-translate-y-1 hover:bg-green-50/60 hover:border-green-300 hover:shadow-xl hover:shadow-green-200/40
                          border-2 border-transparent hover:border-[#01411C]"
             >
-              <div className="bg-green-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4">
+              <div className="bg-green-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4 transition-colors group-hover:bg-green-200">
                 {r.icon}
               </div>
               <h4 className="mb-2 font-semibold text-[#01411C]">{r.title}</h4>
