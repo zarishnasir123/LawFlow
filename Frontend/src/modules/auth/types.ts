@@ -54,6 +54,7 @@ export type LawyerRegisterFormValues = {
   email: string;
   phone: string;
   cnic: string;
+  specialization: string;
   districtBar: string;
   barLicenseNumber: string;
   lawDegree: File | null;

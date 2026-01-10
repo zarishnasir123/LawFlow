@@ -1,5 +1,5 @@
 import { useMutation } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import { useController, useForm } from "react-hook-form";
 import PasswordField from "./PasswordField";
 import { registerLawyer } from "../../lawyer/api";
@@ -20,6 +20,7 @@ export default function LawyerRegisterForm() {
       email: "",
       phone: "",
       cnic: "",
+      specialization: "",
       districtBar: "Gujranwala",
       barLicenseNumber: "",
       lawDegree: null,
@@ -39,17 +40,35 @@ export default function LawyerRegisterForm() {
     rules: { required: "District bar is required." },
   });
 
+  const {
+    field: specializationField,
+    fieldState: specializationState,
+  } = useController({
+    name: "specialization",
+    control,
+    rules: { required: "Specialization is required." },
+  });
+
   const registerMutation = useMutation({
     mutationFn: registerLawyer,
   });
 
   const [isDistrictOpen, setIsDistrictOpen] = useState(false);
+  const [isSpecializationOpen, setIsSpecializationOpen] = useState(false);
+  const [lawDegreeName, setLawDegreeName] = useState("");
+  const [barLicenseName, setBarLicenseName] = useState("");
   const districtRef = useRef<HTMLDivElement>(null);
+  const specializationRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (!districtRef.current?.contains(event.target as Node)) {
+      const target = event.target as Node;
+      if (
+        !districtRef.current?.contains(target) &&
+        !specializationRef.current?.contains(target)
+      ) {
         setIsDistrictOpen(false);
+        setIsSpecializationOpen(false);
       }
     };
 
@@ -76,6 +95,7 @@ export default function LawyerRegisterForm() {
       email: values.email,
       phone: values.phone,
       cnic: values.cnic,
+      specialization: values.specialization,
       districtBar: values.districtBar,
       barLicenseNumber: values.barLicenseNumber,
       lawDegree: values.lawDegree,
@@ -91,6 +111,34 @@ export default function LawyerRegisterForm() {
   const selectedDistrictLabel =
     districtOptions.find((option) => option.value === districtBarField.value)?.label ??
     "Select";
+
+  const specializationOptions = [
+    { value: "Civil Law", label: "Civil Law" },
+    { value: "Family Law", label: "Family Law" },
+  ];
+  const selectedSpecializationLabel =
+    specializationOptions.find((option) => option.value === specializationField.value)
+      ?.label ?? "Select specialization";
+
+  const lawDegreeRegister = register("lawDegree", {
+    required: "Law degree document is required.",
+    validate: (file: File | null) => file instanceof File || "Upload a valid document.",
+    setValueAs: (value: FileList | null) => value?.[0] ?? null,
+    onChange: (event: ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      setLawDegreeName(file?.name ?? "");
+    },
+  });
+
+  const barLicenseRegister = register("barLicenseCard", {
+    required: "Bar license card is required.",
+    validate: (file: File | null) => file instanceof File || "Upload a valid document.",
+    setValueAs: (value: FileList | null) => value?.[0] ?? null,
+    onChange: (event: ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      setBarLicenseName(file?.name ?? "");
+    },
+  });
 
   return (
     <form onSubmit={handleSubmit(submit)} className="space-y-3">
@@ -186,7 +234,92 @@ export default function LawyerRegisterForm() {
         ) : null}
       </div>
 
-      <div className="grid gap-2 sm:grid-cols-2">
+      <div className="grid gap-2 sm:grid-cols-3">
+        <div className="space-y-1">
+          <label className="text-xs font-semibold text-gray-700">Specialization</label>
+          <div className="relative" ref={specializationRef}>
+            <button
+              type="button"
+              id="specialization"
+              aria-haspopup="listbox"
+              aria-expanded={isSpecializationOpen}
+              disabled={disabled}
+              onClick={() => setIsSpecializationOpen((open) => !open)}
+              className={[
+                "flex w-full items-center justify-between rounded-lg border px-3 py-2 text-sm outline-none focus:ring-2",
+                specializationState.error
+                  ? "border-red-300 focus:border-red-400 focus:ring-red-100"
+                  : "border-gray-200 focus:border-[var(--primary)] focus:ring-green-100",
+                disabled ? "cursor-not-allowed bg-gray-50 text-gray-500" : "bg-white",
+              ].join(" ")}
+            >
+              <span>{selectedSpecializationLabel}</span>
+              <span className="text-gray-500">
+                <svg
+                  viewBox="0 0 24 24"
+                  className={`h-4 w-4 transition ${isSpecializationOpen ? "rotate-180" : ""}`}
+                  aria-hidden="true"
+                >
+                  <path
+                    d="M7 10l5 5 5-5"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </span>
+            </button>
+
+            {isSpecializationOpen ? (
+              <div
+                role="listbox"
+                className="absolute z-20 mt-2 w-full rounded-lg border border-gray-200 bg-white p-1 shadow-lg"
+              >
+                {specializationOptions.map((option) => {
+                  const isSelected = option.value === specializationField.value;
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      role="option"
+                      aria-selected={isSelected}
+                      onClick={() => {
+                        specializationField.onChange(option.value);
+                        setIsSpecializationOpen(false);
+                      }}
+                      className={[
+                        "flex w-full items-center justify-between rounded-md px-3 py-1.5 text-left text-sm transition",
+                        isSelected
+                          ? "bg-green-100/70 text-[var(--primary)]"
+                          : "text-gray-700 hover:bg-green-100/60",
+                      ].join(" ")}
+                    >
+                      <span>{option.label}</span>
+                      {isSelected ? (
+                        <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true">
+                          <path
+                            d="M5 13l4 4L19 7"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
+                      ) : null}
+                    </button>
+                  );
+                })}
+              </div>
+            ) : null}
+          </div>
+          {specializationState.error ? (
+            <p className="text-xs text-red-600">{specializationState.error.message}</p>
+          ) : null}
+        </div>
+
         <div className="space-y-1">
           <label className="text-xs font-semibold text-gray-700">District Bar</label>
           <div className="relative" ref={districtRef}>
@@ -292,17 +425,25 @@ export default function LawyerRegisterForm() {
         <div className="space-y-1">
           <label className="text-xs font-semibold text-gray-700">Law Degree Document</label>
           <input
-            {...register("lawDegree", {
-              required: "Law degree document is required.",
-              validate: (file: File | null) =>
-                file instanceof File || "Upload a valid document.",
-              setValueAs: (value: FileList | null) => value?.[0] ?? null,
-            })}
+            id="law-degree-file"
             type="file"
             accept=".pdf,.jpg,.jpeg,.png"
             disabled={disabled}
-            className={inputClass(Boolean(errors.lawDegree))}
+            className="sr-only"
+            {...lawDegreeRegister}
           />
+          <label
+            htmlFor="law-degree-file"
+            className={[
+              inputClass(Boolean(errors.lawDegree)),
+              "flex cursor-pointer items-center justify-between gap-2 text-gray-600",
+            ].join(" ")}
+          >
+            <span className="truncate">
+              {lawDegreeName || "Upload law degree document"}
+            </span>
+            <span className="text-xs font-semibold text-[var(--primary)]">Browse</span>
+          </label>
           {errors.lawDegree ? (
             <p className="text-xs text-red-600">{errors.lawDegree.message}</p>
           ) : null}
@@ -311,17 +452,25 @@ export default function LawyerRegisterForm() {
         <div className="space-y-1">
           <label className="text-xs font-semibold text-gray-700">Bar License Card</label>
           <input
-            {...register("barLicenseCard", {
-              required: "Bar license card is required.",
-              validate: (file: File | null) =>
-                file instanceof File || "Upload a valid document.",
-              setValueAs: (value: FileList | null) => value?.[0] ?? null,
-            })}
+            id="bar-license-file"
             type="file"
             accept=".pdf,.jpg,.jpeg,.png"
             disabled={disabled}
-            className={inputClass(Boolean(errors.barLicenseCard))}
+            className="sr-only"
+            {...barLicenseRegister}
           />
+          <label
+            htmlFor="bar-license-file"
+            className={[
+              inputClass(Boolean(errors.barLicenseCard)),
+              "flex cursor-pointer items-center justify-between gap-2 text-gray-600",
+            ].join(" ")}
+          >
+            <span className="truncate">
+              {barLicenseName || "Upload bar license card"}
+            </span>
+            <span className="text-xs font-semibold text-[var(--primary)]">Browse</span>
+          </label>
           {errors.barLicenseCard ? (
             <p className="text-xs text-red-600">{errors.barLicenseCard.message}</p>
           ) : null}

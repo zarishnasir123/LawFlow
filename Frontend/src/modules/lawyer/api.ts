@@ -22,6 +22,7 @@ export async function registerLawyer(
   formData.append("email", payload.email);
   formData.append("phone", payload.phone);
   formData.append("cnic", payload.cnic);
+  formData.append("specialization", payload.specialization);
   formData.append("districtBar", payload.districtBar);
   formData.append("barLicenseNumber", payload.barLicenseNumber);
   formData.append("password", payload.password);
