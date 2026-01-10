@@ -9,6 +9,7 @@ import { useLoginStore } from "../store";
 import type { LoginPayload, LoginRole } from "../types";
 import PasswordField from "./PasswordField";
 import RoleSelector from "./RoleSelector";
+import TextField from "./TextField";
 
 type LoginRequest = LoginPayload & {
   role: LoginRole;
@@ -56,15 +57,6 @@ export default function LoginForm({ onForgotPassword }: LoginFormProps) {
     loginMutation.mutate({ role, ...values });
   };
 
-  const inputClass = (hasError?: boolean) =>
-    [
-      "w-full rounded-2xl border px-4 py-3 text-sm outline-none focus:ring-2",
-      hasError
-        ? "border-red-300 focus:border-red-400 focus:ring-red-100"
-        : "border-gray-200 focus:border-[var(--primary)] focus:ring-green-100",
-      disabled ? "cursor-not-allowed bg-gray-50 text-gray-500" : "",
-    ].join(" ");
-
   const roleOptions: Array<{ value: LoginRole; label: string }> = [
     { value: "client", label: "Client" },
     { value: "lawyer", label: "Lawyer" },
@@ -79,26 +71,25 @@ export default function LoginForm({ onForgotPassword }: LoginFormProps) {
         onChange={setRole}
         options={roleOptions}
         label="Login as"
+        id="login-role"
+        disabled={disabled}
       />
 
-      <div className="space-y-2">
-        <label className="text-sm font-medium text-gray-800">Email Address</label>
-        <input
-          {...register("email", {
-            required: "Email is required.",
-            pattern: {
-              value: /^\S+@\S+\.\S+$/,
-              message: "Enter a valid email address.",
-            },
-          })}
-          type="email"
-          placeholder="your.email@example.com"
-          autoComplete="off"
-          disabled={disabled}
-          className={inputClass(Boolean(errors.email))}
-        />
-        {errors.email ? <p className="text-xs text-red-600">{errors.email.message}</p> : null}
-      </div>
+      <TextField
+        label="Email Address"
+        placeholder="your.email@example.com"
+        type="email"
+        autoComplete="off"
+        disabled={disabled}
+        error={errors.email?.message}
+        inputProps={register("email", {
+          required: "Email is required.",
+          pattern: {
+            value: /^\S+@\S+\.\S+$/,
+            message: "Enter a valid email address.",
+          },
+        })}
+      />
 
       <PasswordField
         id="login-password"

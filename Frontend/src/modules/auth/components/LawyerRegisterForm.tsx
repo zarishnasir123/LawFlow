@@ -1,7 +1,9 @@
 import { useMutation } from "@tanstack/react-query";
-import { useEffect, useRef, useState, type ChangeEvent } from "react";
+import { useState, type ChangeEvent } from "react";
 import { useController, useForm } from "react-hook-form";
 import PasswordField from "./PasswordField";
+import RoleSelector from "./RoleSelector";
+import TextField from "./TextField";
 import { registerLawyer } from "../../lawyer/api";
 import { getAuthErrorMessage } from "../api";
 import type { LawyerRegisterFormValues } from "../types";
@@ -53,28 +55,8 @@ export default function LawyerRegisterForm() {
     mutationFn: registerLawyer,
   });
 
-  const [isDistrictOpen, setIsDistrictOpen] = useState(false);
-  const [isSpecializationOpen, setIsSpecializationOpen] = useState(false);
   const [lawDegreeName, setLawDegreeName] = useState("");
   const [barLicenseName, setBarLicenseName] = useState("");
-  const districtRef = useRef<HTMLDivElement>(null);
-  const specializationRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      const target = event.target as Node;
-      if (
-        !districtRef.current?.contains(target) &&
-        !specializationRef.current?.contains(target)
-      ) {
-        setIsDistrictOpen(false);
-        setIsSpecializationOpen(false);
-      }
-    };
-
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
 
   const disabled = registerMutation.isPending || isFormSubmitting;
 
@@ -108,17 +90,11 @@ export default function LawyerRegisterForm() {
     { value: "Gujranwala", label: "Gujranwala" },
     { value: "Other", label: "Other" },
   ];
-  const selectedDistrictLabel =
-    districtOptions.find((option) => option.value === districtBarField.value)?.label ??
-    "Select";
 
   const specializationOptions = [
     { value: "Civil Law", label: "Civil Law" },
     { value: "Family Law", label: "Family Law" },
   ];
-  const selectedSpecializationLabel =
-    specializationOptions.find((option) => option.value === specializationField.value)
-      ?.label ?? "Select specialization";
 
   const lawDegreeRegister = register("lawDegree", {
     required: "Law degree document is required.",
@@ -143,282 +119,104 @@ export default function LawyerRegisterForm() {
   return (
     <form onSubmit={handleSubmit(submit)} className="space-y-3">
       <div className="grid gap-2 sm:grid-cols-2">
-        <div className="space-y-1">
-          <label className="text-xs font-semibold text-gray-700">First Name</label>
-          <input
-            {...register("firstName", { required: "First name is required." })}
-            placeholder="Ayesha"
-            autoComplete="given-name"
-            disabled={disabled}
-            className={inputClass(Boolean(errors.firstName))}
-          />
-          {errors.firstName ? (
-            <p className="text-xs text-red-600">{errors.firstName.message}</p>
-          ) : null}
-        </div>
+        <TextField
+          label="First Name"
+          placeholder="Ayesha"
+          autoComplete="given-name"
+          disabled={disabled}
+          error={errors.firstName?.message}
+          inputProps={register("firstName", { required: "First name is required." })}
+        />
 
-        <div className="space-y-1">
-          <label className="text-xs font-semibold text-gray-700">Last Name</label>
-          <input
-            {...register("lastName", { required: "Last name is required." })}
-            placeholder="Khan"
-            autoComplete="family-name"
-            disabled={disabled}
-            className={inputClass(Boolean(errors.lastName))}
-          />
-          {errors.lastName ? (
-            <p className="text-xs text-red-600">{errors.lastName.message}</p>
-          ) : null}
-        </div>
+        <TextField
+          label="Last Name"
+          placeholder="Khan"
+          autoComplete="family-name"
+          disabled={disabled}
+          error={errors.lastName?.message}
+          inputProps={register("lastName", { required: "Last name is required." })}
+        />
       </div>
 
       <div className="grid gap-2 sm:grid-cols-2">
-        <div className="space-y-1">
-          <label className="text-xs font-semibold text-gray-700">Email Address</label>
-          <input
-            {...register("email", {
-              required: "Email is required.",
-              pattern: {
-                value: /^\S+@\S+\.\S+$/,
-                message: "Enter a valid email address.",
-              },
-            })}
-            placeholder="lawyer@example.com"
-            type="email"
-            autoComplete="email"
-            disabled={disabled}
-            className={inputClass(Boolean(errors.email))}
-          />
-          {errors.email ? (
-            <p className="text-xs text-red-600">{errors.email.message}</p>
-          ) : null}
-        </div>
-
-        <div className="space-y-1">
-          <label className="text-xs font-semibold text-gray-700">Phone Number</label>
-          <input
-            {...register("phone", {
-              required: "Phone number is required.",
-              minLength: { value: 10, message: "Enter a valid phone number." },
-            })}
-            placeholder="+92 300 1234567"
-            type="tel"
-            inputMode="tel"
-            autoComplete="tel"
-            disabled={disabled}
-            className={inputClass(Boolean(errors.phone))}
-          />
-          {errors.phone ? (
-            <p className="text-xs text-red-600">{errors.phone.message}</p>
-          ) : null}
-        </div>
-      </div>
-
-      <div className="space-y-1">
-        <label className="text-xs font-semibold text-gray-700">CNIC Number</label>
-        <input
-          {...register("cnic", {
-            required: "CNIC number is required.",
+        <TextField
+          label="Email Address"
+          placeholder="lawyer@example.com"
+          type="email"
+          autoComplete="email"
+          disabled={disabled}
+          error={errors.email?.message}
+          inputProps={register("email", {
+            required: "Email is required.",
             pattern: {
-              value: /^\d{5}-\d{7}-\d{1}$/,
-              message: "Use the format 12345-1234567-1.",
+              value: /^\S+@\S+\.\S+$/,
+              message: "Enter a valid email address.",
             },
           })}
-          placeholder="12345-1234567-1"
-          inputMode="numeric"
-          disabled={disabled}
-          className={inputClass(Boolean(errors.cnic))}
         />
-        {errors.cnic ? (
-          <p className="text-xs text-red-600">{errors.cnic.message}</p>
-        ) : null}
+
+        <TextField
+          label="Phone Number"
+          placeholder="+92 300 1234567"
+          type="tel"
+          inputMode="tel"
+          autoComplete="tel"
+          disabled={disabled}
+          error={errors.phone?.message}
+          inputProps={register("phone", {
+            required: "Phone number is required.",
+            minLength: { value: 10, message: "Enter a valid phone number." },
+          })}
+        />
       </div>
 
+      <TextField
+        label="CNIC Number"
+        placeholder="12345-1234567-1"
+        inputMode="numeric"
+        disabled={disabled}
+        error={errors.cnic?.message}
+        inputProps={register("cnic", {
+          required: "CNIC number is required.",
+          pattern: {
+            value: /^\d{5}-\d{7}-\d{1}$/,
+            message: "Use the format 12345-1234567-1.",
+          },
+        })}
+      />
+
       <div className="grid gap-2 sm:grid-cols-3">
-        <div className="space-y-1">
-          <label className="text-xs font-semibold text-gray-700">Specialization</label>
-          <div className="relative" ref={specializationRef}>
-            <button
-              type="button"
-              id="specialization"
-              aria-haspopup="listbox"
-              aria-expanded={isSpecializationOpen}
-              disabled={disabled}
-              onClick={() => setIsSpecializationOpen((open) => !open)}
-              className={[
-                "flex w-full items-center justify-between rounded-lg border px-3 py-2 text-sm outline-none focus:ring-2",
-                specializationState.error
-                  ? "border-red-300 focus:border-red-400 focus:ring-red-100"
-                  : "border-gray-200 focus:border-[var(--primary)] focus:ring-green-100",
-                disabled ? "cursor-not-allowed bg-gray-50 text-gray-500" : "bg-white",
-              ].join(" ")}
-            >
-              <span>{selectedSpecializationLabel}</span>
-              <span className="text-gray-500">
-                <svg
-                  viewBox="0 0 24 24"
-                  className={`h-4 w-4 transition ${isSpecializationOpen ? "rotate-180" : ""}`}
-                  aria-hidden="true"
-                >
-                  <path
-                    d="M7 10l5 5 5-5"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-              </span>
-            </button>
+        <RoleSelector
+          value={specializationField.value}
+          onChange={specializationField.onChange}
+          options={specializationOptions}
+          label="Specialization"
+          id="specialization"
+          placeholder="Select specialization"
+          disabled={disabled}
+          error={specializationState.error?.message}
+        />
 
-            {isSpecializationOpen ? (
-              <div
-                role="listbox"
-                className="absolute z-20 mt-2 w-full rounded-lg border border-gray-200 bg-white p-1 shadow-lg"
-              >
-                {specializationOptions.map((option) => {
-                  const isSelected = option.value === specializationField.value;
-                  return (
-                    <button
-                      key={option.value}
-                      type="button"
-                      role="option"
-                      aria-selected={isSelected}
-                      onClick={() => {
-                        specializationField.onChange(option.value);
-                        setIsSpecializationOpen(false);
-                      }}
-                      className={[
-                        "flex w-full items-center justify-between rounded-md px-3 py-1.5 text-left text-sm transition",
-                        isSelected
-                          ? "bg-green-100/70 text-[var(--primary)]"
-                          : "text-gray-700 hover:bg-green-100/60",
-                      ].join(" ")}
-                    >
-                      <span>{option.label}</span>
-                      {isSelected ? (
-                        <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true">
-                          <path
-                            d="M5 13l4 4L19 7"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          />
-                        </svg>
-                      ) : null}
-                    </button>
-                  );
-                })}
-              </div>
-            ) : null}
-          </div>
-          {specializationState.error ? (
-            <p className="text-xs text-red-600">{specializationState.error.message}</p>
-          ) : null}
-        </div>
+        <RoleSelector
+          value={districtBarField.value}
+          onChange={districtBarField.onChange}
+          options={districtOptions}
+          label="District Bar"
+          id="district-bar"
+          placeholder="Select district"
+          disabled={disabled}
+          error={districtBarState.error?.message}
+        />
 
-        <div className="space-y-1">
-          <label className="text-xs font-semibold text-gray-700">District Bar</label>
-          <div className="relative" ref={districtRef}>
-            <button
-              type="button"
-              id="district-bar"
-              aria-haspopup="listbox"
-              aria-expanded={isDistrictOpen}
-              disabled={disabled}
-              onClick={() => setIsDistrictOpen((open) => !open)}
-              className={[
-                "flex w-full items-center justify-between rounded-lg border px-3 py-2 text-sm outline-none focus:ring-2",
-                districtBarState.error
-                  ? "border-red-300 focus:border-red-400 focus:ring-red-100"
-                  : "border-gray-200 focus:border-[var(--primary)] focus:ring-green-100",
-                disabled ? "cursor-not-allowed bg-gray-50 text-gray-500" : "bg-white",
-              ].join(" ")}
-            >
-              <span>{selectedDistrictLabel}</span>
-              <span className="text-gray-500">
-                <svg
-                  viewBox="0 0 24 24"
-                  className={`h-4 w-4 transition ${isDistrictOpen ? "rotate-180" : ""}`}
-                  aria-hidden="true"
-                >
-                  <path
-                    d="M7 10l5 5 5-5"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-              </span>
-            </button>
-
-            {isDistrictOpen ? (
-              <div
-                role="listbox"
-                className="absolute z-20 mt-2 w-full rounded-lg border border-gray-200 bg-white p-1 shadow-lg"
-              >
-                {districtOptions.map((option) => {
-                  const isSelected = option.value === districtBarField.value;
-                  return (
-                    <button
-                      key={option.value}
-                      type="button"
-                      role="option"
-                      aria-selected={isSelected}
-                      onClick={() => {
-                        districtBarField.onChange(option.value);
-                        setIsDistrictOpen(false);
-                      }}
-                      className={[
-                        "flex w-full items-center justify-between rounded-md px-3 py-1.5 text-left text-sm transition",
-                        isSelected
-                          ? "bg-green-100/70 text-[var(--primary)]"
-                          : "text-gray-700 hover:bg-green-100/60",
-                      ].join(" ")}
-                    >
-                      <span>{option.label}</span>
-                      {isSelected ? (
-                        <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true">
-                          <path
-                            d="M5 13l4 4L19 7"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          />
-                        </svg>
-                      ) : null}
-                    </button>
-                  );
-                })}
-              </div>
-            ) : null}
-          </div>
-          {districtBarState.error ? (
-            <p className="text-xs text-red-600">{districtBarState.error.message}</p>
-          ) : null}
-        </div>
-
-        <div className="space-y-1">
-          <label className="text-xs font-semibold text-gray-700">Bar License Number</label>
-          <input
-            {...register("barLicenseNumber", {
-              required: "Bar license number is required.",
-            })}
-            placeholder="Enter your bar license number"
-            disabled={disabled}
-            className={inputClass(Boolean(errors.barLicenseNumber))}
-          />
-          {errors.barLicenseNumber ? (
-            <p className="text-xs text-red-600">{errors.barLicenseNumber.message}</p>
-          ) : null}
-        </div>
+        <TextField
+          label="Bar License Number"
+          placeholder="Enter your bar license number"
+          disabled={disabled}
+          error={errors.barLicenseNumber?.message}
+          inputProps={register("barLicenseNumber", {
+            required: "Bar license number is required.",
+          })}
+        />
       </div>
 
       <div className="grid gap-2 sm:grid-cols-2">

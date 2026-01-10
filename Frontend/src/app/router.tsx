@@ -2,6 +2,7 @@ import { createRootRoute, createRoute, createRouter, Outlet } from "@tanstack/re
 import Landing from "../modules/marketing/pages/Landing";
 import Register from "../modules/auth/pages/Register";
 import Login from "../modules/auth/pages/Login";
+import ForgotPassword from "../modules/auth/pages/ForgotPassword";
 
 const rootRoute = createRootRoute({
   component: () => <Outlet />,
@@ -25,6 +26,17 @@ const loginRoute = createRoute({
   component: Login,
 });
 
-const routeTree = rootRoute.addChildren([indexRoute, registerRoute, loginRoute]);
+const forgotPasswordRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "forgot-password",
+  component: ForgotPassword,
+});
+
+const routeTree = rootRoute.addChildren([
+  indexRoute,
+  registerRoute,
+  loginRoute,
+  forgotPasswordRoute,
+]);
 
 export const router = createRouter({ routeTree });

@@ -12,6 +12,8 @@ type AuthFormProps = {
   children?: ReactNode;
   footer?: ReactNode;
   mode?: "register" | "custom";
+  maxWidthClassName?: string;
+  cardClassName?: string;
 };
 
 export default function AuthForm({
@@ -20,6 +22,8 @@ export default function AuthForm({
   children,
   footer,
   mode = "register",
+  maxWidthClassName,
+  cardClassName,
 }: AuthFormProps) {
   const role = useRegisterStore((state) => state.role);
   const setRole = useRegisterStore((state) => state.setRole);
@@ -49,10 +53,17 @@ export default function AuthForm({
       ? "min-h-screen scroll-smooth bg-gradient-to-br from-green-50 to-white px-4 py-6 flex items-center justify-center"
       : "min-h-screen scroll-smooth bg-gradient-to-br from-green-50 to-white px-4 py-6";
 
+  const mergedCardClass = [
+    "rounded-3xl border border-green-100 bg-white p-4 shadow-[0_8px_24px_-18px_rgba(34,197,94,0.35)] sm:p-5",
+    cardClassName,
+  ]
+    .filter(Boolean)
+    .join(" ");
+
   return (
     <div className={containerClass}>
-      <div className="mx-auto w-full max-w-3xl">
-        <div className="rounded-3xl border border-green-100 bg-white p-4 shadow-[0_8px_24px_-18px_rgba(34,197,94,0.35)] sm:p-5">
+      <div className={["mx-auto w-full", maxWidthClassName ?? "max-w-3xl"].join(" ")}>
+        <div className={mergedCardClass}>
           {/* Header */}
           <div className="mb-4 text-center">
             <div className="mx-auto mb-2 grid h-10 w-10 place-items-center rounded-xl bg-[var(--primary)] text-white shadow-sm">

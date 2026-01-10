@@ -33,8 +33,9 @@ export default function Login() {
       subtitle="Login to access your account"
       footer={footer}
       mode="custom"
+      maxWidthClassName="max-w-md"
     >
-      <LoginForm />
+      <LoginForm onForgotPassword={() => navigate({ to: "/forgot-password" })} />
     </AuthForm>
   );
 }

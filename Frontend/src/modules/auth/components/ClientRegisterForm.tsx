@@ -1,6 +1,7 @@
 import { useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import PasswordField from "./PasswordField";
+import TextField from "./TextField";
 import { registerClient } from "../../client/api";
 import { getAuthErrorMessage } from "../api";
 import type { ClientRegisterFormValues } from "../types";
@@ -30,15 +31,6 @@ export default function ClientRegisterForm() {
 
   const disabled = registerMutation.isPending || isFormSubmitting;
 
-  const inputClass = (hasError?: boolean) =>
-    [
-      "w-full rounded-lg border px-3 py-2 text-sm outline-none focus:ring-2",
-      hasError
-        ? "border-red-300 focus:border-red-400 focus:ring-red-100"
-        : "border-gray-200 focus:border-[var(--primary)] focus:ring-green-100",
-      disabled ? "cursor-not-allowed bg-gray-50 text-gray-500" : "",
-    ].join(" ");
-
   const submit = (values: ClientRegisterFormValues) => {
     registerMutation.mutate({
       role: "client",
@@ -54,92 +46,71 @@ export default function ClientRegisterForm() {
   return (
     <form onSubmit={handleSubmit(submit)} className="space-y-3">
       <div className="grid gap-2 sm:grid-cols-2">
-        <div className="space-y-1">
-          <label className="text-xs font-semibold text-gray-700">First Name</label>
-          <input
-            {...register("firstName", { required: "First name is required." })}
-            placeholder="Zarish"
-            autoComplete="given-name"
-            disabled={disabled}
-            className={inputClass(Boolean(errors.firstName))}
-          />
-          {errors.firstName ? (
-            <p className="text-xs text-red-600">{errors.firstName.message}</p>
-          ) : null}
-        </div>
+        <TextField
+          label="First Name"
+          placeholder="Zarish"
+          autoComplete="given-name"
+          disabled={disabled}
+          error={errors.firstName?.message}
+          inputProps={register("firstName", { required: "First name is required." })}
+        />
 
-        <div className="space-y-1">
-          <label className="text-xs font-semibold text-gray-700">Last Name</label>
-          <input
-            {...register("lastName", { required: "Last name is required." })}
-            placeholder="Nasir"
-            autoComplete="family-name"
-            disabled={disabled}
-            className={inputClass(Boolean(errors.lastName))}
-          />
-          {errors.lastName ? (
-            <p className="text-xs text-red-600">{errors.lastName.message}</p>
-          ) : null}
-        </div>
+        <TextField
+          label="Last Name"
+          placeholder="Nasir"
+          autoComplete="family-name"
+          disabled={disabled}
+          error={errors.lastName?.message}
+          inputProps={register("lastName", { required: "Last name is required." })}
+        />
       </div>
 
       <div className="grid gap-2 sm:grid-cols-2">
-        <div className="space-y-1">
-          <label className="text-xs font-semibold text-gray-700">Email Address</label>
-          <input
-            {...register("email", {
-              required: "Email is required.",
-              pattern: {
-                value: /^\S+@\S+\.\S+$/,
-                message: "Enter a valid email address.",
-              },
-            })}
-            placeholder="your.email@example.com"
-            type="email"
-            autoComplete="email"
-            disabled={disabled}
-            className={inputClass(Boolean(errors.email))}
-          />
-          {errors.email ? <p className="text-xs text-red-600">{errors.email.message}</p> : null}
-        </div>
-
-        <div className="space-y-1">
-          <label className="text-xs font-semibold text-gray-700">Phone Number</label>
-          <input
-            {...register("phone", {
-              required: "Phone number is required.",
-              minLength: { value: 10, message: "Enter a valid phone number." },
-            })}
-            placeholder="+92 300 1234567"
-            type="tel"
-            inputMode="tel"
-            autoComplete="tel"
-            disabled={disabled}
-            className={inputClass(Boolean(errors.phone))}
-          />
-          {errors.phone ? (
-            <p className="text-xs text-red-600">{errors.phone.message}</p>
-          ) : null}
-        </div>
-      </div>
-
-      <div className="space-y-1">
-        <label className="text-xs font-semibold text-gray-700">CNIC Number</label>
-        <input
-          {...register("cnic", {
-            required: "CNIC number is required.",
+        <TextField
+          label="Email Address"
+          placeholder="your.email@example.com"
+          type="email"
+          autoComplete="email"
+          disabled={disabled}
+          error={errors.email?.message}
+          inputProps={register("email", {
+            required: "Email is required.",
             pattern: {
-              value: /^\d{5}-\d{7}-\d{1}$/,
-              message: "Use the format 12345-1234567-1.",
+              value: /^\S+@\S+\.\S+$/,
+              message: "Enter a valid email address.",
             },
           })}
-          placeholder="12345-1234567-1"
-          inputMode="numeric"
-          disabled={disabled}
-          className={inputClass(Boolean(errors.cnic))}
         />
-        {errors.cnic ? <p className="text-xs text-red-600">{errors.cnic.message}</p> : null}
+
+        <TextField
+          label="Phone Number"
+          placeholder="+92 300 1234567"
+          type="tel"
+          inputMode="tel"
+          autoComplete="tel"
+          disabled={disabled}
+          error={errors.phone?.message}
+          inputProps={register("phone", {
+            required: "Phone number is required.",
+            minLength: { value: 10, message: "Enter a valid phone number." },
+          })}
+        />
       </div>
+
+      <TextField
+        label="CNIC Number"
+        placeholder="12345-1234567-1"
+        inputMode="numeric"
+        disabled={disabled}
+        error={errors.cnic?.message}
+        inputProps={register("cnic", {
+          required: "CNIC number is required.",
+          pattern: {
+            value: /^\d{5}-\d{7}-\d{1}$/,
+            message: "Use the format 12345-1234567-1.",
+          },
+        })}
+      />
 
       <div className="grid gap-2 sm:grid-cols-2">
         <PasswordField

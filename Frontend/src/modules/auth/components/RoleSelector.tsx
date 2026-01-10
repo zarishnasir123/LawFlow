@@ -11,6 +11,10 @@ type RoleSelectorProps<T extends string> = {
   onChange: (value: T) => void;
   options?: Array<RoleOption<T>>;
   label?: string;
+  id?: string;
+  disabled?: boolean;
+  error?: string;
+  placeholder?: string;
 };
 
 const defaultRegisterOptions: Array<RoleOption<RegisterRole>> = [
@@ -23,6 +27,10 @@ export default function RoleSelector<T extends string>({
   onChange,
   options,
   label = "Select role",
+  id,
+  disabled,
+  error,
+  placeholder,
 }: RoleSelectorProps<T>) {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -42,22 +50,39 @@ export default function RoleSelector<T extends string>({
     options ?? (defaultRegisterOptions as Array<RoleOption<T>>);
 
   const selectedLabel =
-    resolvedOptions.find((option) => option.value === value)?.label ?? "Select";
+    resolvedOptions.find((option) => option.value === value)?.label ??
+    placeholder ??
+    "Select";
+
+  const elementId = id ?? "role-selector";
+
+  const buttonClass = [
+    "flex w-full items-center justify-between rounded-lg border bg-white px-3 py-2 text-sm outline-none focus:ring-2",
+    error
+      ? "border-red-300 focus:border-red-400 focus:ring-red-100"
+      : "border-gray-200 focus:border-[var(--primary)] focus:ring-green-100",
+    disabled ? "cursor-not-allowed bg-gray-50 text-gray-500" : "",
+  ].join(" ");
 
   return (
-    <div className="space-y-2">
-      <label htmlFor="register-role" className="text-xs font-semibold text-gray-700">
+    <div className="space-y-1">
+      <label htmlFor={elementId} className="text-xs font-semibold text-gray-700">
         {label}
       </label>
 
       <div className="relative" ref={containerRef}>
         <button
-          id="register-role"
+          id={elementId}
           type="button"
           aria-haspopup="listbox"
           aria-expanded={isOpen}
-          onClick={() => setIsOpen((open) => !open)}
-          className="flex w-full items-center justify-between rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-[var(--primary)] focus:ring-2 focus:ring-green-100"
+          onClick={() => {
+            if (!disabled) {
+              setIsOpen((open) => !open);
+            }
+          }}
+          disabled={disabled}
+          className={buttonClass}
         >
           <span>{selectedLabel}</span>
           <span className="text-gray-500">
@@ -121,6 +146,8 @@ export default function RoleSelector<T extends string>({
           </div>
         ) : null}
       </div>
+
+      {error ? <p className="text-xs text-red-600">{error}</p> : null}
     </div>
   );
 }
