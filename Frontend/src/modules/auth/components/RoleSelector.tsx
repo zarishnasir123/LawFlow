@@ -82,8 +82,8 @@ export default function RoleSelector({ value, onChange }: RoleSelectorProps) {
                   className={[
                     "flex w-full items-center justify-between rounded-xl px-4 py-2 text-left text-sm transition",
                     isSelected
-                      ? "bg-green-100/70 text-[var(--primary)]"
-                      : "text-gray-700 hover:bg-green-100/60",
+                      ? "bg-green-100/60 text-[var(--primary)]"
+                      : "text-gray-700",
                   ].join(" ")}
                 >
                   <span>{option.label}</span>
