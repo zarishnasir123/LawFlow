@@ -46,7 +46,7 @@ export default function RoleSelector<T extends string>({
 
   return (
     <div className="space-y-2">
-      <label htmlFor="register-role" className="text-sm font-medium text-gray-800">
+      <label htmlFor="register-role" className="text-xs font-semibold text-gray-700">
         {label}
       </label>
 
@@ -57,7 +57,7 @@ export default function RoleSelector<T extends string>({
           aria-haspopup="listbox"
           aria-expanded={isOpen}
           onClick={() => setIsOpen((open) => !open)}
-          className="flex w-full items-center justify-between rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm outline-none focus:border-[var(--primary)] focus:ring-2 focus:ring-green-100"
+          className="flex w-full items-center justify-between rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-[var(--primary)] focus:ring-2 focus:ring-green-100"
         >
           <span>{selectedLabel}</span>
           <span className="text-gray-500">
@@ -81,7 +81,7 @@ export default function RoleSelector<T extends string>({
         {isOpen ? (
           <div
             role="listbox"
-            className="absolute z-20 mt-2 w-full rounded-2xl border border-gray-200 bg-white p-1 shadow-lg"
+            className="absolute z-20 mt-2 w-full rounded-lg border border-gray-200 bg-white p-1 shadow-lg"
           >
             {resolvedOptions.map((option) => {
               const isSelected = option.value === value;
@@ -96,7 +96,7 @@ export default function RoleSelector<T extends string>({
                     setIsOpen(false);
                   }}
                   className={[
-                    "flex w-full items-center justify-between rounded-xl px-4 py-2 text-left text-sm transition",
+                    "flex w-full items-center justify-between rounded-md px-3 py-1.5 text-left text-sm transition",
                     isSelected
                       ? "bg-green-100/60 text-[var(--primary)]"
                       : "text-gray-700",

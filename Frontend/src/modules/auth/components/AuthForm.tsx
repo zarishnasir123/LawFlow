@@ -44,18 +44,23 @@ export default function AuthForm({
       children
     );
 
+  const containerClass =
+    mode === "custom"
+      ? "min-h-screen scroll-smooth bg-gradient-to-br from-green-50 to-white px-4 py-6 flex items-center justify-center"
+      : "min-h-screen scroll-smooth bg-gradient-to-br from-green-50 to-white px-4 py-6";
+
   return (
-    <div className="min-h-screen scroll-smooth bg-gradient-to-br from-green-50 to-white px-4 py-10">
+    <div className={containerClass}>
       <div className="mx-auto w-full max-w-3xl">
-        <div className="rounded-3xl border border-green-100 bg-white p-6 shadow-xl sm:p-8">
+        <div className="rounded-3xl border border-green-100 bg-white p-4 shadow-[0_8px_24px_-18px_rgba(34,197,94,0.35)] sm:p-5">
           {/* Header */}
-          <div className="mb-6 text-center">
-            <div className="mx-auto mb-4 grid h-14 w-14 place-items-center rounded-2xl bg-[var(--primary)] text-white shadow-sm">
-              <Scale className="h-7 w-7" />
+          <div className="mb-4 text-center">
+            <div className="mx-auto mb-2 grid h-10 w-10 place-items-center rounded-xl bg-[var(--primary)] text-white shadow-sm">
+              <Scale className="h-5 w-5" />
             </div>
 
-            <h1 className="text-2xl font-bold text-[var(--primary)]">{title}</h1>
-            {subtitle ? <p className="mt-1 text-sm text-gray-600">{subtitle}</p> : null}
+            <h1 className="text-lg font-bold text-[var(--primary)]">{title}</h1>
+            {subtitle ? <p className="mt-1 text-xs text-gray-600">{subtitle}</p> : null}
           </div>
 
           {/* Body */}

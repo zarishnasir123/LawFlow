@@ -32,7 +32,7 @@ export default function ClientRegisterForm() {
 
   const inputClass = (hasError?: boolean) =>
     [
-      "w-full rounded-2xl border px-4 py-3 text-sm outline-none focus:ring-2",
+      "w-full rounded-lg border px-3 py-2 text-sm outline-none focus:ring-2",
       hasError
         ? "border-red-300 focus:border-red-400 focus:ring-red-100"
         : "border-gray-200 focus:border-[var(--primary)] focus:ring-green-100",
@@ -52,10 +52,10 @@ export default function ClientRegisterForm() {
   };
 
   return (
-    <form onSubmit={handleSubmit(submit)} className="space-y-5">
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div className="space-y-2">
-          <label className="text-sm font-medium text-gray-800">First Name</label>
+    <form onSubmit={handleSubmit(submit)} className="space-y-3">
+      <div className="grid gap-2 sm:grid-cols-2">
+        <div className="space-y-1">
+          <label className="text-xs font-semibold text-gray-700">First Name</label>
           <input
             {...register("firstName", { required: "First name is required." })}
             placeholder="Zarish"
@@ -68,8 +68,8 @@ export default function ClientRegisterForm() {
           ) : null}
         </div>
 
-        <div className="space-y-2">
-          <label className="text-sm font-medium text-gray-800">Last Name</label>
+        <div className="space-y-1">
+          <label className="text-xs font-semibold text-gray-700">Last Name</label>
           <input
             {...register("lastName", { required: "Last name is required." })}
             placeholder="Nasir"
@@ -83,9 +83,9 @@ export default function ClientRegisterForm() {
         </div>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div className="space-y-2">
-          <label className="text-sm font-medium text-gray-800">Email Address</label>
+      <div className="grid gap-2 sm:grid-cols-2">
+        <div className="space-y-1">
+          <label className="text-xs font-semibold text-gray-700">Email Address</label>
           <input
             {...register("email", {
               required: "Email is required.",
@@ -103,8 +103,8 @@ export default function ClientRegisterForm() {
           {errors.email ? <p className="text-xs text-red-600">{errors.email.message}</p> : null}
         </div>
 
-        <div className="space-y-2">
-          <label className="text-sm font-medium text-gray-800">Phone Number</label>
+        <div className="space-y-1">
+          <label className="text-xs font-semibold text-gray-700">Phone Number</label>
           <input
             {...register("phone", {
               required: "Phone number is required.",
@@ -123,8 +123,8 @@ export default function ClientRegisterForm() {
         </div>
       </div>
 
-      <div className="space-y-2">
-        <label className="text-sm font-medium text-gray-800">CNIC Number</label>
+      <div className="space-y-1">
+        <label className="text-xs font-semibold text-gray-700">CNIC Number</label>
         <input
           {...register("cnic", {
             required: "CNIC number is required.",
@@ -141,7 +141,7 @@ export default function ClientRegisterForm() {
         {errors.cnic ? <p className="text-xs text-red-600">{errors.cnic.message}</p> : null}
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid gap-2 sm:grid-cols-2">
         <PasswordField
           id="client-password"
           label="Password"
@@ -176,7 +176,7 @@ export default function ClientRegisterForm() {
         />
       </div>
 
-      <label className="flex items-start gap-2 text-sm text-gray-600">
+      <label className="flex items-start gap-2 text-xs text-gray-600">
         <input
           {...register("agree", {
             required: "You must accept the terms to continue.",
@@ -192,7 +192,7 @@ export default function ClientRegisterForm() {
       <button
         type="submit"
         disabled={disabled}
-        className="w-full rounded-2xl bg-[var(--primary)] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#024a23] active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-70"
+        className="w-full rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#024a23] active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-70"
       >
         {disabled ? "Registering..." : "Register"}
       </button>
@@ -209,7 +209,7 @@ export default function ClientRegisterForm() {
         </div>
       ) : null}
 
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-1.5">
         <span className="h-px flex-1 bg-gray-200" />
         <span className="text-xs text-gray-500">or continue with</span>
         <span className="h-px flex-1 bg-gray-200" />
@@ -217,7 +217,7 @@ export default function ClientRegisterForm() {
 
       <button
         type="button"
-        className="flex w-full items-center justify-center gap-2 rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm font-semibold text-gray-700 transition hover:bg-gray-50"
+        className="flex w-full items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 transition hover:bg-gray-50"
       >
         <span className="inline-flex h-5 w-5">
           <svg viewBox="0 0 48 48" className="h-5 w-5" aria-hidden="true">
