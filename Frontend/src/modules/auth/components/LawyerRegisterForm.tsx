@@ -1,5 +1,6 @@
 import { useMutation } from "@tanstack/react-query";
-import { useForm } from "react-hook-form";
+import { useEffect, useRef, useState } from "react";
+import { useController, useForm } from "react-hook-form";
 import PasswordField from "./PasswordField";
 import { registerLawyer } from "../../lawyer/api";
 import { getAuthErrorMessage } from "../api";
@@ -8,6 +9,7 @@ import type { LawyerRegisterFormValues } from "../types";
 export default function LawyerRegisterForm() {
   const {
     register,
+    control,
     handleSubmit,
     getValues,
     formState: { errors, isSubmitting: isFormSubmitting },
@@ -28,9 +30,32 @@ export default function LawyerRegisterForm() {
     },
   });
 
+  const {
+    field: districtBarField,
+    fieldState: districtBarState,
+  } = useController({
+    name: "districtBar",
+    control,
+    rules: { required: "District bar is required." },
+  });
+
   const registerMutation = useMutation({
     mutationFn: registerLawyer,
   });
+
+  const [isDistrictOpen, setIsDistrictOpen] = useState(false);
+  const districtRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (!districtRef.current?.contains(event.target as Node)) {
+        setIsDistrictOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   const disabled = registerMutation.isPending || isFormSubmitting;
 
@@ -58,6 +83,14 @@ export default function LawyerRegisterForm() {
       password: values.password,
     });
   };
+
+  const districtOptions = [
+    { value: "Gujranwala", label: "Gujranwala" },
+    { value: "Other", label: "Other" },
+  ];
+  const selectedDistrictLabel =
+    districtOptions.find((option) => option.value === districtBarField.value)?.label ??
+    "Select";
 
   return (
     <form onSubmit={handleSubmit(submit)} className="space-y-5">
@@ -156,16 +189,86 @@ export default function LawyerRegisterForm() {
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-2">
           <label className="text-sm font-medium text-gray-800">District Bar</label>
-          <select
-            {...register("districtBar", { required: "District bar is required." })}
-            disabled={disabled}
-            className={inputClass(Boolean(errors.districtBar))}
-          >
-            <option value="Gujranwala">Gujranwala</option>
-            <option value="Other">Other</option>
-          </select>
-          {errors.districtBar ? (
-            <p className="text-xs text-red-600">{errors.districtBar.message}</p>
+          <div className="relative" ref={districtRef}>
+            <button
+              type="button"
+              id="district-bar"
+              aria-haspopup="listbox"
+              aria-expanded={isDistrictOpen}
+              disabled={disabled}
+              onClick={() => setIsDistrictOpen((open) => !open)}
+              className={[
+                "flex w-full items-center justify-between rounded-2xl border px-4 py-3 text-sm outline-none focus:ring-2",
+                districtBarState.error
+                  ? "border-red-300 focus:border-red-400 focus:ring-red-100"
+                  : "border-gray-200 focus:border-[var(--primary)] focus:ring-green-100",
+                disabled ? "cursor-not-allowed bg-gray-50 text-gray-500" : "bg-white",
+              ].join(" ")}
+            >
+              <span>{selectedDistrictLabel}</span>
+              <span className="text-gray-500">
+                <svg
+                  viewBox="0 0 24 24"
+                  className={`h-4 w-4 transition ${isDistrictOpen ? "rotate-180" : ""}`}
+                  aria-hidden="true"
+                >
+                  <path
+                    d="M7 10l5 5 5-5"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </span>
+            </button>
+
+            {isDistrictOpen ? (
+              <div
+                role="listbox"
+                className="absolute z-20 mt-2 w-full rounded-2xl border border-gray-200 bg-white p-1 shadow-lg"
+              >
+                {districtOptions.map((option) => {
+                  const isSelected = option.value === districtBarField.value;
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      role="option"
+                      aria-selected={isSelected}
+                      onClick={() => {
+                        districtBarField.onChange(option.value);
+                        setIsDistrictOpen(false);
+                      }}
+                      className={[
+                        "flex w-full items-center justify-between rounded-xl px-4 py-2 text-left text-sm transition",
+                        isSelected
+                          ? "bg-green-100/70 text-[var(--primary)]"
+                          : "text-gray-700 hover:bg-green-100/60",
+                      ].join(" ")}
+                    >
+                      <span>{option.label}</span>
+                      {isSelected ? (
+                        <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true">
+                          <path
+                            d="M5 13l4 4L19 7"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
+                      ) : null}
+                    </button>
+                  );
+                })}
+              </div>
+            ) : null}
+          </div>
+          {districtBarState.error ? (
+            <p className="text-xs text-red-600">{districtBarState.error.message}</p>
           ) : null}
         </div>
 
