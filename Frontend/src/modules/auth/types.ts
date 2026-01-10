@@ -1,8 +1,9 @@
 export type RegisterRole = "client" | "lawyer";
+export type LoginRole = "client" | "lawyer" | "registrar" | "admin";
 
 export type AuthResponse = {
   token: string;
-  role: RegisterRole;
+  role: LoginRole;
   expiresAt?: string;
 };
 
@@ -28,10 +29,12 @@ export type ClientRegisterPayload = ClientRegisterSubmit & {
   role: "client";
 };
 
-export type ClientLoginPayload = {
+export type LoginPayload = {
   email: string;
   password: string;
 };
+
+export type ClientLoginPayload = LoginPayload;
 
 export type ClientEmailVerificationRequest = {
   email: string;
@@ -66,10 +69,11 @@ export type LawyerRegisterPayload = LawyerRegisterSubmit & {
   role: "lawyer";
 };
 
-export type LawyerLoginPayload = {
-  email: string;
-  password: string;
-};
+export type LawyerLoginPayload = LoginPayload;
+
+export type RegistrarLoginPayload = LoginPayload;
+
+export type AdminLoginPayload = LoginPayload;
 
 export type LawyerOtpRequestPayload = {
   phone: string;

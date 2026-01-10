@@ -1,12 +1,29 @@
 import { useEffect, useRef, useState } from "react";
 import type { RegisterRole } from "../types";
 
-type RoleSelectorProps = {
-  value: RegisterRole;
-  onChange: (value: RegisterRole) => void;
+type RoleOption<T extends string> = {
+  value: T;
+  label: string;
 };
 
-export default function RoleSelector({ value, onChange }: RoleSelectorProps) {
+type RoleSelectorProps<T extends string> = {
+  value: T;
+  onChange: (value: T) => void;
+  options?: Array<RoleOption<T>>;
+  label?: string;
+};
+
+const defaultRegisterOptions: Array<RoleOption<RegisterRole>> = [
+  { value: "client", label: "Client" },
+  { value: "lawyer", label: "Lawyer" },
+];
+
+export default function RoleSelector<T extends string>({
+  value,
+  onChange,
+  options,
+  label = "Select role",
+}: RoleSelectorProps<T>) {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -21,17 +38,16 @@ export default function RoleSelector({ value, onChange }: RoleSelectorProps) {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const options: Array<{ value: RegisterRole; label: string }> = [
-    { value: "client", label: "Client" },
-    { value: "lawyer", label: "Lawyer" },
-  ];
+  const resolvedOptions =
+    options ?? (defaultRegisterOptions as Array<RoleOption<T>>);
 
-  const selectedLabel = options.find((option) => option.value === value)?.label ?? "Select";
+  const selectedLabel =
+    resolvedOptions.find((option) => option.value === value)?.label ?? "Select";
 
   return (
     <div className="space-y-2">
       <label htmlFor="register-role" className="text-sm font-medium text-gray-800">
-        Register as
+        {label}
       </label>
 
       <div className="relative" ref={containerRef}>
@@ -67,7 +83,7 @@ export default function RoleSelector({ value, onChange }: RoleSelectorProps) {
             role="listbox"
             className="absolute z-20 mt-2 w-full rounded-2xl border border-gray-200 bg-white p-1 shadow-lg"
           >
-            {options.map((option) => {
+            {resolvedOptions.map((option) => {
               const isSelected = option.value === value;
               return (
                 <button

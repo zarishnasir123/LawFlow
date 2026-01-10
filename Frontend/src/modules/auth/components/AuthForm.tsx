@@ -3,6 +3,7 @@ import { Scale } from "lucide-react";
 import ClientRegisterForm from "./ClientRegisterForm";
 import LawyerRegisterForm from "./LawyerRegisterForm";
 import RoleSelector from "./RoleSelector";
+import type { RegisterRole } from "../types";
 import { useRegisterStore } from "../store";
 
 type AuthFormProps = {
@@ -23,10 +24,20 @@ export default function AuthForm({
   const role = useRegisterStore((state) => state.role);
   const setRole = useRegisterStore((state) => state.setRole);
 
+  const registerOptions: Array<{ value: RegisterRole; label: string }> = [
+    { value: "client", label: "Client" },
+    { value: "lawyer", label: "Lawyer" },
+  ];
+
   const body =
     mode === "register" ? (
       <div className="space-y-6">
-        <RoleSelector value={role} onChange={setRole} />
+        <RoleSelector<RegisterRole>
+          value={role}
+          onChange={setRole}
+          options={registerOptions}
+          label="Register as"
+        />
         {role === "client" ? <ClientRegisterForm /> : <LawyerRegisterForm />}
       </div>
     ) : (
