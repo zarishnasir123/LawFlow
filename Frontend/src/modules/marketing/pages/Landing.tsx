@@ -1,14 +1,21 @@
-import { useNavigate } from "react-router-dom";
-import { Scale, Gavel, FileText, Shield, CheckCircle } from "lucide-react";
+import { useState } from "react";
+import { useNavigate } from "@tanstack/react-router";
+import { Scale, Gavel, FileText, Shield, CheckCircle, Menu, X } from "lucide-react";
 
 export default function Landing() {
   const navigate = useNavigate();
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+
+  const handleNavigate = (to: string) => {
+    setIsMenuOpen(false);
+    navigate({ to });
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-white to-green-50">
       {/* Header */}
       <header className="border-b border-green-100 bg-white/80 backdrop-blur-sm sticky top-0 z-50">
-        <div className="w-full px-6 py-4 flex items-center justify-between">
+        <div className="w-full px-4 sm:px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="bg-[#01411C] p-2 rounded-lg">
               <Scale className="h-8 w-8 text-white" />
@@ -19,25 +26,53 @@ export default function Landing() {
             </div>
           </div>
 
-          <div className="flex gap-3">
+          <div className="hidden md:flex gap-3">
             <button
-              onClick={() => navigate("/login")}
+              onClick={() => handleNavigate("/login")}
               className="px-5 py-2 rounded-xl border border-[#01411C] text-[#01411C] hover:bg-green-50 transition"
             >
               Login
             </button>
             <button
-              onClick={() => navigate("/register")}
+              onClick={() => handleNavigate("/register")}
               className="px-5 py-2 rounded-xl bg-[#01411C] text-white hover:bg-[#024a23] transition"
             >
               Register
             </button>
           </div>
+
+          <button
+            type="button"
+            aria-label="Toggle menu"
+            onClick={() => setIsMenuOpen((open) => !open)}
+            className="md:hidden inline-flex items-center justify-center rounded-lg border border-green-200 p-2 text-[#01411C] hover:bg-green-50 transition"
+          >
+            {isMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+          </button>
         </div>
+
+        {isMenuOpen && (
+          <div className="md:hidden border-t border-green-100 bg-white/95 backdrop-blur-sm">
+            <div className="w-full px-4 sm:px-6 py-4 flex flex-col gap-3">
+              <button
+                onClick={() => handleNavigate("/login")}
+                className="w-full px-5 py-2 rounded-xl border border-[#01411C] text-[#01411C] hover:bg-green-50 transition"
+              >
+                Login
+              </button>
+              <button
+                onClick={() => handleNavigate("/register")}
+                className="w-full px-5 py-2 rounded-xl bg-[#01411C] text-white hover:bg-[#024a23] transition"
+              >
+                Register
+              </button>
+            </div>
+          </div>
+        )}
       </header>
 
       {/* Hero Section */}
-      <section className="mx-auto max-w-6xl px-4 py-16 text-center">
+      <section className="mx-auto max-w-6xl px-4 py-12 sm:py-16 text-center">
         <div className="max-w-3xl mx-auto">
           <div className="inline-block mb-4 px-4 py-1 bg-green-100 text-[#01411C] rounded-full">
             <span className="flex items-center gap-2">
@@ -46,26 +81,26 @@ export default function Landing() {
             </span>
           </div>
 
-          <h2 className="text-5xl font-bold mb-6 text-gray-900">
+          <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold mb-6 text-gray-900">
             Digital Legal Case Management
             <span className="text-[#01411C]"> Made Simple</span>
           </h2>
 
-          <p className="text-xl text-gray-600 mb-8">
+          <p className="text-base sm:text-lg lg:text-xl text-gray-600 mb-8">
             Streamline your legal workflow with Pakistan&apos;s premier case management system.
             Connect clients, lawyers, and court officials seamlessly.
           </p>
 
-          <div className="flex gap-4 justify-center">
+          <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
             <button
-              onClick={() => navigate("/register")}
-              className="px-7 py-3 rounded-xl bg-[#01411C] text-white hover:bg-[#024a23] transition"
+              onClick={() => handleNavigate("/register")}
+              className="w-full sm:w-auto px-7 py-3 rounded-xl bg-[#01411C] text-white hover:bg-[#024a23] transition"
             >
               Get Started
             </button>
             <button
-              onClick={() => navigate("/login")}
-              className="px-7 py-3 rounded-xl border border-[#01411C] text-[#01411C] hover:bg-green-50 transition"
+              onClick={() => handleNavigate("/login")}
+              className="w-full sm:w-auto px-7 py-3 rounded-xl border border-[#01411C] text-[#01411C] hover:bg-green-50 transition"
             >
               Sign In
             </button>
@@ -74,8 +109,10 @@ export default function Landing() {
       </section>
 
       {/* Features Section */}
-      <section className="mx-auto max-w-7xl px-6 lg:px-8 py-16">
-        <h3 className="text-3xl font-bold text-center mb-12 text-gray-900">System Features</h3>
+      <section className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-12 sm:py-16">
+        <h3 className="text-2xl sm:text-3xl font-bold text-center mb-10 sm:mb-12 text-gray-900">
+          System Features
+        </h3>
 
         <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-8 lg:gap-10">
           {[
@@ -116,10 +153,12 @@ export default function Landing() {
       </section>
 
       {/* Role Selection Cards */}
-      <section className="mx-auto max-w-6xl px-4 py-16">
-        <h3 className="text-3xl font-bold text-center mb-12 text-gray-900">Select Your Role</h3>
+      <section className="mx-auto max-w-6xl px-4 py-12 sm:py-16">
+        <h3 className="text-2xl sm:text-3xl font-bold text-center mb-10 sm:mb-12 text-gray-900">
+          Select Your Role
+        </h3>
 
-        <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6 max-w-5xl mx-auto">
+        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6 max-w-5xl mx-auto">
           {[
             { role: "client", icon: <FileText className="h-9 w-9 text-[#01411C]" />, title: "Client", desc: "Access your cases and connect with lawyers" },
             { role: "lawyer", icon: <Gavel className="h-9 w-9 text-[#01411C]" />, title: "Lawyer", desc: "Manage cases and represent clients" },
@@ -128,7 +167,7 @@ export default function Landing() {
           ].map((r) => (
             <button
               key={r.role}
-              onClick={() => navigate(`/login?role=${r.role}`)}
+              onClick={() => handleNavigate(`/login?role=${r.role}`)}
               className="group p-10 text-center bg-white rounded-2xl transition-all duration-300 cursor-pointer
                          hover:-translate-y-1 hover:bg-green-50/60 hover:border-green-200 hover:shadow-xl hover:shadow-green-200/40
                          border-2 border-transparent hover:border-[#01411C]"
@@ -144,9 +183,11 @@ export default function Landing() {
       </section>
 
       {/* Benefits */}
-      <section className="bg-[#01411C] text-white py-16">
+      <section className="bg-[#01411C] text-white py-12 sm:py-16">
         <div className="mx-auto max-w-6xl px-4">
-          <h3 className="text-3xl font-bold text-center mb-12">Why Choose LawFlow?</h3>
+          <h3 className="text-2xl sm:text-3xl font-bold text-center mb-10 sm:mb-12">
+            Why Choose LawFlow?
+          </h3>
 
           <div className="grid md:grid-cols-3 gap-8 max-w-4xl mx-auto">
             {[

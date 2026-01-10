@@ -1,6 +1,16 @@
-import { createBrowserRouter } from "react-router-dom";
+import { createRootRoute, createRoute, createRouter, Outlet } from "@tanstack/react-router";
 import Landing from "../modules/marketing/pages/Landing";
 
-export const router = createBrowserRouter([
-  { path: "/", element: <Landing /> },
-]);
+const rootRoute = createRootRoute({
+  component: () => <Outlet />,
+});
+
+const indexRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/",
+  component: Landing,
+});
+
+const routeTree = rootRoute.addChildren([indexRoute]);
+
+export const router = createRouter({ routeTree });
