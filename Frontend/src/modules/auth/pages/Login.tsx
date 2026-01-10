@@ -1,4 +1,5 @@
 import { useNavigate } from "@tanstack/react-router";
+import { ArrowLeft } from "lucide-react";
 import AuthForm from "../components/AuthForm";
 import LoginForm from "../components/LoginForm";
 
@@ -14,14 +15,15 @@ export default function Login() {
           onClick={() => navigate({ to: "/register" })}
           className="font-semibold text-[var(--primary)] hover:underline"
         >
-          Register
+          Register here
         </button>
       </div>
       <button
         type="button"
         onClick={() => navigate({ to: "/" })}
-        className="text-gray-500 hover:text-[var(--primary)]"
+        className="inline-flex items-center justify-center gap-2 text-gray-500 hover:text-[var(--primary)]"
       >
+        <ArrowLeft className="h-4 w-4" />
         Back to home
       </button>
     </div>

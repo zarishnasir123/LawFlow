@@ -70,7 +70,7 @@ export default function LoginForm({ onForgotPassword }: LoginFormProps) {
         value={role}
         onChange={setRole}
         options={roleOptions}
-        label="Login as"
+        label="Select Role"
         id="login-role"
         disabled={disabled}
       />

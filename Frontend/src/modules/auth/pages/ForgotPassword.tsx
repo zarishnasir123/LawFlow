@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { CheckCircle, Mail } from "lucide-react";
+import { ArrowLeft, CheckCircle, Mail } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { useNavigate } from "@tanstack/react-router";
 import AuthForm from "../components/AuthForm";
@@ -12,6 +12,7 @@ type ForgotPasswordValues = {
 export default function ForgotPassword() {
   const navigate = useNavigate();
   const [submitted, setSubmitted] = useState(false);
+  const [submittedEmail, setSubmittedEmail] = useState("");
 
   const {
     register,
@@ -21,14 +22,15 @@ export default function ForgotPassword() {
     defaultValues: { email: "" },
   });
 
-  const submit = () => {
+  const submit = (values: ForgotPasswordValues) => {
+    setSubmittedEmail(values.email);
     setSubmitted(true);
   };
 
   const footer = (
-    <div className="space-y-3 text-center text-sm text-gray-600">
-      <div>
-        Remember your password?{" "}
+      <div className="space-y-3 text-center text-sm text-gray-600">
+        <div>
+          Remember your password?{" "}
         <button
           type="button"
           onClick={() => navigate({ to: "/login" })}
@@ -40,8 +42,9 @@ export default function ForgotPassword() {
       <button
         type="button"
         onClick={() => navigate({ to: "/" })}
-        className="text-gray-500 hover:text-[var(--primary)]"
+        className="inline-flex items-center justify-center gap-2 text-gray-500 hover:text-[var(--primary)]"
       >
+        <ArrowLeft className="h-4 w-4" />
         Back to home
       </button>
     </div>
@@ -49,26 +52,30 @@ export default function ForgotPassword() {
 
   if (submitted) {
     return (
-    <AuthForm
-      title="Check your email"
-      subtitle="We sent a reset link if the email exists in our system."
-      mode="custom"
-      footer={footer}
-      maxWidthClassName="max-w-md"
-    >
+      <AuthForm
+        title="Check Your Email"
+        subtitle="We've sent a password reset link to your email."
+        mode="custom"
+        footer={footer}
+        maxWidthClassName="max-w-md"
+      >
         <div className="space-y-4 text-center">
           <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-green-50 text-[var(--primary)]">
             <CheckCircle className="h-6 w-6" />
           </div>
           <p className="text-sm text-gray-600">
-            Follow the link to reset your password.
+            We've sent a password reset link to{" "}
+            <span className="font-semibold text-gray-800">
+              {submittedEmail || "your email"}
+            </span>
+            . Please check your inbox and follow the instructions.
           </p>
           <button
             type="button"
             onClick={() => navigate({ to: "/login" })}
             className="w-full rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#024a23]"
           >
-            Back to login
+            Back to Login
           </button>
         </div>
       </AuthForm>
