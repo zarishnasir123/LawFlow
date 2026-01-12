@@ -3,7 +3,7 @@ import { Scale } from "lucide-react";
 import type { HeaderAction } from "../../types/dashboard";
 
 type DashboardLayoutProps = {
-  brandTitle: string;
+  brandTitle: React.ReactNode;
   brandSubtitle?: string;
   actions?: HeaderAction[];
   children: ReactNode;
