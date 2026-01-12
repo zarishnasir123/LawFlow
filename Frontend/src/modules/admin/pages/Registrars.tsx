@@ -1,0 +1,1 @@
+<h1>this is registrar creation page</h1>
