@@ -3,6 +3,7 @@ import Landing from "../modules/marketing/pages/Landing";
 import Register from "../modules/auth/pages/Register";
 import Login from "../modules/auth/pages/Login";
 import ForgotPassword from "../modules/auth/pages/ForgotPassword";
+import ClientDashboard from "../modules/client/pages/Dashboard";
 
 const rootRoute = createRootRoute({
   component: () => <Outlet />,
@@ -32,11 +33,18 @@ const forgotPasswordRoute = createRoute({
   component: ForgotPassword,
 });
 
+const clientDashboardRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "client-dashboard",
+  component: ClientDashboard,
+});
+
 const routeTree = rootRoute.addChildren([
   indexRoute,
   registerRoute,
   loginRoute,
   forgotPasswordRoute,
+  clientDashboardRoute,
 ]);
 
 export const router = createRouter({ routeTree });

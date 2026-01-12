@@ -1,27 +1,20 @@
-import { useMutation } from "@tanstack/react-query";
+import { useNavigate } from "@tanstack/react-router";
 import { useForm } from "react-hook-form";
-import { loginAdmin } from "../../admin/api";
-import { loginClient } from "../../client/api";
-import { loginLawyer } from "../../lawyer/api";
-import { loginRegistrar } from "../../registrar/api";
-import { getAuthErrorMessage } from "../api";
 import { useLoginStore } from "../store";
 import type { LoginPayload, LoginRole } from "../types";
 import PasswordField from "./PasswordField";
 import RoleSelector from "./RoleSelector";
 import TextField from "./TextField";
 
-type LoginRequest = LoginPayload & {
-  role: LoginRole;
-};
-
 type LoginFormProps = {
   onForgotPassword?: () => void;
 };
 
 export default function LoginForm({ onForgotPassword }: LoginFormProps) {
+  const navigate = useNavigate();
   const role = useLoginStore((state) => state.role);
   const setRole = useLoginStore((state) => state.setRole);
+  const setEmail = useLoginStore((state) => state.setEmail);
 
   const {
     register,
@@ -34,27 +27,12 @@ export default function LoginForm({ onForgotPassword }: LoginFormProps) {
     },
   });
 
-  const loginMutation = useMutation({
-    mutationFn: async ({ role: loginRole, email, password }: LoginRequest) => {
-      switch (loginRole) {
-        case "client":
-          return loginClient({ email, password });
-        case "lawyer":
-          return loginLawyer({ email, password });
-        case "registrar":
-          return loginRegistrar({ email, password });
-        case "admin":
-          return loginAdmin({ email, password });
-        default:
-          throw new Error("Unsupported role");
-      }
-    },
-  });
-
-  const disabled = loginMutation.isPending || isSubmitting;
+  const disabled = isSubmitting;
 
   const submit = (values: LoginPayload) => {
-    loginMutation.mutate({ role, ...values });
+    void role;
+    setEmail(values.email);
+    navigate({ to: "/client-dashboard" });
   };
 
   const roleOptions: Array<{ value: LoginRole; label: string }> = [
@@ -125,11 +103,6 @@ export default function LoginForm({ onForgotPassword }: LoginFormProps) {
         {disabled ? "Logging in..." : "Login"}
       </button>
 
-      {loginMutation.isError ? (
-        <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          {getAuthErrorMessage(loginMutation.error)}
-        </div>
-      ) : null}
     </form>
   );
 }
