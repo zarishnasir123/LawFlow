@@ -29,6 +29,7 @@ export default function LoginForm({ onForgotPassword }: LoginFormProps) {
 
   const disabled = isSubmitting;
 
+  // --- FIXED SUBMIT FUNCTION ---
   const submit = (values: LoginPayload) => {
   setEmail(values.email);
 
