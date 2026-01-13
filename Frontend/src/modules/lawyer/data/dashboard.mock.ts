@@ -30,7 +30,7 @@ export const lawyerDashboardStats: DashboardStat[] = [
   },
   {
     label: "Total Earnings",
-    value: "ƒ, 450K",
+    value: "Rs. 450K",
     icon: DollarSign,
     accentClassName: "bg-purple-500",
   },
@@ -101,7 +101,7 @@ export const lawyerDashboardHearings: HearingItem[] = [
     id: 1,
     caseNumber: "LC-2024-0156",
     title: "Property Dispute",
-    dateTime: "January 30, 2025 ƒ?› 10:00 AM",
+    dateTime: "January 30, 2025 - 10:00 AM",
   },
 ];
 
@@ -109,3 +109,4 @@ export const lawyerDashboardActivity: ActivityItem[] = [
   { id: 1, label: "Case approved by registrar", time: "1 hour ago", type: "case" },
   { id: 2, label: "New message from client", time: "3 hours ago", type: "message" },
 ];
+
