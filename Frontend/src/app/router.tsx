@@ -7,6 +7,8 @@ import ClientDashboard from "../modules/client/pages/Dashboard";
  import LawyerDashboard from "../modules/lawyer/pages/Dashboard";
 import FindLawyer from "../modules/client/pages/FindLawyer";
 
+// Only Registrar Dashboard Import
+import { RegistrarDashboard } from "../modules/registrar/pages/Dashboard";
 
 const rootRoute = createRootRoute({  
   component: () => <Outlet />,
@@ -50,10 +52,28 @@ const lawyerDashboardRoute = createRoute({
 
 export const findLawyerRoute = createRoute({
   getParentRoute: () => rootRoute, 
-  path: "FindLawyer",             
+  path: "FindLawyer",              
   component: FindLawyer,
 });
 
+// Registrar Dashboard Route with navigate and logout props
+const registrarDashboardRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "registrar-dashboard",
+  component: () => (
+    <RegistrarDashboard 
+      navigate={(page, data) => {
+        // TanStack Router handles navigation here
+        router.navigate({ to: page, search: data });
+      }}
+      logout={() => {
+        // Simple logout logic
+        localStorage.clear();
+        router.navigate({ to: "/login" });
+      }}
+    />
+  ),
+});
 
 const routeTree = rootRoute.addChildren([
   indexRoute,
@@ -63,6 +83,14 @@ const routeTree = rootRoute.addChildren([
   clientDashboardRoute,
   lawyerDashboardRoute,
   findLawyerRoute,
+  registrarDashboardRoute, // Added registrar dashboard to tree
 ]);
 
 export const router = createRouter({ routeTree });
+
+// Add this for better intellisense
+declare module "@tanstack/react-router" {
+  interface Register {
+    router: typeof router;
+  }
+}
