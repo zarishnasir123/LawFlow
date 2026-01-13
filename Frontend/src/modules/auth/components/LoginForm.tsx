@@ -30,10 +30,29 @@ export default function LoginForm({ onForgotPassword }: LoginFormProps) {
   const disabled = isSubmitting;
 
   const submit = (values: LoginPayload) => {
-    void role;
-    setEmail(values.email);
-    navigate({ to: "/client-dashboard" });
-  };
+  setEmail(values.email);
+
+  switch (role) {
+    case "client":
+      navigate({ to: "/client-dashboard" });
+      break;
+
+    case "lawyer":
+      navigate({ to: "/lawyer-dashboard" });
+      break;
+
+    case "registrar":
+      navigate({ to: "/registrar-dashboard" });
+      break;
+
+    case "admin":
+      navigate({ to: "/admin-dashboard" });
+      break;
+
+    default:
+      navigate({ to: "/login" });
+  }
+};
 
   const roleOptions: Array<{ value: LoginRole; label: string }> = [
     { value: "client", label: "Client" },
