@@ -1,11 +1,18 @@
-import { createRootRoute, createRoute, createRouter, Outlet } from "@tanstack/react-router";
+import {
+  createRootRoute,
+  createRoute,
+  createRouter,
+  Outlet,
+} from "@tanstack/react-router";
 import Landing from "../modules/marketing/pages/Landing";
 import Register from "../modules/auth/pages/Register";
 import Login from "../modules/auth/pages/Login";
 import ForgotPassword from "../modules/auth/pages/ForgotPassword";
 import ClientDashboard from "../modules/client/pages/Dashboard";
- import LawyerDashboard from "../modules/lawyer/pages/Dashboard";
+import LawyerDashboard from "../modules/lawyer/pages/Dashboard";
 import FindLawyer from "../modules/client/pages/FindLawyer";
+import LawyerCases from "../modules/lawyer/pages/Cases";
+import LawyerHearings from "../modules/lawyer/pages/Hearings";
 
 // Only Registrar Dashboard Import
 import { RegistrarDashboard } from "../modules/registrar/pages/Dashboard";
@@ -50,9 +57,21 @@ const lawyerDashboardRoute = createRoute({
   component: LawyerDashboard,
 });
 
+const lawyerCasesRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "lawyer-cases",
+  component: LawyerCases,
+});
+
+const lawyerHearingsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "lawyer-hearings",
+  component: LawyerHearings,
+});
+
 export const findLawyerRoute = createRoute({
-  getParentRoute: () => rootRoute, 
-  path: "FindLawyer",              
+  getParentRoute: () => rootRoute,
+  path: "FindLawyer",
   component: FindLawyer,
 });
 
@@ -61,7 +80,7 @@ const registrarDashboardRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "registrar-dashboard",
   component: () => (
-    <RegistrarDashboard 
+    <RegistrarDashboard
       navigate={(page, data) => {
         // TanStack Router handles navigation here
         router.navigate({ to: page, search: data });
@@ -82,6 +101,8 @@ const routeTree = rootRoute.addChildren([
   forgotPasswordRoute,
   clientDashboardRoute,
   lawyerDashboardRoute,
+  lawyerCasesRoute,
+  lawyerHearingsRoute,
   findLawyerRoute,
   registrarDashboardRoute, // Added registrar dashboard to tree
 ]);

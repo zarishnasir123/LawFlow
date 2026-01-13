@@ -20,9 +20,10 @@ interface CaseItem {
 }
 
 interface RegistrarDashboardProps {
-  navigate: (page: string, data?: any) => void;
+  navigate: (page: string, data?: Record<string, unknown>) => void;
   logout: () => void;
 }
+
 
 export function RegistrarDashboard({ navigate, logout }: RegistrarDashboardProps) {
   const [searchQuery, setSearchQuery] = useState('');
