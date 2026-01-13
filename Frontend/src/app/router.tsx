@@ -5,6 +5,9 @@ import Login from "../modules/auth/pages/Login";
 import ForgotPassword from "../modules/auth/pages/ForgotPassword";
 import ClientDashboard from "../modules/client/pages/Dashboard";
  import LawyerDashboard from "../modules/lawyer/pages/Dashboard";
+import FindLawyer from "../modules/client/pages/FindLawyer";
+
+
 const rootRoute = createRootRoute({
   component: () => <Outlet />,
 });
@@ -45,6 +48,13 @@ const lawyerDashboardRoute = createRoute({
   component: LawyerDashboard,
 });
 
+export const findLawyerRoute = createRoute({
+  getParentRoute: () => rootRoute, 
+  path: "FindLawyer",             
+  component: FindLawyer,
+});
+
+
 const routeTree = rootRoute.addChildren([
   indexRoute,
   registerRoute,
@@ -52,6 +62,7 @@ const routeTree = rootRoute.addChildren([
   forgotPasswordRoute,
   clientDashboardRoute,
   lawyerDashboardRoute,
+  findLawyerRoute,
 ]);
 
 export const router = createRouter({ routeTree });
