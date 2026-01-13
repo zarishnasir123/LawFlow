@@ -4,6 +4,7 @@ import DashboardLayout from "../../../shared/components/dashboard/DashboardLayou
 import StatCard from "../../../shared/components/dashboard/StatCard";
 import RecentActivity from "../../../shared/components/dashboard/RecentActivity";
 import RecentCases from "../../../shared/components/dashboard/RecentCases";
+
 import UpcomingHearings from "../../../shared/components/dashboard/UpcomingHearings";
 import QuickActions from "../../../shared/components/dashboard/QuickActions";
 import { useLoginStore } from "../../auth/store";
@@ -40,13 +41,13 @@ export default function LawyerDashboard() {
         {
           label: "Notifications",
           icon: Bell,
-          onClick: () => navigate({ to: "/lawyer-notifications" }),
-          badge: 2,
+          onClick: () => navigate({ to: "/Lawyer-dashboard" }),
+          badge: 3,
         },
         {
           label: "Profile",
           icon: User,
-          onClick: () => navigate({ to: "/lawyer-profile" }),
+          onClick: () => navigate({ to: "/Lawyer-dashboard" }),
         },
         {
           label: "Logout",
