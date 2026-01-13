@@ -29,10 +29,24 @@ export default function LoginForm({ onForgotPassword }: LoginFormProps) {
 
   const disabled = isSubmitting;
 
+  // --- FIXED SUBMIT FUNCTION ---
   const submit = (values: LoginPayload) => {
-    void role;
     setEmail(values.email);
-    navigate({ to: "/client-dashboard" });
+    
+    // Check karein ke user ne kaunsa role select kiya hai
+    if (role === "registrar") {
+      // Registrar ke liye registrar dashboard par bhejein
+      navigate({ to: "/registrar-dashboard" });
+    } else if (role === "client") {
+      // Client ke liye client dashboard par bhejein
+      navigate({ to: "/client-dashboard" });
+    } else if (role === "lawyer") {
+      // Lawyer ke liye abhi client par hi bhej dete hain ya lawyer route par
+      navigate({ to: "/client-dashboard" });
+    } else {
+      // Default case
+      navigate({ to: "/" });
+    }
   };
 
   const roleOptions: Array<{ value: LoginRole; label: string }> = [
