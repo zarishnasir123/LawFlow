@@ -5,7 +5,7 @@ import Login from "../modules/auth/pages/Login";
 import ForgotPassword from "../modules/auth/pages/ForgotPassword";
 import ClientDashboard from "../modules/client/pages/Dashboard";
 
-const rootRoute = createRootRoute({
+const rootRoute = createRootRoute({  
   component: () => <Outlet />,
 });
 
