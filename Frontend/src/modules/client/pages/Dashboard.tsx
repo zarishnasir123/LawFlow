@@ -43,7 +43,12 @@ export default function Dashboard() {
   })();
 
   const stats: DashboardStat[] = [
-    { label: "Active Cases", value: "2", icon: FileText, accentClassName: "bg-blue-500" },
+    {
+      label: "Active Cases",
+      value: "2",
+      icon: FileText,
+      accentClassName: "bg-blue-500",
+    },
     {
       label: "Upcoming Hearings",
       value: "1",
@@ -56,7 +61,12 @@ export default function Dashboard() {
       icon: FileText,
       accentClassName: "bg-yellow-500",
     },
-    { label: "Messages", value: "3", icon: MessageCircle, accentClassName: "bg-green-500" },
+    {
+      label: "Messages",
+      value: "3",
+      icon: MessageCircle,
+      accentClassName: "bg-green-500",
+    },
   ];
 
   const quickActions: QuickActionItem[] = [
@@ -70,25 +80,25 @@ export default function Dashboard() {
       label: "Pending Signatures",
       icon: PenTool,
       className: "bg-yellow-600 hover:bg-yellow-700",
-      to: "/client-signatures",
+      to: "/client-dashboard",
     },
     {
       label: "Upload Documents",
       icon: Upload,
       className: "bg-[#01411C] hover:bg-[#024a23]",
-      to: "/client-documents",
+      to: "/client-dashboard",
     },
     {
       label: "Messages",
       icon: MessageCircle,
       className: "bg-[#01411C] hover:bg-[#024a23]",
-      to: "/client-chat",
+      to: "/client-dashboard",
     },
     {
       label: "Hearings",
       icon: Calendar,
       className: "bg-[#01411C] hover:bg-[#024a23]",
-      to: "/client-hearings",
+      to: "/client-dashboard",
     },
   ];
 
@@ -123,7 +133,12 @@ export default function Dashboard() {
   ];
 
   const activityItems: ActivityItem[] = [
-    { id: 1, label: "New message from lawyer", time: "2 hours ago", type: "message" },
+    {
+      id: 1,
+      label: "New message from lawyer",
+      time: "2 hours ago",
+      type: "message",
+    },
     { id: 2, label: "Case status updated", time: "1 day ago", type: "case" },
   ];
 
@@ -137,13 +152,13 @@ export default function Dashboard() {
         {
           label: "Notifications",
           icon: Bell,
-          onClick: () => navigate({ to: "/client-notifications" }),
+          onClick: () => navigate({ to: "/client-dashboard" }),
           badge: 3,
         },
         {
           label: "Profile",
           icon: User,
-          onClick: () => navigate({ to: "/client-profile" }),
+          onClick: () => navigate({ to: "/client-dashboard" }),
         },
         {
           label: "Logout",
@@ -157,7 +172,8 @@ export default function Dashboard() {
           Welcome back, {displayName}
         </h2>
         <p className="text-sm text-gray-600">
-          Track your cases, connect with lawyers, and manage documents in one place.
+          Track your cases, connect with lawyers, and manage documents in one
+          place.
         </p>
       </div>
 
@@ -175,15 +191,15 @@ export default function Dashboard() {
         <div className="lg:col-span-2">
           <RecentCases
             cases={recentCases}
-            onViewAll={() => navigate({ to: "/client-cases" })}
-            onSelectCase={() => navigate({ to: "/client-cases" })}
+            onViewAll={() => navigate({ to: "/client-dashboard" })}
+            onSelectCase={() => navigate({ to: "/client-dashboard" })}
           />
         </div>
 
         <div className="space-y-6">
           <UpcomingHearings
             hearings={hearings}
-            onNavigate={() => navigate({ to: "/client-hearings" })}
+            onNavigate={() => navigate({ to: "/client-dashboard" })}
           />
           <RecentActivity items={activityItems} />
         </div>

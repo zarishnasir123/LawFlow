@@ -39,21 +39,18 @@ export default function LoginForm({ onForgotPassword }: LoginFormProps) {
       break;
 
     case "lawyer":
-      navigate({ to: "/lawyer-dashboard" });
+      navigate({ to: "/Lawyer-dashboard" }); 
       break;
 
     case "registrar":
       navigate({ to: "/registrar-dashboard" });
       break;
 
-    case "admin":
-      navigate({ to: "/admin-dashboard" });
-      break;
-
     default:
       navigate({ to: "/login" });
   }
 };
+
 
   const roleOptions: Array<{ value: LoginRole; label: string }> = [
     { value: "client", label: "Client" },
