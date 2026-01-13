@@ -64,7 +64,7 @@ export default function Dashboard() {
       label: "Find a Lawyer",
       icon: Gavel,
       className: "bg-[#01411C] hover:bg-[#024a23]",
-      to: "/client-lawyers",
+      to: "/FindLawyer",
     },
     {
       label: "Pending Signatures",
