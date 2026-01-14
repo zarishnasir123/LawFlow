@@ -1,29 +1,20 @@
 import { useNavigate } from "@tanstack/react-router";
 import { ArrowLeft } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 
 import DashboardLayout from "../../../shared/components/dashboard/DashboardLayout";
 import ProfileCard from "../../../shared/components/profile/ProfileCard";
 import ProfileField from "../../../shared/components/profile/ProfileField";
+import { useClientProfileStore } from "../store";
 
 export default function ClientProfile() {
   const navigate = useNavigate();
+  const { profile, initializeProfile } = useClientProfileStore();
 
-  const [profile, setProfile] = useState({
-    fullName: "Ahmed Khan",
-    email: "ahmed.khan@example.com",
-    phone: "+92 300 1234567",
-    cnic: "12345-1234567-1",
-    address: "House 123, Street 45, F-7, Islamabad",
-  });
-
-  // 🔹 Load saved profile data
+  // 🔹 Initialize profile from localStorage on mount
   useEffect(() => {
-    const savedProfile = localStorage.getItem("clientProfile");
-    if (savedProfile) {
-      setProfile(JSON.parse(savedProfile));
-    }
-  }, []);
+    initializeProfile();
+  }, [initializeProfile]);
 
   return (
     <DashboardLayout

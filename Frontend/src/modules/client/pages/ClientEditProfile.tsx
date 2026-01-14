@@ -1,46 +1,26 @@
-import { useEffect, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { ArrowLeft } from "lucide-react";
+import { useEffect } from "react";
 import DashboardLayout from "../../../shared/components/dashboard/DashboardLayout";
 import ProfileCard from "../../../shared/components/profile/ProfileCard";
+import { useClientProfileStore } from "../store";
 
 export default function ClientProfileEdit() {
   const navigate = useNavigate();
+  const { profile, initializeProfile, updateField, updateProfile } = useClientProfileStore();
 
-  // 🔹 Editable state
-  const [profile, setProfile] = useState({
-    fullName: "",
-    email: "",
-    phone: "",
-    cnic: "",
-    address: "",
-  });
-
-  // ✅ LOAD saved profile when page opens
+  // ✅ Initialize profile from localStorage on mount
   useEffect(() => {
-    const savedProfile = localStorage.getItem("clientProfile");
-
-    if (savedProfile) {
-      setProfile(JSON.parse(savedProfile));
-    } else {
-      // default data (first time)
-      setProfile({
-        fullName: "Ahmed Khan",
-        email: "ahmed.khan@example.com",
-        phone: "+92 300 1234567",
-        cnic: "12345-1234567-1",
-        address: "House 123, Street 45, F-7, Islamabad",
-      });
-    }
-  }, []);
+    initializeProfile();
+  }, [initializeProfile]);
 
   const handleChange = (field: string, value: string) => {
-    setProfile((prev) => ({ ...prev, [field]: value }));
+    updateField(field as keyof typeof profile, value);
   };
 
   // ✅ SAVE data
   const handleSave = () => {
-    localStorage.setItem("clientProfile", JSON.stringify(profile));
+    updateProfile(profile);
     navigate({ to: "/client-profile" });
   };
 
