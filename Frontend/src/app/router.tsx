@@ -20,6 +20,7 @@ import LawyerHearings from "../modules/lawyer/pages/Hearings";
 import AiLegalGuidance from "../modules/lawyer/pages/AiLegalGuidance";
 import LawyerMessages from "../modules/lawyer/pages/Messages";
 import ChatDetail from "../modules/lawyer/pages/ChatDetail";
+import ServiceCharges from "../modules/lawyer/pages/ServiceCharges";
 
 import FindLawyer from "../modules/client/pages/FindLawyer";
 
@@ -116,6 +117,12 @@ const lawyerChatDetailRoute = createRoute({
   component: ChatDetail,
 });
 
+const serviceChargesRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "lawyer-service-charges",
+  component: ServiceCharges,
+});
+
 export const findLawyerRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "FindLawyer",
@@ -200,6 +207,7 @@ const routeTree = rootRoute.addChildren([
   lawyerCasesRoute,
   lawyerHearingsRoute,
   lawyerAiGuidanceRoute,
+  serviceChargesRoute,
 
   lawyerMessagesRoute,
   lawyerChatDetailRoute,
