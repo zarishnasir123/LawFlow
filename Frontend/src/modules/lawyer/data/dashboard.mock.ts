@@ -47,7 +47,7 @@ export const lawyerDashboardQuickActions: QuickActionItem[] = [
     label: "AI Assistant",
     icon: Sparkles,
     className: "bg-purple-600 hover:bg-purple-700",
-    to: "/lawyer-ai",
+    to: "/lawyer-ai-guidance",
   },
   {
     label: "Returned Cases",

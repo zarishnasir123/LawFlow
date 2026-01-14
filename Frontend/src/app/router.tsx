@@ -13,9 +13,18 @@ import LawyerDashboard from "../modules/lawyer/pages/Dashboard";
 import FindLawyer from "../modules/client/pages/FindLawyer";
 import LawyerCases from "../modules/lawyer/pages/Cases";
 import LawyerHearings from "../modules/lawyer/pages/Hearings";
-import { RegistrarDashboard } from "../modules/registrar/pages/Dashboard";
+
 import { ViewCases } from "../modules/registrar/pages/viewCases";
 const rootRoute = createRootRoute({
+// import AdminDashboard from "../modules/admin/pages/Dashboard";
+import ClientProfile from "../modules/client/pages/ClientProfile";
+import ClientEditProfile from "../modules/client/pages/ClientEditProfile";
+import AiLegalGuidance from "../modules/lawyer/pages/AiLegalGuidance";
+
+// Only Registrar Dashboard Import
+import { RegistrarDashboard } from "../modules/registrar/pages/Dashboard";
+
+const rootRoute = createRootRoute({  
   component: () => <Outlet />,
 });
 const indexRoute = createRoute({
@@ -54,6 +63,12 @@ const lawyerDashboardRoute = createRoute({
   component: LawyerDashboard,
 });
 
+// export const adminDashboardRoute = createRoute({
+//   getParentRoute: () => rootRoute,
+//   path: "admin-dashboard",
+//   component: AdminDashboard,
+// });
+
 const lawyerCasesRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "lawyer-cases",
@@ -90,6 +105,22 @@ const viewCasesRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "view-cases",
   component: ViewCases,
+export const clientProfileRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/client-profile",
+  component: ClientProfile,
+});
+
+export const clienteditProfileRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/client-profile/edit",
+  component: ClientEditProfile,
+});
+
+export const lawyerAiGuidanceRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/lawyer-ai-guidance",
+  component: AiLegalGuidance,
 });
 
 const routeTree = rootRoute.addChildren([
@@ -99,11 +130,16 @@ const routeTree = rootRoute.addChildren([
   forgotPasswordRoute,
   clientDashboardRoute,
   lawyerDashboardRoute,
+  // adminDashboardRoute,
   lawyerCasesRoute,
   lawyerHearingsRoute,
+  lawyerAiGuidanceRoute,
   findLawyerRoute,
   registrarDashboardRoute, 
   viewCasesRoute, 
+  registrarDashboardRoute, // Added registrar dashboard to tree
+  clientProfileRoute,
+  clienteditProfileRoute,
 ]);
 
 export const router = createRouter({ routeTree });
