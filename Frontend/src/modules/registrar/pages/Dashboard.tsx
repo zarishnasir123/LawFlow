@@ -37,10 +37,10 @@ export function RegistrarDashboard({ logout }: RegistrarDashboardProps) {
   ];
 
   const pendingCases: CaseItem[] = [
-    { id: 'LC-2024-0245', title: 'رہائشی جائیداد کا تنازعہ', type: 'Civil', subtype: 'Property Dispute', lawyer: 'Adv. Fatima Ali', client: 'Ahmed Khan', submittedDate: '2025-01-12', submittedTime: '09:30 AM', status: 'pending', documents: 12, urgent: false },
-    { id: 'LC-2024-0246', title: 'خاندانی حقوق کا معاملہ', type: 'Family', subtype: 'Inheritance', lawyer: 'Adv. Muhammad Asif', client: 'Sara Ahmed', submittedDate: '2025-01-12', submittedTime: '10:15 AM', status: 'pending', documents: 8, urgent: true },
-    { id: 'LC-2024-0247', title: 'معاہدے کی خلاف ورزی', type: 'Civil', subtype: 'Contract Dispute', lawyer: 'Adv. Ali Hassan', client: 'Usman Malik', submittedDate: '2025-01-11', submittedTime: '02:45 PM', status: 'pending', documents: 15, urgent: false },
-    { id: 'LC-2024-0248', title: 'طلاق کی درخواست', type: 'Family', subtype: 'Divorce', lawyer: 'Adv. Ayesha Khan', client: 'Bilal Ahmed', submittedDate: '2025-01-11', submittedTime: '04:20 PM', status: 'under-review', documents: 10, urgent: false },
+    { id: 'LC-2024-0245', title: 'Residential Property Dispute', type: 'Civil', subtype: 'Property Dispute', lawyer: 'Adv. Fatima Ali', client: 'Ahmed Khan', submittedDate: '2025-01-12', submittedTime: '09:30 AM', status: 'pending', documents: 12, urgent: false },
+    { id: 'LC-2024-0246', title: 'Family Rights and Inheritance Case', type: 'Family', subtype: 'Inheritance', lawyer: 'Adv. Muhammad Asif', client: 'Sara Ahmed', submittedDate: '2025-01-12', submittedTime: '10:15 AM', status: 'pending', documents: 8, urgent: true },
+    { id: 'LC-2024-0247', title: 'Contract Breach and Violation', type: 'Civil', subtype: 'Contract Dispute', lawyer: 'Adv. Ali Hassan', client: 'Usman Malik', submittedDate: '2025-01-11', submittedTime: '02:45 PM', status: 'pending', documents: 15, urgent: false },
+    { id: 'LC-2024-0248', title: 'Divorce Petition Filing', type: 'Family', subtype: 'Divorce', lawyer: 'Adv. Ayesha Khan', client: 'Bilal Ahmed', submittedDate: '2025-01-11', submittedTime: '04:20 PM', status: 'under-review', documents: 10, urgent: false },
   ];
 
   const filteredCases = pendingCases.filter((item) => {
@@ -54,49 +54,49 @@ export function RegistrarDashboard({ logout }: RegistrarDashboardProps) {
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-900">
       <header className="bg-[#01411C] text-white sticky top-0 z-50 shadow-lg">
-        <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-3">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
+          <div className="flex items-center gap-2 sm:gap-3">
             <div className="bg-white/20 p-2 rounded-lg">
-              <FileText className="h-6 w-6 text-white" />
+              <FileText className="h-5 sm:h-6 w-5 sm:w-6 text-white" />
             </div>
             <div>
-              <h1 className="text-lg font-bold leading-none uppercase tracking-wider">LawFlow</h1>
-              <span className="text-[10px] text-green-200 uppercase tracking-widest">Registrar Portal</span>
+              <h1 className="text-base sm:text-lg font-bold leading-none uppercase tracking-wider">LawFlow</h1>
+              <span className="text-[9px] sm:text-[10px] text-green-200 uppercase tracking-widest">Registrar Portal</span>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
             <button className="p-2 hover:bg-white/10 rounded-full relative transition-colors">
-              <Bell className="h-5 w-5" />
+              <Bell className="h-4 sm:h-5 w-4 sm:w-5" />
               <span className="absolute top-1 right-1 bg-red-500 border-2 border-[#01411C] w-3 h-3 rounded-full" />
             </button>
             <div className="h-8 w-[1px] bg-white/20 mx-2" />
-            <button onClick={logout} className="flex items-center gap-2 px-3 py-2 hover:bg-white/10 rounded-lg transition-colors text-sm font-medium">
+            <button onClick={logout} className="flex items-center gap-2 px-3 py-2 hover:bg-white/10 rounded-lg transition-colors text-xs sm:text-sm font-medium">
               <LogOut className="h-4 w-4" />
-              Sign Out
+              <span className="hidden sm:inline">Sign Out</span>
             </button>
           </div>
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 py-8">
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 mb-8">
-          <div className="lg:col-span-4 flex items-end justify-between border-b border-slate-200 pb-4">
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 sm:gap-6 mb-6 sm:mb-8">
+          <div className="lg:col-span-4 flex flex-col sm:flex-row items-start sm:items-end justify-between border-b border-slate-200 pb-4">
             <div>
-              <h2 className="text-3xl font-bold text-slate-800">Dashboard Overview</h2>
-              <p className="text-slate-500">Welcome back, Registrar Muhammad Iqbal</p>
+              <h2 className="text-2xl sm:text-3xl font-bold text-slate-800">Dashboard Overview</h2>
+              <p className="text-sm sm:text-base text-slate-500">Welcome back, Registrar Muhammad Iqbal</p>
             </div>
             <div className="text-right hidden md:block">
-              <p className="text-sm font-medium text-slate-400 uppercase tracking-tighter">Current Date</p>
-              <p className="text-lg font-semibold text-slate-700">January 13, 2026</p>
+              <p className="text-xs sm:text-sm font-medium text-slate-400 uppercase tracking-tighter">Current Date</p>
+              <p className="text-base sm:text-lg font-semibold text-slate-700">January 13, 2026</p>
             </div>
           </div>
 
           {stats.map((stat, i) => (
-            <div key={i} className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 flex flex-col justify-between">
+            <div key={i} className="bg-white p-4 sm:p-5 rounded-2xl shadow-sm border border-slate-200 flex flex-col justify-between">
               <div className="flex justify-between items-start">
                 <div className={`${stat.color} p-2.5 rounded-xl shadow-lg shadow-current/10`}>
-                  <stat.icon className="h-5 w-5 text-white" />
+                  <stat.icon className="h-4 sm:h-5 w-4 sm:w-5 text-white" />
                 </div>
                 <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-2 py-1 rounded-full uppercase tracking-widest">
                   {stat.change}
