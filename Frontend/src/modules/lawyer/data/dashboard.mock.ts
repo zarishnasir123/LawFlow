@@ -65,7 +65,7 @@ export const lawyerDashboardQuickActions: QuickActionItem[] = [
     label: "Messages",
     icon: MessageCircle,
     className: "bg-[#01411C] hover:bg-[#024a23]",
-    to: "/lawyer-chat",
+    to: "/lawyer-messages",
   },
   {
     label: "Hearings",
