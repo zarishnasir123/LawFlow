@@ -1,170 +1,110 @@
-// import { useNavigate } from "@tanstack/react-router";
-// import {
-//   Users,
-//   UserCheck,
-//   Clock,
-//   CheckCircle,
-//   Bell,
-//   User,
-//   LogOut,
-//   Shield,
-//   Activity,
-// } from "lucide-react";
+import { useNavigate } from "@tanstack/react-router";
+import { Users, UserCheck, Clock, CheckCircle, Activity, Shield } from "lucide-react";
 
-// import DashboardLayout from "../../../shared/components/dashboard/DashboardLayout";
-// import StatCard from "../../../shared/components/dashboard/StatCard";
-// import RecentActivity from "../../../shared/components/dashboard/RecentActivity";
-// import type {
-//   DashboardStat,
-//   ActivityItem,
-// } from "../../../shared/types/dashboard";
+import { AdminHeader } from "../components/AdminHeader";
+import { ActionCard } from "../components/ActionCard";
+import { PendingVerificationList } from "../components/PendingVerificationList";
+import { RecentActivityList } from "../components/RecentActivity";
 
-// export default function AdminDashboard() {
-//   const navigate = useNavigate();
+import { adminDashboardStats, adminPendingVerifications, adminRecentActivity } from "../dashboard.mock";
 
-//   const stats: DashboardStat[] = [
-//     {
-//       label: "Pending Verifications",
-//       value: "12",
-//       icon: Clock,
-//       accentClassName: "bg-yellow-500",
-//     },
-//     {
-//       label: "Active Registrars",
-//       value: "8",
-//       icon: UserCheck,
-//       accentClassName: "bg-green-500",
-//     },
-//     {
-//       label: "Total Users",
-//       value: "1,248",
-//       icon: Users,
-//       accentClassName: "bg-blue-500",
-//     },
-//     {
-//       label: "Verified Today",
-//       value: "23",
-//       icon: CheckCircle,
-//       accentClassName: "bg-purple-500",
-//     },
-//   ];
 
-//   const activityItems: ActivityItem[] = [
-//     {
-//       id: 1,
-//       label: "Lawyer verification approved (Adv. Fatima Ali)",
-//       time: "5 minutes ago",
-//       type: "case",
-//     },
-//     {
-//       id: 2,
-//       label: "New registrar account created",
-//       time: "1 hour ago",
-//       type: "case",
-//     },
-//     {
-//       id: 3,
-//       label: "Client verification approved",
-//       time: "2 hours ago",
-//       type: "case",
-//     },
-//     {
-//       id: 4,
-//       label: "Registrar processed 5 case files",
-//       time: "3 hours ago",
-//       type: "case",
-//     },
-//   ];
+export default function AdminDashboardPage() {
+  const navigate = useNavigate();
 
-//   return (
-//     <DashboardLayout
-//       brandTitle="LawFlow"
-//       brandSubtitle="Admin Portal"
-//       actions={[
-//         {
-//           label: "Notifications",
-//           icon: Bell,
-//           onClick: () => navigate({ to: "/admin-notifications" }),
-//           badge: 3,
-//         },
-//         {
-//           label: "Profile",
-//           icon: User,
-//           onClick: () => navigate({ to: "/admin-profile" }),
-//         },
-//         {
-//           label: "Logout",
-//           icon: LogOut,
-//           onClick: () => navigate({ to: "/login" }),
-//         },
-//       ]}
-//     >
-//       {/* Welcome */}
-//       <div className="mb-6 flex items-center justify-between">
-//         <div>
-//           <h2 className="text-xl font-semibold text-gray-900">
-//             Welcome back, Admin
-//           </h2>
-//           <p className="text-sm text-gray-600">
-//             Monitor system activity and manage users efficiently.
-//           </p>
-//         </div>
-//         <Shield className="h-10 w-10 text-[#01411C] opacity-30" />
-//       </div>
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <AdminHeader
+        notificationCount={3}
+        onOpenNotifications={() => navigate({ to: "/admin-notifications" })}
+        onOpenProfile={() => navigate({ to: "/admin-profile" })}
+        onLogout={() => {
+          localStorage.clear();
+          navigate({ to: "/login" });
+        }}
+      />
 
-//       {/* Stats */}
-//       <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-//         {stats.map((stat) => (
-//           <StatCard key={stat.label} {...stat} />
-//         ))}
-//       </section>
+      <div className="container mx-auto px-6 py-8">
+        {/* Welcome */}
+        <div className="bg-white rounded-xl shadow-sm p-6 mb-8 border border-green-100">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-2xl font-bold text-[#01411C] mb-2">
+                Welcome back, Admin
+              </h2>
+              <p className="text-gray-600">Here's what's happening with LawFlow today.</p>
+            </div>
+            <Shield className="h-16 w-16 text-[#01411C] opacity-20" />
+          </div>
+        </div>
 
-//       {/* Quick Actions */}
-//       <section className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-//         <button
-//           onClick={() => navigate({ to: "/admin-verifications" })}
-//           className="rounded-xl border bg-white p-5 text-left hover:shadow-md transition"
-//         >
-//           <Clock className="mb-2 h-6 w-6 text-yellow-600" />
-//           <h3 className="font-semibold text-gray-900">
-//             Pending Verifications
-//           </h3>
-//           <p className="text-sm text-gray-600">
-//             Review and approve user registrations
-//           </p>
-//         </button>
+        {/* Stats */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+          {adminDashboardStats.map((s, idx) => {
+            const Icon = s.icon;
+            return (
+              <div key={idx} className="bg-white rounded-xl shadow-sm p-6">
+                <div className={`${s.colorClass} w-fit p-3 rounded-lg mb-4`}>
+                  <Icon className="h-6 w-6 text-white" />
+                </div>
+                <h3 className="text-2xl font-bold text-gray-900 mb-1">{s.value}</h3>
+                <p className="text-sm text-gray-600 mb-2">{s.title}</p>
+                <p className="text-xs text-gray-500">{s.change}</p>
+              </div>
+            );
+          })}
+        </div>
 
-//         <button
-//           onClick={() => navigate({ to: "/admin-registrars" })}
-//           className="rounded-xl border bg-white p-5 text-left hover:shadow-md transition"
-//         >
-//           <UserCheck className="mb-2 h-6 w-6 text-blue-600" />
-//           <h3 className="font-semibold text-gray-900">
-//             Manage Registrars
-//           </h3>
-//           <p className="text-sm text-gray-600">
-//             Create and manage registrar accounts
-//           </p>
-//         </button>
+        {/* Main Actions */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+          <ActionCard
+            title="Pending Verifications"
+            description="Review and approve user registrations"
+            badgeText="12 Pending"
+            icon={Clock}
+            iconBgClass="bg-yellow-100"
+            iconTextClass="text-yellow-600"
+            badgeClassName="bg-yellow-100 text-yellow-700"
+            onClick={() => navigate({ to: "/admin-verifications" })}
+          />
 
-//         <button
-//           onClick={() => navigate({ to: "/admin-reports" })}
-//           className="rounded-xl border bg-white p-5 text-left hover:shadow-md transition"
-//         >
-//           <Activity className="mb-2 h-6 w-6 text-purple-600" />
-//           <h3 className="font-semibold text-gray-900">
-//             System Reports
-//           </h3>
-//           <p className="text-sm text-gray-600">
-//             View analytics and system activity
-//           </p>
-//         </button>
-//       </section>
+          <ActionCard
+            title="Manage Registrars"
+            description="Create and manage registrar accounts"
+            badgeText="8 Active"
+            icon={UserCheck}
+            iconBgClass="bg-blue-100"
+            iconTextClass="text-blue-600"
+            badgeClassName="bg-blue-100 text-blue-700"
+            onClick={() => navigate({ to: "/admin-registrars" })}
+          />
 
-//       {/* Recent Activity */}
-//       <section className="mt-6">
-//         <RecentActivity items={activityItems} />
-//       </section>
-//     </DashboardLayout>
-//   );
-// }
+          <ActionCard
+            title="System Reports"
+            description="View system activity and analytics"
+            badgeText="View Reports"
+            icon={Activity}
+            iconBgClass="bg-purple-100"
+            iconTextClass="text-purple-600"
+            badgeClassName="bg-purple-100 text-purple-700"
+            onClick={() => navigate({ to: "/admin-statistics" })}
+          />
+        </div>
+
+        {/* Lists */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <PendingVerificationList
+            items={adminPendingVerifications}
+            onViewAll={() => navigate({ to: "/admin-verifications" })}
+            onReview={(item) => {
+              console.log("Review user:", item);
+              navigate({ to: "/admin-verifications" });
+            }}
+          />
+
+          <RecentActivityList items={adminRecentActivity} />
+        </div>
+      </div>
+    </div>
+  );
+}

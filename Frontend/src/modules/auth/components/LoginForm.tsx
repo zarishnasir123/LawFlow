@@ -5,12 +5,19 @@ import type { LoginPayload, LoginRole } from "../types";
 import PasswordField from "./PasswordField";
 import RoleSelector from "./RoleSelector";
 import TextField from "./TextField";
+import { DEFAULT_ADMIN } from "../mock/admin.default"; // ✅ ADD
 
 type LoginFormProps = {
   onForgotPassword?: () => void;
+
+  // ✅ optional handler from Login.tsx
+  onAdminLogin?: (email: string, password: string) => boolean;
 };
 
-export default function LoginForm({ onForgotPassword }: LoginFormProps) {
+export default function LoginForm({
+  onForgotPassword,
+  onAdminLogin,
+}: LoginFormProps) {
   const navigate = useNavigate();
   const role = useLoginStore((state) => state.role);
   const setRole = useLoginStore((state) => state.setRole);
@@ -29,32 +36,56 @@ export default function LoginForm({ onForgotPassword }: LoginFormProps) {
 
   const disabled = isSubmitting;
 
-  // --- FIXED SUBMIT FUNCTION ---
+  // --- SUBMIT FUNCTION (admin support added safely) ---
   const submit = (values: LoginPayload) => {
-  setEmail(values.email);
+    // ✅ If parent provided admin handler and it matched -> stop here
+    if (onAdminLogin?.(values.email, values.password)) {
+      return;
+    }
 
-  switch (role) {
-    case "client":
-      navigate({ to: "/client-dashboard" });
-      break;
+    setEmail(values.email);
 
-    case "lawyer":
-      navigate({ to: "/Lawyer-dashboard" }); 
-      break;
+    switch (role) {
+      case "client":
+        navigate({ to: "/client-dashboard" });
+        break;
 
-    case "registrar":
-      navigate({ to: "/registrar-dashboard" });
-      break;
+      case "lawyer":
+        navigate({ to: "/Lawyer-dashboard" });
+        break;
 
-    //  case "admin": // <-- added admin
-    //   navigate({ to: "/admin-dashboard" });
-    //   break;
+      case "registrar":
+        navigate({ to: "/registrar-dashboard" });
+        break;
 
-    default:
-      navigate({ to: "/login" });
-  }
-};
+      case "admin": {
+        // ✅ fallback admin check (in case Login.tsx didn't pass handler)
+        const ok =
+          values.email === DEFAULT_ADMIN.email &&
+          values.password === DEFAULT_ADMIN.password;
 
+        if (!ok) {
+          alert("Invalid admin email or password.");
+          return;
+        }
+
+        localStorage.setItem(
+          "user",
+          JSON.stringify({
+            email: DEFAULT_ADMIN.email,
+            role: DEFAULT_ADMIN.role,
+            name: DEFAULT_ADMIN.name,
+          })
+        );
+
+        navigate({ to: "/admin-dashboard" });
+        break;
+      }
+
+      default:
+        navigate({ to: "/login" });
+    }
+  };
 
   const roleOptions: Array<{ value: LoginRole; label: string }> = [
     { value: "client", label: "Client" },
@@ -64,7 +95,11 @@ export default function LoginForm({ onForgotPassword }: LoginFormProps) {
   ];
 
   return (
-    <form onSubmit={handleSubmit(submit)} className="space-y-6" autoComplete="off">
+    <form
+      onSubmit={handleSubmit(submit)}
+      className="space-y-6"
+      autoComplete="off"
+    >
       <RoleSelector<LoginRole>
         value={role}
         onChange={setRole}
@@ -105,6 +140,7 @@ export default function LoginForm({ onForgotPassword }: LoginFormProps) {
           <input type="checkbox" className="rounded border-gray-300" />
           Remember me
         </label>
+
         {onForgotPassword ? (
           <button
             type="button"
@@ -123,7 +159,6 @@ export default function LoginForm({ onForgotPassword }: LoginFormProps) {
       >
         {disabled ? "Logging in..." : "Login"}
       </button>
-
     </form>
   );
 }

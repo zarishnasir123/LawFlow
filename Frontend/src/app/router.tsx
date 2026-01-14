@@ -1,23 +1,37 @@
+// src/app/router.tsx
 import {
   createRootRoute,
   createRoute,
   createRouter,
   Outlet,
 } from "@tanstack/react-router";
+
 import Landing from "../modules/marketing/pages/Landing";
 import Register from "../modules/auth/pages/Register";
 import Login from "../modules/auth/pages/Login";
 import ForgotPassword from "../modules/auth/pages/ForgotPassword";
+
 import ClientDashboard from "../modules/client/pages/Dashboard";
 import ClientProfile from "../modules/client/pages/ClientProfile";
 import ClientEditProfile from "../modules/client/pages/ClientEditProfile";
+
 import LawyerDashboard from "../modules/lawyer/pages/Dashboard";
 import LawyerCases from "../modules/lawyer/pages/Cases";
 import LawyerHearings from "../modules/lawyer/pages/Hearings";
 import AiLegalGuidance from "../modules/lawyer/pages/AiLegalGuidance";
+
 import FindLawyer from "../modules/client/pages/FindLawyer";
+
 import { ViewCases } from "../modules/registrar/pages/viewCases";
 import { RegistrarDashboard } from "../modules/registrar/pages/Dashboard";
+
+// ✅ Admin pages (make sure these files exist and have `export default ...`)
+import AdminDashboardPage from "../modules/admin/pages/Dashboard";
+import Registrars from "../modules/admin/pages/Registrars";
+import Reports from "../modules/admin/pages/Reports";
+import Verifications from "../modules/admin/pages/Verifications";
+import Profile from "../modules/admin/pages/Profile";
+import Notifications from "../modules/admin/pages/Notifications";
 
 const rootRoute = createRootRoute({
   component: () => <Outlet />,
@@ -114,21 +128,70 @@ const registrarDashboardRoute = createRoute({
   ),
 });
 
+// ✅ Admin routes
+const adminDashboardRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "admin-dashboard",
+  component: AdminDashboardPage,
+});
+
+const adminRegistrarsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "admin-registrars",
+  component: Registrars,
+});
+
+const adminStatisticsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "admin-statistics",
+  component: Reports,
+});
+
+const adminVerificationsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "admin-verifications",
+  component: Verifications,
+});
+
+const adminProfileRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "admin-profile",
+  component: Profile,
+});
+
+const adminNotificationsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "admin-notifications",
+  component: Notifications,
+});
+
 const routeTree = rootRoute.addChildren([
   indexRoute,
   registerRoute,
   loginRoute,
   forgotPasswordRoute,
+
   clientDashboardRoute,
   clientProfileRoute,
   clientEditProfileRoute,
+
   lawyerDashboardRoute,
   lawyerCasesRoute,
   lawyerHearingsRoute,
   lawyerAiGuidanceRoute,
+
   findLawyerRoute,
+
   viewCasesRoute,
   registrarDashboardRoute,
+
+  // ✅ Admin routes added here
+  adminDashboardRoute,
+  adminRegistrarsRoute,
+  adminStatisticsRoute,
+  adminVerificationsRoute,
+  adminProfileRoute,
+  adminNotificationsRoute,
 ]);
 
 export const router = createRouter({ routeTree });
