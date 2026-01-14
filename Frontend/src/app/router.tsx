@@ -16,6 +16,7 @@ import LawyerHearings from "../modules/lawyer/pages/Hearings";
 // import AdminDashboard from "../modules/admin/pages/Dashboard";
 import ClientProfile from "../modules/client/pages/ClientProfile";
 import ClientEditProfile from "../modules/client/pages/ClientEditProfile";
+import AiLegalGuidance from "../modules/lawyer/pages/AiLegalGuidance";
 
 // Only Registrar Dashboard Import
 import { RegistrarDashboard } from "../modules/registrar/pages/Dashboard";
@@ -115,6 +116,12 @@ export const clienteditProfileRoute = createRoute({
   component: ClientEditProfile,
 });
 
+export const lawyerAiGuidanceRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/lawyer-ai-guidance",
+  component: AiLegalGuidance,
+});
+
 const routeTree = rootRoute.addChildren([
   indexRoute,
   registerRoute,
@@ -125,6 +132,7 @@ const routeTree = rootRoute.addChildren([
   // adminDashboardRoute,
   lawyerCasesRoute,
   lawyerHearingsRoute,
+  lawyerAiGuidanceRoute,
   findLawyerRoute,
   registrarDashboardRoute, // Added registrar dashboard to tree
   clientProfileRoute,
