@@ -37,6 +37,10 @@ import AdminVerificationsPage from "../modules/admin/pages/Verifications";
 import AdminProfilePage from "../modules/admin/pages/Profile";
 import AdminNotificationsPage from "../modules/admin/pages/Notifications";
 
+// ✅ NEW ADMIN REGISTRAR PAGES (ADD THESE)
+import CreateRegistrar from "../modules/admin/pages/CreateRegistrar";
+import EditRegistrar from "../modules/admin/pages/EditRegistrar";
+
 const rootRoute = createRootRoute({
   component: () => <Outlet />,
 });
@@ -179,6 +183,20 @@ const adminRegistrarsRoute = createRoute({
   component: AdminRegistrarsPage,
 });
 
+// ✅ NEW: CREATE REGISTRAR
+const adminCreateRegistrarRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "admin-registrars/create",
+  component: CreateRegistrar,
+});
+
+// ✅ NEW: EDIT REGISTRAR (TanStack $id)
+const adminEditRegistrarRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "admin-registrars/edit/$id",
+  component: EditRegistrar,
+});
+
 const adminStatisticsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "admin-statistics",
@@ -234,6 +252,11 @@ const routeTree = rootRoute.addChildren([
   // ✅ ADMIN
   adminDashboardRoute,
   adminRegistrarsRoute,
+
+  // ✅ NEW ADMIN REGISTRAR ROUTES
+  adminCreateRegistrarRoute,
+  adminEditRegistrarRoute,
+
   adminStatisticsRoute,
   adminVerificationsRoute,
   adminProfileRoute,
