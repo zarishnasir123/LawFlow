@@ -17,6 +17,7 @@ import ClientEditProfile from "../modules/client/pages/ClientEditProfile";
 import LawyerDashboard from "../modules/lawyer/pages/Dashboard";
 import LawyerCases from "../modules/lawyer/pages/Cases";
 import LawyerHearings from "../modules/lawyer/pages/Hearings";
+import ClientHearings from "../modules/client/pages/Hearings";
 import AiLegalGuidance from "../modules/lawyer/pages/AiLegalGuidance";
 import LawyerMessages from "../modules/lawyer/pages/Messages";
 import ChatDetail from "../modules/lawyer/pages/ChatDetail";
@@ -25,6 +26,7 @@ import ClientMessages from "../modules/client/pages/Messages";
 import ServiceCharges from "../modules/lawyer/pages/ServiceCharges";
 
 import FindLawyer from "../modules/client/pages/FindLawyer";
+import CaseTracking from "../modules/client/pages/CaseTracking";
 
 import { ViewCases } from "../modules/registrar/pages/viewCases";
 import { RegistrarDashboard } from "../modules/registrar/pages/Dashboard";
@@ -101,6 +103,12 @@ const lawyerHearingsRoute = createRoute({
   component: LawyerHearings,
 });
 
+const clientHearingsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "client-hearings",
+  component: ClientHearings,
+});
+
 const lawyerAiGuidanceRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "lawyer-ai-guidance",
@@ -142,6 +150,12 @@ export const findLawyerRoute = createRoute({
   path: "FindLawyer",
   component: FindLawyer,
 });
+export const casetrackingRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "case-tracking",
+  component: CaseTracking,
+});
+
 
 const viewCasesRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -220,6 +234,7 @@ const routeTree = rootRoute.addChildren([
   lawyerDashboardRoute,
   lawyerCasesRoute,
   lawyerHearingsRoute,
+  clientHearingsRoute,
   lawyerAiGuidanceRoute,
   serviceChargesRoute,
 
@@ -228,6 +243,7 @@ const routeTree = rootRoute.addChildren([
   lawyerChatDetailRoute,
   clientChatDetailRoute,
   findLawyerRoute,
+  casetrackingRoute,
   viewCasesRoute,
   registrarDashboardRoute,
 
