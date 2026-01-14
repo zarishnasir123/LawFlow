@@ -46,6 +46,10 @@ export default function LoginForm({ onForgotPassword }: LoginFormProps) {
       navigate({ to: "/registrar-dashboard" });
       break;
 
+    //  case "admin": // <-- added admin
+    //   navigate({ to: "/admin-dashboard" });
+    //   break;
+
     default:
       navigate({ to: "/login" });
   }

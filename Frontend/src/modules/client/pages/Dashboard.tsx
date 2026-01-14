@@ -158,7 +158,7 @@ export default function Dashboard() {
         {
           label: "Profile",
           icon: User,
-          onClick: () => navigate({ to: "/client-dashboard" }),
+          onClick: () => navigate({ to: "/client-profile" }),
         },
         {
           label: "Logout",
