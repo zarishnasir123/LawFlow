@@ -1,10 +1,10 @@
 import { 
   FileText, Clock, CheckCircle, Calendar, Bell, 
   LogOut, Search, Eye, AlertCircle 
-} from 'lucide-react'; // 'User' aur 'Filter' yahan se hata diye gaye hain
+} from 'lucide-react';
 import { useState } from 'react';
+import { useNavigate } from "@tanstack/react-router";
 
-// Interfaces for type safety
 interface CaseItem {
   id: string;
   title: string;
@@ -20,16 +20,15 @@ interface CaseItem {
 }
 
 interface RegistrarDashboardProps {
-  navigate: (page: string, data?: Record<string, unknown>) => void;
   logout: () => void;
 }
 
-
-export function RegistrarDashboard({ navigate, logout }: RegistrarDashboardProps) {
+export function RegistrarDashboard({ logout }: RegistrarDashboardProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
-  const [filterType, setFilterType] = useState('all'); // Warning fix: Ab ye filter function aur dropdown mein use ho raha hai
-
+  const [filterType, setFilterType] = useState('all'); 
+    const routerNavigate = useNavigate();
+  
   const stats = [
     { title: 'Pending Review', value: '28', icon: Clock, color: 'bg-amber-500', change: '+5 today' },
     { title: 'Processed Today', value: '15', icon: CheckCircle, color: 'bg-emerald-600', change: '60% approved' },
@@ -54,7 +53,6 @@ export function RegistrarDashboard({ navigate, logout }: RegistrarDashboardProps
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-900">
-      {/* Top Navigation Bar */}
       <header className="bg-[#01411C] text-white sticky top-0 z-50 shadow-lg">
         <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -68,7 +66,7 @@ export function RegistrarDashboard({ navigate, logout }: RegistrarDashboardProps
           </div>
 
           <div className="flex items-center gap-2">
-            <button onClick={() => navigate('notifications')} className="p-2 hover:bg-white/10 rounded-full relative transition-colors">
+            <button className="p-2 hover:bg-white/10 rounded-full relative transition-colors">
               <Bell className="h-5 w-5" />
               <span className="absolute top-1 right-1 bg-red-500 border-2 border-[#01411C] w-3 h-3 rounded-full" />
             </button>
@@ -82,7 +80,6 @@ export function RegistrarDashboard({ navigate, logout }: RegistrarDashboardProps
       </header>
 
       <main className="max-w-7xl mx-auto px-4 py-8">
-        {/* Welcome & Stats Row */}
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 mb-8">
           <div className="lg:col-span-4 flex items-end justify-between border-b border-slate-200 pb-4">
             <div>
@@ -113,7 +110,6 @@ export function RegistrarDashboard({ navigate, logout }: RegistrarDashboardProps
           ))}
         </div>
 
-        {/* Search & Action Bar */}
         <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row gap-4 mb-6">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
@@ -125,7 +121,6 @@ export function RegistrarDashboard({ navigate, logout }: RegistrarDashboardProps
             />
           </div>
           
-          {/* Status Filter */}
           <select 
             className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-sm outline-none focus:ring-2 focus:ring-[#01411C]"
             value={filterStatus}
@@ -136,7 +131,6 @@ export function RegistrarDashboard({ navigate, logout }: RegistrarDashboardProps
             <option value="under-review">Under Review</option>
           </select>
 
-          {/* Warning Fix: Added Case Type filter dropdown to use setFilterType */}
           <select 
             className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-sm outline-none focus:ring-2 focus:ring-[#01411C]"
             value={filterType}
@@ -148,7 +142,6 @@ export function RegistrarDashboard({ navigate, logout }: RegistrarDashboardProps
           </select>
         </div>
 
-        {/* Case Table Layout */}
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
@@ -198,10 +191,9 @@ export function RegistrarDashboard({ navigate, logout }: RegistrarDashboardProps
                         <FileText className="h-3 w-3" /> {item.documents} attachments
                       </div>
                     </td>
-                    <td className="px-6 py-5">
-                      {/* Maps to "review case file" Use Case */}
+                    <td className="px-6 py-5 text-center">
                       <button 
-                        onClick={() => navigate('review', { case: item })}
+                        onClick={() => routerNavigate({ to: '/view-cases' })}
                         className="w-full flex items-center justify-center gap-2 bg-[#01411C] hover:bg-[#025a27] text-white px-4 py-2.5 rounded-xl font-bold text-sm transition-all shadow-md active:scale-95"
                       >
                         <Eye className="h-4 w-4" /> Review Case
