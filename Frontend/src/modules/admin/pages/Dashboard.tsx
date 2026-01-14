@@ -1,13 +1,16 @@
 import { useNavigate } from "@tanstack/react-router";
-import { Users, UserCheck, Clock, CheckCircle, Activity, Shield } from "lucide-react";
+import { UserCheck, Clock, Activity, Shield } from "lucide-react";
 
 import { AdminHeader } from "../components/AdminHeader";
 import { ActionCard } from "../components/ActionCard";
 import { PendingVerificationList } from "../components/PendingVerificationList";
 import { RecentActivityList } from "../components/RecentActivity";
 
-import { adminDashboardStats, adminPendingVerifications, adminRecentActivity } from "../dashboard.mock";
-
+import {
+  adminDashboardStats,
+  adminPendingVerifications,
+  adminRecentActivity,
+} from "../dashboard.mock";
 
 export default function AdminDashboardPage() {
   const navigate = useNavigate();
@@ -32,7 +35,9 @@ export default function AdminDashboardPage() {
               <h2 className="text-2xl font-bold text-[#01411C] mb-2">
                 Welcome back, Admin
               </h2>
-              <p className="text-gray-600">Here's what's happening with LawFlow today.</p>
+              <p className="text-gray-600">
+                Here's what's happening with LawFlow today.
+              </p>
             </div>
             <Shield className="h-16 w-16 text-[#01411C] opacity-20" />
           </div>

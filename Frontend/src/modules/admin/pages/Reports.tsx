@@ -1,3 +1,3 @@
-export default function Reports() {
+export default function AdminStatisticPage() {
   return <div>Reports</div>;
 }

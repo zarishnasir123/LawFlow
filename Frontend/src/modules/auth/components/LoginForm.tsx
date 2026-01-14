@@ -5,19 +5,14 @@ import type { LoginPayload, LoginRole } from "../types";
 import PasswordField from "./PasswordField";
 import RoleSelector from "./RoleSelector";
 import TextField from "./TextField";
-import { DEFAULT_ADMIN } from "../mock/admin.default"; // ✅ ADD
+import { DEFAULT_ADMIN } from "../mock/admin.default";
 
 type LoginFormProps = {
   onForgotPassword?: () => void;
-
-  // ✅ optional handler from Login.tsx
   onAdminLogin?: (email: string, password: string) => boolean;
 };
 
-export default function LoginForm({
-  onForgotPassword,
-  onAdminLogin,
-}: LoginFormProps) {
+export default function LoginForm({ onForgotPassword, onAdminLogin }: LoginFormProps) {
   const navigate = useNavigate();
   const role = useLoginStore((state) => state.role);
   const setRole = useLoginStore((state) => state.setRole);
@@ -36,12 +31,9 @@ export default function LoginForm({
 
   const disabled = isSubmitting;
 
-  // --- SUBMIT FUNCTION (admin support added safely) ---
   const submit = (values: LoginPayload) => {
-    // ✅ If parent provided admin handler and it matched -> stop here
-    if (onAdminLogin?.(values.email, values.password)) {
-      return;
-    }
+    // ✅ if parent handler exists and matched, stop
+    if (onAdminLogin?.(values.email, values.password)) return;
 
     setEmail(values.email);
 
@@ -51,7 +43,7 @@ export default function LoginForm({
         break;
 
       case "lawyer":
-        navigate({ to: "/Lawyer-dashboard" });
+        navigate({ to: "/Lawyer-dashboard" }); // ✅ keep exactly same as router path
         break;
 
       case "registrar":
@@ -59,7 +51,6 @@ export default function LoginForm({
         break;
 
       case "admin": {
-        // ✅ fallback admin check (in case Login.tsx didn't pass handler)
         const ok =
           values.email === DEFAULT_ADMIN.email &&
           values.password === DEFAULT_ADMIN.password;
@@ -95,11 +86,7 @@ export default function LoginForm({
   ];
 
   return (
-    <form
-      onSubmit={handleSubmit(submit)}
-      className="space-y-6"
-      autoComplete="off"
-    >
+    <form onSubmit={handleSubmit(submit)} className="space-y-6" autoComplete="off">
       <RoleSelector<LoginRole>
         value={role}
         onChange={setRole}
