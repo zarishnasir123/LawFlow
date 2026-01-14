@@ -1,1 +1,3 @@
-<h1>this is registrar creation page</h1>
+export default function Registrars() {
+  return <div>Registrars</div>;
+}
