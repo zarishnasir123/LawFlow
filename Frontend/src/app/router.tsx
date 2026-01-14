@@ -129,6 +129,8 @@ const clientChatDetailRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "client-chat/$threadId",
   component: ClientChatDetail,
+});
+
 const serviceChargesRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "lawyer-service-charges",
