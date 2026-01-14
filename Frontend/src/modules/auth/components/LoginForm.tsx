@@ -5,12 +5,14 @@ import type { LoginPayload, LoginRole } from "../types";
 import PasswordField from "./PasswordField";
 import RoleSelector from "./RoleSelector";
 import TextField from "./TextField";
+import { DEFAULT_ADMIN } from "../mock/admin.default";
 
 type LoginFormProps = {
   onForgotPassword?: () => void;
+  onAdminLogin?: (email: string, password: string) => boolean;
 };
 
-export default function LoginForm({ onForgotPassword }: LoginFormProps) {
+export default function LoginForm({ onForgotPassword, onAdminLogin }: LoginFormProps) {
   const navigate = useNavigate();
   const role = useLoginStore((state) => state.role);
   const setRole = useLoginStore((state) => state.setRole);
@@ -29,32 +31,52 @@ export default function LoginForm({ onForgotPassword }: LoginFormProps) {
 
   const disabled = isSubmitting;
 
-  // --- FIXED SUBMIT FUNCTION ---
   const submit = (values: LoginPayload) => {
-  setEmail(values.email);
+    // ✅ if parent handler exists and matched, stop
+    if (onAdminLogin?.(values.email, values.password)) return;
 
-  switch (role) {
-    case "client":
-      navigate({ to: "/client-dashboard" });
-      break;
+    setEmail(values.email);
 
-    case "lawyer":
-      navigate({ to: "/Lawyer-dashboard" }); 
-      break;
+    switch (role) {
+      case "client":
+        navigate({ to: "/client-dashboard" });
+        break;
 
-    case "registrar":
-      navigate({ to: "/registrar-dashboard" });
-      break;
+      case "lawyer":
+        navigate({ to: "/Lawyer-dashboard" }); // ✅ keep exactly same as router path
+        break;
 
-    //  case "admin": // <-- added admin
-    //   navigate({ to: "/admin-dashboard" });
-    //   break;
+      case "registrar":
+        navigate({ to: "/registrar-dashboard" });
+        break;
 
-    default:
-      navigate({ to: "/login" });
-  }
-};
+      case "admin": {
+        const ok =
+          values.email === DEFAULT_ADMIN.email &&
+          values.password === DEFAULT_ADMIN.password;
 
+        if (!ok) {
+          alert("Invalid admin email or password.");
+          return;
+        }
+
+        localStorage.setItem(
+          "user",
+          JSON.stringify({
+            email: DEFAULT_ADMIN.email,
+            role: DEFAULT_ADMIN.role,
+            name: DEFAULT_ADMIN.name,
+          })
+        );
+
+        navigate({ to: "/admin-dashboard" });
+        break;
+      }
+
+      default:
+        navigate({ to: "/login" });
+    }
+  };
 
   const roleOptions: Array<{ value: LoginRole; label: string }> = [
     { value: "client", label: "Client" },
@@ -105,6 +127,7 @@ export default function LoginForm({ onForgotPassword }: LoginFormProps) {
           <input type="checkbox" className="rounded border-gray-300" />
           Remember me
         </label>
+
         {onForgotPassword ? (
           <button
             type="button"
@@ -123,7 +146,6 @@ export default function LoginForm({ onForgotPassword }: LoginFormProps) {
       >
         {disabled ? "Logging in..." : "Login"}
       </button>
-
     </form>
   );
 }
