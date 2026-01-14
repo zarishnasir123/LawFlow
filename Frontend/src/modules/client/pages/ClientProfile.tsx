@@ -37,7 +37,7 @@ export default function ClientProfile() {
         name={profile.fullName}
         memberSince="January 15, 2024"
         roleLabel="Client"
-        onEdit={() => navigate({ to: "/client-profile/edit" })}
+        onEdit={() => navigate({ to: "/client-profile-edit" })}
       >
         {/* Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
