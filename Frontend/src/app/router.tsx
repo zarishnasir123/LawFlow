@@ -20,6 +20,8 @@ import LawyerHearings from "../modules/lawyer/pages/Hearings";
 import AiLegalGuidance from "../modules/lawyer/pages/AiLegalGuidance";
 import LawyerMessages from "../modules/lawyer/pages/Messages";
 import ChatDetail from "../modules/lawyer/pages/ChatDetail";
+import ClientChatDetail from "../modules/client/pages/ChatDetail";
+import ClientMessages from "../modules/client/pages/Messages";
 import ServiceCharges from "../modules/lawyer/pages/ServiceCharges";
 
 import FindLawyer from "../modules/client/pages/FindLawyer";
@@ -111,12 +113,22 @@ const lawyerMessagesRoute = createRoute({
   component: LawyerMessages,
 });
 
+const clientMessagesRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "client-messages",
+  component: ClientMessages,
+});
+
 const lawyerChatDetailRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "lawyer-chat/$threadId",
   component: ChatDetail,
 });
 
+const clientChatDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "client-chat/$threadId",
+  component: ClientChatDetail,
 const serviceChargesRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "lawyer-service-charges",
@@ -210,7 +222,9 @@ const routeTree = rootRoute.addChildren([
   serviceChargesRoute,
 
   lawyerMessagesRoute,
+  clientMessagesRoute,
   lawyerChatDetailRoute,
+  clientChatDetailRoute,
   findLawyerRoute,
   viewCasesRoute,
   registrarDashboardRoute,

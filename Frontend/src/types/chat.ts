@@ -7,9 +7,26 @@ export interface ChatClient {
   status: ChatParticipantStatus;
 }
 
+export interface ChatLawyer {
+  id: string;
+  name: string;
+  initials: string;
+  status: ChatParticipantStatus;
+}
+
 export interface LawyerChatThread {
   id: string;
   client: ChatClient;
+  caseId?: string;
+  tags: string[];
+  lastMessage: string;
+  lastMessageAt: string; // ISO
+  unreadCount: number;
+}
+
+export interface ClientChatThread {
+  id: string;
+  lawyer: ChatClient;  // <-- note: lawyer instead of client
   caseId?: string;
   tags: string[];
   lastMessage: string;
