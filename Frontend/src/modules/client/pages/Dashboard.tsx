@@ -92,7 +92,7 @@ export default function Dashboard() {
       label: "Messages",
       icon: MessageCircle,
       className: "bg-[#01411C] hover:bg-[#024a23]",
-      to: "/client-dashboard",
+      to: "/client-messages",
     },
     {
       label: "Hearings",
