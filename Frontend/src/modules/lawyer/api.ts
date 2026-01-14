@@ -113,3 +113,38 @@ export async function askAiLegalGuidance(prompt: string): Promise<AiChatMessage>
   // For now, use mock response
   return generateAiMockResponse(prompt);
 }
+
+import type { ChatMessage, LawyerChatThread, SendMessagePayload } from "../../types/chat";
+import { mockMessagesByThread, mockThreads } from "./data/chat.mock";
+
+// Mocked APIs (backend later)
+export async function getLawyerThreads(): Promise<LawyerChatThread[]> {
+  return Promise.resolve(mockThreads);
+}
+
+export async function getThreadById(threadId: string): Promise<LawyerChatThread | null> {
+  const thread = mockThreads.find((t) => t.id === threadId);
+  return Promise.resolve(thread ?? null);
+}
+
+export async function getThreadMessages(threadId: string): Promise<ChatMessage[]> {
+  return Promise.resolve(mockMessagesByThread[threadId] ?? []);
+}
+
+export async function sendThreadMessage(
+  threadId: string,
+  payload: SendMessagePayload
+): Promise<ChatMessage> {
+  const msg: ChatMessage = {
+    id: `m-${Date.now()}`,
+    threadId,
+    sender: "lawyer",
+    text: payload.text,
+    createdAt: new Date().toISOString(),
+  };
+
+  const existing = mockMessagesByThread[threadId] ?? [];
+  mockMessagesByThread[threadId] = [...existing, msg];
+
+  return Promise.resolve(msg);
+}
