@@ -28,6 +28,29 @@ import FindLawyer from "../modules/client/pages/FindLawyer";
 
 import { ViewCases } from "../modules/registrar/pages/viewCases";
 import { RegistrarDashboard } from "../modules/registrar/pages/Dashboard";
+import ReviewCases from "../modules/registrar/pages/ReviewCases";
+import ApprovedCases from "../modules/registrar/pages/ApprovedCases";
+import ReturnCase from "../modules/registrar/pages/ReturnCase";
+
+const reviewCasesRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "review-cases/$caseId", // dynamic parameter
+  component: ReviewCases,
+});
+
+
+const approvedCasesRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "approved-cases",
+  component: ApprovedCases,
+});
+
+const returnCaseRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "return-case",
+  component: ReturnCase,
+});
+
 
 // ✅ ADMIN PAGES
 import AdminDashboardPage from "../modules/admin/pages/Dashboard";
@@ -230,6 +253,10 @@ const routeTree = rootRoute.addChildren([
   findLawyerRoute,
   viewCasesRoute,
   registrarDashboardRoute,
+  reviewCasesRoute,
+  approvedCasesRoute,
+ returnCaseRoute,
+
 
   // ✅ ADMIN
   adminDashboardRoute,
