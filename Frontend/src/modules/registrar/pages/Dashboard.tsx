@@ -196,7 +196,7 @@ export function RegistrarDashboard({ logout }: RegistrarDashboardProps) {
                         onClick={() => routerNavigate({ to: '/view-cases' })}
                         className="w-full flex items-center justify-center gap-2 bg-[#01411C] hover:bg-[#025a27] text-white px-4 py-2.5 rounded-xl font-bold text-sm transition-all shadow-md active:scale-95"
                       >
-                        <Eye className="h-4 w-4" /> Review Case
+                        <Eye className="h-4 w-4" /> View Cases
                       </button>
                     </td>
                   </tr>
