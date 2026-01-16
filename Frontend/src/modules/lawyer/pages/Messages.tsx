@@ -12,6 +12,7 @@ import {
 import DashboardLayout from "../../../shared/components/dashboard/DashboardLayout";
 import ChatMessageBubble from "../components/ChatMessageBubble";
 import ChatComposer from "../components/ChatComposer";
+import ClientInfoSidebar from "../components/ClientInfoSidebar";
 import type { LawyerChatThread, ChatMessage } from "../../../types/chat";
 import { getLawyerThreads, getThreadMessages, sendThreadMessage } from "../api";
 
@@ -23,6 +24,7 @@ export default function Messages() {
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [messagesLoading, setMessagesLoading] = useState(false);
+  const [showClientInfo, setShowClientInfo] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [uploadedFiles, setUploadedFiles] = useState<
     Array<{ name: string; size: number; uploadedAt: string }>
@@ -236,12 +238,14 @@ export default function Messages() {
           </div>
         </div>
 
-        {/* Right Side - Chat Area - Show on mobile when selected, always on tablet+ */}
+        {/* Right Side - Chat Area with Client Info */}
         <div
           className={`${
             selectedThreadId ? "flex sm:flex" : "hidden sm:flex"
-          } flex-1 bg-white rounded-xl overflow-hidden flex-col border-2 border-gray-300 shadow-sm`}
+          } flex-1 bg-white rounded-xl overflow-hidden flex-row border-2 border-gray-300 shadow-sm relative`}
         >
+          {/* Chat Area */}
+          <div className="flex-1 flex flex-col overflow-hidden">
           {!selectedThread ? (
             // Empty State
             <div className="flex-1 flex items-center justify-center">
@@ -269,7 +273,7 @@ export default function Messages() {
                       <ArrowLeft className="h-5 w-5" />
                     </button>
                   )}
-                  <div className="relative">
+                    <div className="relative cursor-pointer hover:opacity-80 transition" onClick={() => setShowClientInfo(!showClientInfo)}>
                     <div className="w-11 h-11 rounded-full bg-[#01411C] text-white text-sm font-bold flex items-center justify-center shadow-sm">
                       {selectedThread.client.initials}
                     </div>
@@ -302,8 +306,8 @@ export default function Messages() {
 
               {/* Chat Content Area */}
               <div className="flex-1 flex flex-col overflow-hidden bg-gray-50">
-                  {/* Messages - Only this scrolls */}
-                  <div className="flex-1 overflow-y-auto py-3 space-y-3 px-5 sm:px-8">
+                {/* Messages - Only this scrolls */}
+                <div className="flex-1 overflow-y-auto py-3 space-y-3 px-5 sm:px-8">
                     {messagesLoading ? (
                       <div className="flex items-center justify-center h-full">
                         <p className="text-gray-500 text-sm">Loading messages...</p>
@@ -365,6 +369,17 @@ export default function Messages() {
                   </div>
                 </div>
             </>
+          )}
+          </div>
+
+          {/* Client Info Sidebar - Smooth slide-in animation on right */}
+          {selectedThread && (
+            <ClientInfoSidebar
+              thread={selectedThread}
+              isOpen={showClientInfo}
+              onClose={() => setShowClientInfo(false)}
+              sharedDocuments={uploadedFiles}
+            />
           )}
         </div>
       </div>
