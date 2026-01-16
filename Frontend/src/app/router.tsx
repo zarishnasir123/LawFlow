@@ -44,6 +44,8 @@ import { RegistrarDashboard } from "../modules/registrar/pages/Dashboard";
 import ReviewCases from "../modules/registrar/pages/ReviewCases";
 import ApprovedCases from "../modules/registrar/pages/ApprovedCases";
 import ReturnCase from "../modules/registrar/pages/ReturnCase";
+import ScheduleHearing from "../modules/registrar/pages/ScheduleHearing";
+
 
 /* =====================================================
    ADMIN MODULE IMPORTS
@@ -254,6 +256,12 @@ const returnCaseRoute = createRoute({
   component: ReturnCase,
 });
 
+const scheduleHearingRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "schedule-hearing/$caseId",
+  component: ScheduleHearing,
+});
+
 /* =====================================================
    ADMIN ROUTES
    1. Dashboard - Main admin hub
@@ -352,6 +360,7 @@ const routeTree = rootRoute.addChildren([
   reviewCasesRoute,
   approvedCasesRoute,
   returnCaseRoute,
+  scheduleHearingRoute,
 
   // Admin Routes
   adminDashboardRoute,
