@@ -30,6 +30,8 @@ import CaseTracking from "../modules/client/pages/CaseTracking";
    ===================================================== */
 import LawyerDashboard from "../modules/lawyer/pages/Dashboard";
 import LawyerCases from "../modules/lawyer/pages/Cases";
+import ReturnedCases from "../modules/lawyer/pages/ReturnedCases";
+import ReturnedCaseDetail from "../modules/lawyer/pages/ReturnedCaseDetail";
 import LawyerHearings from "../modules/lawyer/pages/Hearings";
 import LawyerMessages from "../modules/lawyer/pages/Messages";
 import ChatDetail from "../modules/lawyer/pages/ChatDetail";
@@ -178,6 +180,18 @@ const lawyerCasesRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "lawyer-cases",
   component: LawyerCases,
+});
+
+const lawyerReturnedCasesRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "lawyer-returned-cases",
+  component: ReturnedCases,
+});
+
+const lawyerReturnedCaseDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "lawyer-case-detail/$caseId",
+  component: ReturnedCaseDetail,
 });
 
 const lawyerHearingsRoute = createRoute({
@@ -348,6 +362,8 @@ const routeTree = rootRoute.addChildren([
   // Lawyer Routes
   lawyerDashboardRoute,
   lawyerCasesRoute,
+  lawyerReturnedCasesRoute,
+  lawyerReturnedCaseDetailRoute,
   lawyerHearingsRoute,
   lawyerMessagesRoute,
   lawyerChatDetailRoute,

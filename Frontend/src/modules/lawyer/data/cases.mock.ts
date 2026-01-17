@@ -1,3 +1,7 @@
+// Case interface with support for returned cases
+// Returned cases are cases that were sent back by the registrar for corrections
+// returnedReason: explains why the registrar returned the case
+// returnedDate: when the case was returned to the lawyer
 interface Case {
   id: string;
   caseNumber: string;
@@ -6,7 +10,7 @@ interface Case {
   clientPhone: string;
   clientEmail: string;
   caseType: "civil" | "family";
-  status: "active" | "pending" | "closed" | "on-hold";
+  status: "active" | "pending" | "closed" | "on-hold" | "returned";
   filedDate: string;
   description: string;
   oppositeParty: string;
@@ -15,6 +19,9 @@ interface Case {
   documents: number;
   totalFee: number;
   paidAmount: number;
+  // Fields for returned cases (from registrar)
+  returnedReason?: string;
+  returnedDate?: string;
 }
 
 export const getInitialCases = (): Case[] => [
@@ -161,5 +168,67 @@ export const getInitialCases = (): Case[] => [
     documents: 11,
     totalFee: 140000,
     paidAmount: 85000,
+  },
+  // Returned Cases: Cases sent back by registrar with corrections/additional documents needed
+  // The lawyer must address the returned reason and resubmit the case for acceptance
+  {
+    id: "C-009",
+    caseNumber: "LC-2024-0156",
+    caseTitle: "Business Dispute Settlement",
+    clientName: "Fahad Malik",
+    clientPhone: "+92-300-9012345",
+    clientEmail: "fahad.malik@email.com",
+    caseType: "civil",
+    status: "returned",
+    filedDate: "August 15, 2024",
+    description: "Dispute over partnership dissolution and asset distribution",
+    oppositeParty: "Tariq Ahmed (Business Partner)",
+    nextHearing: "Not scheduled",
+    progress: 20,
+    documents: 9,
+    totalFee: 220000,
+    paidAmount: 110000,
+    returnedReason: "Incomplete documentation. Please provide additional evidence of partnership agreement and financial records.",
+    returnedDate: "January 10, 2025",
+  },
+  {
+    id: "C-010",
+    caseNumber: "LC-2024-0198",
+    caseTitle: "Inheritance Rights Case",
+    clientName: "Noor Akhtar",
+    clientPhone: "+92-300-1234567",
+    clientEmail: "noor.akhtar@email.com",
+    caseType: "family",
+    status: "returned",
+    filedDate: "September 1, 2024",
+    description: "Claim for inheritance rights from deceased father's estate",
+    oppositeParty: "Muhammad Akhtar (Executor)",
+    nextHearing: "Not scheduled",
+    progress: 15,
+    documents: 7,
+    totalFee: 105000,
+    paidAmount: 50000,
+    returnedReason: "Required certified copy of death certificate and original will missing. Resubmit with all necessary documents.",
+    returnedDate: "January 8, 2025",
+  },
+  {
+    id: "C-011",
+    caseNumber: "LC-2024-0212",
+    caseTitle: "Land Dispute Resolution",
+    clientName: "Khalid Hussain",
+    clientPhone: "+92-300-3456789",
+    clientEmail: "khalid.h@email.com",
+    caseType: "civil",
+    status: "returned",
+    filedDate: "June 25, 2024",
+    description: "Boundary dispute with neighboring property owner",
+    oppositeParty: "Ali Raza",
+    nextHearing: "Not scheduled",
+    progress: 25,
+    documents: 11,
+    totalFee: 185000,
+    paidAmount: 100000,
+    returnedReason: "Survey report needs official stamp from district surveyor. Please resubmit with proper documentation.",
+    returnedDate: "January 12, 2025",
   },
 ];
