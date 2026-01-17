@@ -13,11 +13,13 @@ import {
   Users,
   DollarSign,
   Pause,
+  AlertCircle,
 } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
 import DashboardLayout from "../../../shared/components/dashboard/DashboardLayout";
 import { getInitialCases } from "../data/cases.mock";
 
+// Case interface matching mock data
 interface Case {
   id: string;
   caseNumber: string;
@@ -26,7 +28,7 @@ interface Case {
   clientPhone: string;
   clientEmail: string;
   caseType: "civil" | "family";
-  status: "active" | "pending" | "closed" | "on-hold";
+  status: "active" | "pending" | "closed" | "on-hold" | "returned";
   filedDate: string;
   description: string;
   oppositeParty: string;
@@ -35,10 +37,14 @@ interface Case {
   documents: number;
   totalFee: number;
   paidAmount: number;
+  returnedReason?: string;
+  returnedDate?: string;
 }
 
 const mockCases: Case[] = getInitialCases();
 
+// Returns the appropriate icon for each case status
+// Returned cases show an AlertCircle icon in red to indicate action needed
 const getStatusIcon = (status: string) => {
   switch (status) {
     case "active":
@@ -49,11 +55,15 @@ const getStatusIcon = (status: string) => {
       return <Pause className="w-5 h-5 text-orange-600" />;
     case "closed":
       return <CheckCircle className="w-5 h-5 text-gray-600" />;
+    case "returned":
+      return <AlertCircle className="w-5 h-5 text-red-600" />;
     default:
       return null;
   }
 };
 
+// Returns the appropriate color classes for each case status
+// Returned cases use red styling to highlight attention needed
 const getStatusColor = (status: string) => {
   switch (status) {
     case "active":
@@ -64,6 +74,8 @@ const getStatusColor = (status: string) => {
       return "bg-orange-100 text-orange-800";
     case "closed":
       return "bg-gray-100 text-gray-800";
+    case "returned":
+      return "bg-red-100 text-red-800";
     default:
       return "bg-gray-100 text-gray-800";
   }
@@ -72,11 +84,10 @@ const getStatusColor = (status: string) => {
 export default function LawyerCases() {
   const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState("");
-  const [filterStatus, setFilterStatus] = useState<"all" | "active" | "pending" | "on-hold" | "closed">("active");
+  const [filterStatus, setFilterStatus] = useState<"all" | "active" | "pending" | "on-hold" | "closed" | "returned">("active");
 
   const filteredCases = mockCases.filter((caseItem) => {
     const matchesSearch =
-      caseItem.caseNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
       caseItem.caseTitle.toLowerCase().includes(searchTerm.toLowerCase()) ||
       caseItem.clientName.toLowerCase().includes(searchTerm.toLowerCase());
 
@@ -87,6 +98,7 @@ export default function LawyerCases() {
 
   const activeCasesCount = mockCases.filter((c) => c.status === "active").length;
   const pendingCasesCount = mockCases.filter((c) => c.status === "pending").length;
+  const returnedCasesCount = mockCases.filter((c) => c.status === "returned").length;
   const totalCasesCount = mockCases.length;
 
   return (
@@ -97,13 +109,13 @@ export default function LawyerCases() {
         {
           label: "Notifications",
           icon: Bell,
-          onClick: () => navigate({ to: "/lawyer-dashboard" }),
+          onClick: () => navigate({ to: "/Lawyer-dashboard" }),
           badge: 3,
         },
         {
           label: "Profile",
           icon: User,
-          onClick: () => navigate({ to: "/lawyer-dashboard" }),
+          onClick: () => navigate({ to: "/Lawyer-dashboard" }),
         },
         {
           label: "Logout",
@@ -122,7 +134,8 @@ export default function LawyerCases() {
         </div>
 
         {/* Statistics Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {/* Shows case counts: Active, Pending, Returned (needs attention), and Total */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div className="bg-white border border-gray-200 rounded-lg p-4">
             <div className="flex items-center justify-between">
               <div>
@@ -147,6 +160,19 @@ export default function LawyerCases() {
             </div>
           </div>
 
+          {/* Returned Cases Stat Card */}
+          <div className="bg-white border border-red-200 rounded-lg p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-600">Returned Cases</p>
+                <p className="text-2xl font-bold text-red-600">
+                  {returnedCasesCount}
+                </p>
+              </div>
+              <AlertCircle className="w-10 h-10 text-red-500" />
+            </div>
+          </div>
+
           <div className="bg-white border border-gray-200 rounded-lg p-4">
             <div className="flex items-center justify-between">
               <div>
@@ -167,7 +193,7 @@ export default function LawyerCases() {
             <Search className="absolute left-3 top-3 w-5 h-5 text-gray-400" />
             <input
               type="text"
-              placeholder="Search by case number, title, or client name..."
+              placeholder="Search by case title or client name..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
@@ -176,7 +202,7 @@ export default function LawyerCases() {
 
           {/* Filter */}
           <div className="flex flex-wrap gap-2">
-            {["all", "active", "pending", "on-hold", "closed"].map(
+            {["all", "active", "pending", "on-hold", "returned", "closed"].map(
               (status) => (
                 <button
                   key={status}
@@ -187,6 +213,7 @@ export default function LawyerCases() {
                         | "active"
                         | "pending"
                         | "on-hold"
+                        | "returned"
                         | "closed"
                     )
                   }
@@ -211,13 +238,29 @@ export default function LawyerCases() {
                 key={caseItem.id}
                 className="bg-white border border-gray-200 rounded-lg p-6 hover:shadow-lg transition"
               >
+                {/* Returned Case Alert - Displays prominent alert when case is returned by registrar */}
+                {/* Shows the reason for return and the date returned */}
+                {caseItem.status === "returned" && (
+                  <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg flex items-start gap-3">
+                    <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <p className="font-semibold text-red-900">Case Returned</p>
+                      <p className="text-red-800 text-sm mt-1">
+                        {caseItem.returnedReason}
+                      </p>
+                      {caseItem.returnedDate && (
+                        <p className="text-red-700 text-xs mt-2">
+                          Returned on: {caseItem.returnedDate}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 {/* Case Header */}
                 <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-6 pb-4 border-b border-gray-200">
                   <div className="flex-1">
                     <div className="flex flex-wrap items-center gap-2 mb-2">
-                      <h3 className="text-xl font-bold text-gray-900">
-                        {caseItem.caseNumber}
-                      </h3>
                       <span
                         className={`px-3 py-1 rounded-full text-xs font-semibold inline-flex items-center gap-1 ${getStatusColor(
                           caseItem.status
