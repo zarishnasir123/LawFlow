@@ -32,6 +32,7 @@ import LawyerDashboard from "../modules/lawyer/pages/Dashboard";
 import LawyerCases from "../modules/lawyer/pages/Cases";
 import ReturnedCases from "../modules/lawyer/pages/ReturnedCases";
 import ReturnedCaseDetail from "../modules/lawyer/pages/ReturnedCaseDetail";
+import CreateCase from "../modules/lawyer/pages/CreateCase";
 import LawyerHearings from "../modules/lawyer/pages/Hearings";
 import LawyerMessages from "../modules/lawyer/pages/Messages";
 import ChatDetail from "../modules/lawyer/pages/ChatDetail";
@@ -180,6 +181,12 @@ const lawyerCasesRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "lawyer-cases",
   component: LawyerCases,
+});
+
+const lawyerCreateCaseRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "lawyer-create-case",
+  component: CreateCase,
 });
 
 const lawyerReturnedCasesRoute = createRoute({
@@ -362,6 +369,7 @@ const routeTree = rootRoute.addChildren([
   // Lawyer Routes
   lawyerDashboardRoute,
   lawyerCasesRoute,
+  lawyerCreateCaseRoute,
   lawyerReturnedCasesRoute,
   lawyerReturnedCaseDetailRoute,
   lawyerHearingsRoute,
