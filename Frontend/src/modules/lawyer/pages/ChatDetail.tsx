@@ -3,9 +3,6 @@ import { useParams, useNavigate } from "@tanstack/react-router";
 import {
   Search,
   FileText,
-  MessageSquare,
-  Users,
-  Settings,
   MoreVertical,
   MessageCircle,
 } from "lucide-react";
@@ -23,7 +20,6 @@ export default function ChatDetail() {
   const [activeTab, setActiveTab] = useState<"messages" | "participants">(
     "messages"
   );
-  const [sidebarOpen, setSidebarOpen] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Scroll to bottom when messages change
