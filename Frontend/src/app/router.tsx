@@ -33,6 +33,8 @@ import LawyerCases from "../modules/lawyer/pages/Cases";
 import ReturnedCases from "../modules/lawyer/pages/ReturnedCases";
 import ReturnedCaseDetail from "../modules/lawyer/pages/ReturnedCaseDetail";
 import CreateCase from "../modules/lawyer/pages/CreateCase";
+import LawyerProfile from "../modules/lawyer/pages/LawyerProfile";
+import LawyerProfileEdit from "../modules/lawyer/pages/LawyerProfileEdit";
 import LawyerHearings from "../modules/lawyer/pages/Hearings";
 import LawyerMessages from "../modules/lawyer/pages/Messages";
 import ChatDetail from "../modules/lawyer/pages/ChatDetail";
@@ -231,6 +233,18 @@ const serviceChargesRoute = createRoute({
   component: ServiceCharges,
 });
 
+const lawyerProfileRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "lawyer-profile",
+  component: LawyerProfile,
+});
+
+const lawyerProfileEditRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "lawyer-profile/edit",
+  component: LawyerProfileEdit,
+});
+
 /* =====================================================
    REGISTRAR ROUTES
    1. Dashboard - Main registrar hub
@@ -372,6 +386,8 @@ const routeTree = rootRoute.addChildren([
   lawyerCreateCaseRoute,
   lawyerReturnedCasesRoute,
   lawyerReturnedCaseDetailRoute,
+  lawyerProfileRoute,
+  lawyerProfileEditRoute,
   lawyerHearingsRoute,
   lawyerMessagesRoute,
   lawyerChatDetailRoute,
