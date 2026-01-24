@@ -1,17 +1,56 @@
-import { useEffect, useState, useMemo } from "react";
+import { useMemo, useState, useEffect, useRef } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { Bell, User, LogOut, Search } from "lucide-react";
+import {
+  Bell,
+  User,
+  LogOut,
+  Search,
+  MessageCircle,
+  ArrowLeft,
+  Download,
+} from "lucide-react";
 import DashboardLayout from "../../../shared/components/dashboard/DashboardLayout";
-import type { ClientChatThread } from "../../../types/chat";
-import { getClientThreads } from "../api"; // Client-side API
+import ChatMessageBubble from "../components/ChatMessageBubble";
+import ChatComposer from "../components/ChatComposer";
+import LawyerInfoSidebar from "../components/lawyerInfoSidebar";
+import type { ClientChatThread, ChatMessage } from "../../../types/chat";
+import {
+  getClientThreads,
+  getClientThreadMessages,
+  sendClientThreadMessage,
+} from "../api"; // ✅ Fixed imports
 
 export default function ClientMessages() {
   const navigate = useNavigate();
   const [threads, setThreads] = useState<ClientChatThread[]>([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
+  const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [messagesLoading, setMessagesLoading] = useState(false);
+  const [showLawyerInfo, setShowLawyerInfo] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [uploadedFiles, setUploadedFiles] = useState<
+    Array<{ name: string; size: number; uploadedAt: string }>
+  >([]);
 
-  // Load all threads for client
+  // ✅ Format last seen
+  const formatLastSeen = (timestamp: string): string => {
+    const date = new Date(timestamp);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+
+    if (diffMins < 1) return "Just now";
+    if (diffMins < 60) return `${diffMins}m ago`;
+    if (diffHours < 24) return `${diffHours}h ago`;
+    if (diffDays < 7) return `${diffDays}d ago`;
+    return date.toLocaleDateString();
+  };
+
+  // ✅ Load all client threads
   useEffect(() => {
     const loadThreads = async () => {
       setLoading(true);
@@ -27,22 +66,66 @@ export default function ClientMessages() {
     loadThreads();
   }, []);
 
-  // Filter threads by search
+  // ✅ Load messages when a thread is selected
+  useEffect(() => {
+    if (!selectedThreadId) {
+      setMessages([]);
+      return;
+    }
+
+    const loadMessages = async () => {
+      setMessagesLoading(true);
+      try {
+        const data = await getClientThreadMessages(selectedThreadId);
+        setMessages(data);
+      } catch (error) {
+        console.error("Error loading messages:", error);
+      } finally {
+        setMessagesLoading(false);
+      }
+    };
+
+    loadMessages();
+  }, [selectedThreadId]);
+
+  // ✅ Auto-scroll
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  // ✅ Filter threads
   const filteredThreads = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return threads;
-    return threads.filter((t) => {
-      return (
-        t.lawyer.name.toLowerCase().includes(q) ||
-        t.tags.join(" ").toLowerCase().includes(q) ||
-        (t.caseId ?? "").toLowerCase().includes(q)
-      );
-    });
+    return threads.filter((t) =>
+      t.lawyer.name.toLowerCase().includes(q)
+    );
   }, [threads, search]);
 
-  // Navigate to selected thread
-  const selectThread = (threadId: string) => {
-    navigate({ to: `/client-chat/${threadId}` });
+  const selectedThread = threads.find((t) => t.id === selectedThreadId);
+
+  // ✅ Handle sending message
+  const handleSendMessage = async (text: string) => {
+    if (!selectedThreadId) return;
+    try {
+      const newMsg = await sendClientThreadMessage(selectedThreadId, { text });
+      setMessages((prev) => [...prev, newMsg]);
+    } catch (error) {
+      console.error("Error sending message:", error);
+    }
+  };
+
+  // ✅ File upload simulation
+  const handleFileUpload = (files: File[]) => {
+    const newFiles = files.map((file) => ({
+      name: file.name,
+      size: file.size,
+      uploadedAt: new Date().toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+      }),
+    }));
+    setUploadedFiles((prev) => [...prev, ...newFiles]);
   };
 
   return (
@@ -50,66 +133,109 @@ export default function ClientMessages() {
       brandTitle="LawFlow"
       brandSubtitle="Your Messages"
       actions={[
-        { label: "Notifications", icon: Bell, onClick: () => navigate({ to: "/client-dashboard" }), badge: 3 },
-        { label: "Profile", icon: User, onClick: () => navigate({ to: "/client-profile" }) },
-        { label: "Logout", icon: LogOut, onClick: () => navigate({ to: "/login" }) },
+        {
+          label: "Notifications",
+          icon: Bell,
+          onClick: () => navigate({ to: "/client-dashboard" }),
+          badge: 3,
+        },
+        {
+          label: "Profile",
+          icon: User,
+          onClick: () => navigate({ to: "/client-profile" }),
+        },
+        {
+          label: "Logout",
+          icon: LogOut,
+          onClick: () => navigate({ to: "/login" }),
+        },
       ]}
     >
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 h-[calc(100vh-180px)]">
+      <div className="flex gap-4 h-[calc(100vh-130px)] lg:gap-5 p-2">
         {/* Sidebar */}
-        <div className="md:col-span-1 bg-white rounded-lg shadow flex flex-col overflow-hidden">
-          <div className="p-4 border-b border-gray-200">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">Conversations</h2>
+        <div
+          className={`${
+            selectedThreadId ? "hidden sm:flex" : "flex"
+          } w-full sm:w-72 lg:w-80 bg-white rounded-xl overflow-hidden flex-col border-2 border-gray-300 shadow-sm`}
+        >
+          <div className="px-5 py-4 border-b-2 border-gray-300 bg-gradient-to-r from-gray-50 to-white">
+            <h2 className="text-base font-bold text-gray-900 mb-4">
+              Conversations
+            </h2>
             <div className="relative">
-              <Search className="absolute left-3 top-3 w-4 h-4 text-gray-400" />
+              <Search className="absolute left-3 top-3 w-4 h-4 text-gray-500" />
               <input
                 type="text"
                 placeholder="Search conversations..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#01411C]"
+                className="w-full pl-10 pr-4 py-2.5 border-2 border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#01411C]/30 focus:border-[#01411C] text-sm bg-white"
               />
             </div>
           </div>
 
+          {/* Thread list */}
           <div className="flex-1 overflow-y-auto">
             {loading ? (
-              <div className="p-4 text-center text-gray-500 text-sm">Loading conversations...</div>
+              <div className="p-4 text-center text-gray-500 text-sm">
+                Loading conversations...
+              </div>
             ) : filteredThreads.length === 0 ? (
               <div className="p-4 text-center text-gray-500 text-sm">
-                {threads.length === 0 ? "No conversations yet" : "No matching conversations"}
+                {threads.length === 0
+                  ? "No conversations yet"
+                  : "No matching conversations"}
               </div>
             ) : (
               filteredThreads.map((thread) => (
                 <button
                   key={thread.id}
-                  onClick={() => selectThread(thread.id)}
-                  className="w-full p-4 text-left border-b border-gray-100 hover:bg-green-50 active:bg-green-100 transition"
+                  onClick={() => setSelectedThreadId(thread.id)}
+                  className={`w-full px-5 py-3.5 text-left border-b-2 border-gray-300 hover:bg-green-50/50 transition ${
+                    selectedThreadId === thread.id
+                      ? "bg-green-50/80 border-l-4 border-l-[#01411C]"
+                      : ""
+                  }`}
                 >
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 rounded-full bg-[#01411C] text-white text-xs font-bold flex items-center justify-center flex-shrink-0">
-                          {thread.lawyer.initials}
-                        </div>
-                        <h3 className="font-semibold text-gray-900 text-sm truncate">{thread.lawyer.name}</h3>
+                  <div className="flex items-center gap-3">
+                    <div className="relative flex-shrink-0">
+                      <div className="w-10 h-10 rounded-full bg-[#01411C] text-white text-xs font-bold flex items-center justify-center">
+                        {thread.lawyer.initials}
                       </div>
-                      <p className="text-xs text-gray-500 mt-1 truncate">{thread.lastMessage}</p>
-                      {thread.caseId && <p className="text-xs text-gray-400 mt-1">{thread.caseId}</p>}
+                      <div
+                        className={`absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border-2 border-white ${
+                          thread.lawyer.status === "online"
+                            ? "bg-green-500"
+                            : "bg-gray-400"
+                        }`}
+                      ></div>
                     </div>
-                    {thread.unreadCount > 0 && (
-                      <span className="ml-2 bg-red-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center flex-shrink-0">
-                        {thread.unreadCount}
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="flex gap-1 mt-2 flex-wrap">
-                    {thread.tags.map((tag) => (
-                      <span key={tag} className="text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded">
-                        {tag}
-                      </span>
-                    ))}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between gap-2">
+                        <h3 className="font-semibold text-gray-900 text-sm truncate">
+                          {thread.lawyer.name}
+                        </h3>
+                        {thread.unreadCount > 0 && (
+                          <span className="bg-red-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center flex-shrink-0">
+                            {thread.unreadCount}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-gray-500 truncate mt-1">
+                        {thread.lastMessage}
+                      </p>
+                      <p
+                        className={`text-xs mt-1 ${
+                          thread.lawyer.status === "online"
+                            ? "text-green-600 font-medium"
+                            : "text-gray-500"
+                        }`}
+                      >
+                        {thread.lawyer.status === "online"
+                          ? "Online"
+                          : `Last seen ${formatLastSeen(thread.lastMessageAt)}`}
+                      </p>
+                    </div>
                   </div>
                 </button>
               ))
@@ -117,12 +243,152 @@ export default function ClientMessages() {
           </div>
         </div>
 
-        {/* Main Content */}
-        <div className="md:col-span-2 bg-white rounded-lg shadow flex items-center justify-center">
-          <div className="text-center text-gray-500">
-            <p className="text-lg font-semibold mb-2">Select a conversation</p>
-            <p className="text-sm">Choose a lawyer from the list to start messaging</p>
+        {/* Chat Area */}
+        <div
+          className={`${
+            selectedThreadId ? "flex sm:flex" : "hidden sm:flex"
+          } flex-1 bg-white rounded-xl overflow-hidden flex-row border-2 border-gray-300 shadow-sm relative`}
+        >
+          <div className="flex-1 flex flex-col overflow-hidden">
+            {!selectedThread ? (
+              <div className="flex-1 flex items-center justify-center">
+                <div className="text-center text-gray-500">
+                  <MessageCircle className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+                  <p className="text-lg font-semibold mb-2">
+                    Select a conversation
+                  </p>
+                  <p className="text-sm">
+                    Choose a lawyer from the list to start messaging
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <>
+                {/* Header */}
+                <div className="flex-shrink-0 bg-gradient-to-r from-gray-50 to-white border-b-2 border-gray-300 px-5 py-4">
+                  <div className="flex items-center gap-4">
+                    {selectedThreadId && (
+                      <button
+                        onClick={() => setSelectedThreadId(null)}
+                        className="sm:hidden text-gray-600 hover:text-[#01411C] transition hover:bg-gray-100 p-1.5 rounded-lg"
+                        title="Back"
+                      >
+                        <ArrowLeft className="h-5 w-5" />
+                      </button>
+                    )}
+                    <div
+                      className="relative cursor-pointer hover:opacity-80 transition"
+                      onClick={() => setShowLawyerInfo(!showLawyerInfo)}
+                    >
+                      <div className="w-11 h-11 rounded-full bg-[#01411C] text-white text-sm font-bold flex items-center justify-center shadow-sm">
+                        {selectedThread.lawyer.initials}
+                      </div>
+                      <div
+                        className={`absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full border-2 border-white ${
+                          selectedThread.lawyer.status === "online"
+                            ? "bg-green-500"
+                            : "bg-gray-400"
+                        }`}
+                      ></div>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h2 className="text-base font-bold text-gray-900">
+                        {selectedThread.lawyer.name}
+                      </h2>
+                      <p
+                        className={`text-xs font-medium ${
+                          selectedThread.lawyer.status === "online"
+                            ? "text-green-600"
+                            : "text-gray-500"
+                        }`}
+                      >
+                        {selectedThread.lawyer.status === "online"
+                          ? "● Online"
+                          : `Last seen ${formatLastSeen(
+                              selectedThread.lastMessageAt
+                            )}`}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Messages */}
+                <div className="flex-1 flex flex-col overflow-hidden bg-gray-50">
+                  <div className="flex-1 overflow-y-auto py-3 space-y-3 px-5 sm:px-8">
+                    {messagesLoading ? (
+                      <div className="flex items-center justify-center h-full">
+                        <p className="text-gray-500 text-sm">
+                          Loading messages...
+                        </p>
+                      </div>
+                    ) : messages.length === 0 ? (
+                      <div className="flex items-center justify-center h-full">
+                        <p className="text-gray-500 text-center text-sm">
+                          No messages yet. Start chatting!
+                        </p>
+                      </div>
+                    ) : (
+                      messages.map((msg) => (
+                        <ChatMessageBubble key={msg.id} msg={msg} />
+                      ))
+                    )}
+                    <div ref={messagesEndRef} />
+                  </div>
+
+                  {/* Shared Files */}
+                  {uploadedFiles.length > 0 && (
+                    <div className="flex-shrink-0 bg-white border-t-2 border-gray-300 px-5 sm:px-8 py-2">
+                      <h3 className="text-sm font-bold text-gray-900 mb-3">
+                        📎 Shared Documents
+                      </h3>
+                      <div className="space-y-2 max-h-32 overflow-y-auto">
+                        {uploadedFiles.map((file, index) => (
+                          <div
+                            key={index}
+                            className="flex items-center justify-between bg-gradient-to-r from-gray-50 to-white p-3 rounded-lg border-2 border-gray-300 hover:bg-gray-100/50 transition"
+                          >
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium text-gray-900 truncate">
+                                {file.name}
+                              </p>
+                              <p className="text-xs text-gray-500">
+                                {(file.size / 1024).toFixed(2)} KB •{" "}
+                                {file.uploadedAt}
+                              </p>
+                            </div>
+                            <button
+                              className="ml-2 text-[#01411C] hover:bg-green-100 p-2 rounded-lg transition flex-shrink-0"
+                              title="Download"
+                            >
+                              <Download className="h-4 w-4" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Message Input */}
+                  <div className="flex-shrink-0 border-t-2 border-gray-300">
+                    <ChatComposer
+                      onSend={handleSendMessage}
+                      onFileUpload={handleFileUpload}
+                    />
+                  </div>
+                </div>
+              </>
+            )}
           </div>
+
+          {/* Lawyer Info Sidebar */}
+          {selectedThread && (
+            <LawyerInfoSidebar
+              thread={selectedThread}
+              isOpen={showLawyerInfo}
+              onClose={() => setShowLawyerInfo(false)}
+              sharedDocuments={uploadedFiles}
+            />
+          )}
         </div>
       </div>
     </DashboardLayout>
