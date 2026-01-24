@@ -1,8 +1,10 @@
 import { useEditor, EditorContent } from "@tiptap/react";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import StarterKit from "@tiptap/starter-kit";
+import Underline from "@tiptap/extension-underline";
 import TextAlign from "@tiptap/extension-text-align";
 import { Table, TableRow, TableHeader, TableCell } from "@tiptap/extension-table";
+import BubbleMenuExtension from "@tiptap/extension-bubble-menu";
 import EditorToolbar from "./EditorToolbar";
 
 interface DocEditorProps {
@@ -16,40 +18,103 @@ export default function DocEditor({
   onContentChange,
   isLoading,
 }: DocEditorProps) {
+  const isInitialMount = useRef(true);
+  const isUpdating = useRef(false);
+
   const editor = useEditor({
     extensions: [
-      StarterKit,
+      StarterKit.configure({
+        horizontalRule: {
+          HTMLAttributes: {
+            class: 'my-4 border-t-2 border-gray-300',
+          },
+        },
+        blockquote: {
+          HTMLAttributes: {
+            class: 'border-l-4 border-gray-300 pl-4 italic',
+          },
+        },
+      }),
+      Underline,
       TextAlign.configure({
         types: ["heading", "paragraph"],
+        alignments: ["left", "center", "right", "justify"],
       }),
       Table.configure({
         resizable: true,
+        HTMLAttributes: {
+          class: 'border-collapse table-auto w-full',
+        },
       }),
       TableRow,
-      TableHeader,
-      TableCell,
+      TableHeader.configure({
+        HTMLAttributes: {
+          class: 'border border-gray-300 px-4 py-2 bg-gray-100 font-bold',
+        },
+      }),
+      TableCell.configure({
+        HTMLAttributes: {
+          class: 'border border-gray-300 px-4 py-2',
+        },
+      }),
+      BubbleMenuExtension.configure({
+        pluginKey: 'bubbleMenuTable',
+        shouldShow: ({ editor }) => {
+          return editor.isActive('table');
+        },
+      }),
     ],
-    content: content || "<p>Loading document...</p>",
+    content: "",
     onUpdate: ({ editor }) => {
-      let html = editor.getHTML();
-      // Automatically highlight {{PLACEHOLDER}} patterns
-      html = html.replace(/\{\{([^}]+)\}\}/g, '<span style="background-color: #fef3c7; padding: 2px 4px; border-radius: 3px; font-weight: 500; color: #92400e;">{{$1}}</span>');
-      onContentChange(html);
+      if (!isUpdating.current) {
+        let html = editor.getHTML();
+        // Automatically highlight {{PLACEHOLDER}} patterns
+        html = html.replace(/\{\{([^}]+)\}\}/g, '<span style="background-color: #fef3c7; padding: 2px 4px; border-radius: 3px; font-weight: 500; color: #92400e;">{{$1}}</span>');
+        onContentChange(html);
+      }
     },
     editorProps: {
       attributes: {
         class: 'prose prose-sm max-w-none focus:outline-none min-h-[600px]',
+        spellcheck: 'true',
       },
     },
+    enableInputRules: true,
+    enablePasteRules: true,
+    editable: true,
   });
 
-  // Update editor content when content prop changes
+  // Only update editor content when loading a new document, not during typing
   useEffect(() => {
     if (editor && content && !isLoading) {
-      const currentContent = editor.getHTML();
-      // Only update if content has actually changed to avoid unnecessary re-renders
-      if (currentContent !== content) {
-        editor.commands.setContent(content, { emitUpdate: false });
+      // On initial mount or when switching documents
+      if (isInitialMount.current || !editor.isFocused) {
+        const currentContent = editor.getHTML();
+
+        // Only update if content is actually different
+        if (currentContent !== content) {
+          isUpdating.current = true;
+
+          // Use transaction to preserve cursor position
+          const { from, to } = editor.state.selection;
+          editor.commands.setContent(content, { emitUpdate: false });
+
+          // Restore cursor position if editor was focused
+          if (editor.isFocused && from !== undefined) {
+            try {
+              editor.commands.setTextSelection({ from, to });
+            } catch (e) {
+              // If position is invalid, just focus at end
+              editor.commands.focus('end');
+            }
+          }
+
+          setTimeout(() => {
+            isUpdating.current = false;
+          }, 100);
+        }
+
+        isInitialMount.current = false;
       }
     }
   }, [content, editor, isLoading]);
@@ -75,6 +140,105 @@ export default function DocEditor({
                 lineHeight: '1.6',
               }}
             >
+              <style>{`
+                .ProseMirror {
+                  cursor: text;
+                  caret-color: #000;
+                  outline: none;
+                }
+                .ProseMirror hr {
+                  border: none;
+                  border-top: 2px solid #d1d5db;
+                  margin: 2rem 0;
+                  cursor: pointer;
+                }
+                .ProseMirror hr:hover {
+                  border-top-color: #9ca3af;
+                }
+                .ProseMirror hr.ProseMirror-selectednode {
+                  border-top-color: #3b82f6;
+                  border-top-width: 3px;
+                }
+                .ProseMirror blockquote {
+                  border-left: 4px solid #d1d5db;
+                  padding-left: 1rem;
+                  font-style: italic;
+                  color: #4b5563;
+                  margin: 1rem 0;
+                }
+                .ProseMirror table {
+                  border-collapse: collapse;
+                  width: 100%;
+                  margin: 1rem 0;
+                }
+                .ProseMirror th,
+                .ProseMirror td {
+                  border: 1px solid #d1d5db;
+                  padding: 0.5rem 1rem;
+                  text-align: left;
+                  position: relative;
+                }
+                .ProseMirror .selectedCell:after {
+                  z-index: 2;
+                  position: absolute;
+                  content: "";
+                  left: 0; right: 0; top: 0; bottom: 0;
+                  background: rgba(200, 200, 255, 0.4);
+                  pointer-events: none;
+                }
+                .ProseMirror th {
+                  background-color: #f3f4f6;
+                  font-weight: bold;
+                }
+                .ProseMirror code {
+                  background-color: #f3f4f6;
+                  padding: 0.125rem 0.25rem;
+                  border-radius: 0.25rem;
+                  font-family: monospace;
+                  font-size: 0.9em;
+                }
+                .ProseMirror:focus {
+                  outline: none;
+                }
+                .ProseMirror ul,
+                .ProseMirror ol {
+                  padding-left: 2rem;
+                  margin: 0.5rem 0;
+                }
+                .ProseMirror li {
+                  margin: 0.25rem 0;
+                }
+                .ProseMirror h1 {
+                  font-size: 2em;
+                  font-weight: bold;
+                  margin: 1rem 0 0.5rem 0;
+                }
+                .ProseMirror h2 {
+                  font-size: 1.5em;
+                  font-weight: bold;
+                  margin: 0.75rem 0 0.5rem 0;
+                }
+                .ProseMirror h3 {
+                  font-size: 1.25em;
+                  font-weight: bold;
+                  margin: 0.5rem 0 0.25rem 0;
+                }
+                .ProseMirror p {
+                  margin: 0.5rem 0;
+                }
+                .ProseMirror strong {
+                  font-weight: bold;
+                }
+                .ProseMirror em {
+                  font-style: italic;
+                }
+                .ProseMirror u {
+                  text-decoration: underline;
+                }
+                .ProseMirror s {
+                  text-decoration: line-through;
+                }
+              `}</style>
               <EditorContent editor={editor} />
             </div>
           </div>
