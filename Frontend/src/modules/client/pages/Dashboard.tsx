@@ -98,7 +98,7 @@ export default function Dashboard() {
       label: "Hearings",
       icon: Calendar,
       className: "bg-[#01411C] hover:bg-[#024a23]",
-      to: "/client-dashboard",
+      to: "/client-hearings",
     },
   ];
 
@@ -191,8 +191,8 @@ export default function Dashboard() {
         <div className="lg:col-span-2">
           <RecentCases
             cases={recentCases}
-            onViewAll={() => navigate({ to: "/client-dashboard" })}
-            onSelectCase={() => navigate({ to: "/client-dashboard" })}
+            onViewAll={() => navigate({ to: "/" })}
+            onSelectCase={() => navigate({ to: "/case-tracking" })}
           />
         </div>
 

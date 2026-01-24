@@ -39,27 +39,6 @@ export function getInitialAiGuidanceMessages(): AiChatMessage[] {
       time: now,
       kind: "message",
     },
-    {
-      id: "m-3",
-      role: "ai",
-      text: "I can help with:\n• Document drafting\n• Legal research\n• Case strategy\n• Document checklists\n• Procedure guidance",
-      time: now,
-      kind: "message",
-    },
-    {
-      id: "m-4",
-      role: "user",
-      text: "How do I file a property dispute?",
-      time: now,
-      kind: "message",
-    },
-    {
-      id: "m-5",
-      role: "ai",
-      text: "For property disputes:\n1. Gather ownership documents\n2. Draft petition with facts\n3. File in District Court\n4. Serve legal notice\n5. Attend hearings",
-      time: now,
-      kind: "message",
-    },
   ];
 }
 

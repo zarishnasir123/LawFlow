@@ -5,6 +5,7 @@ import {
   FolderOpen,
   MessageCircle,
   Sparkles,
+  CreditCard,
 } from "lucide-react";
 import type {
   ActivityItem,
@@ -41,7 +42,7 @@ export const lawyerDashboardQuickActions: QuickActionItem[] = [
     label: "New Case",
     icon: FileText,
     className: "bg-[#01411C] hover:bg-[#024a23]",
-    to: "/lawyer-new-case",
+    to: "/lawyer-create-case",
   },
   {
     label: "AI Assistant",
@@ -72,6 +73,12 @@ export const lawyerDashboardQuickActions: QuickActionItem[] = [
     icon: Calendar,
     className: "bg-[#01411C] hover:bg-[#024a23]",
     to: "/lawyer-hearings",
+  },
+  {
+    label: "Service Charges",
+    icon: CreditCard,
+    className: "bg-blue-600 hover:bg-blue-700",
+    to: "/lawyer-service-charges",
   },
 ];
 

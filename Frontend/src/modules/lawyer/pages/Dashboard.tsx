@@ -47,7 +47,7 @@ export default function LawyerDashboard() {
         {
           label: "Profile",
           icon: User,
-          onClick: () => navigate({ to: "/Lawyer-dashboard" }),
+          onClick: () => navigate({ to: "/lawyer-profile" }),
         },
         {
           label: "Logout",
