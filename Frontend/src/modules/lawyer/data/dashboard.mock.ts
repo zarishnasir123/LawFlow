@@ -42,7 +42,7 @@ export const lawyerDashboardQuickActions: QuickActionItem[] = [
     label: "New Case",
     icon: FileText,
     className: "bg-[#01411C] hover:bg-[#024a23]",
-    to: "/lawyer-create-case",
+    to: "/lawyer-new-case",
   },
   {
     label: "AI Assistant",

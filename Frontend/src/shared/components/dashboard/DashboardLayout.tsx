@@ -1,11 +1,13 @@
 import type { ReactNode } from "react";
-import { Scale } from "lucide-react";
+import { Scale, ArrowLeft } from "lucide-react";
 import type { HeaderAction } from "../../types/dashboard";
 
 type DashboardLayoutProps = {
   brandTitle: React.ReactNode;
   brandSubtitle?: string;
   actions?: HeaderAction[];
+  showBackButton?: boolean;
+  onBackClick?: () => void;
   children: ReactNode;
 };
 
@@ -37,6 +39,8 @@ export default function DashboardLayout({
   brandTitle,
   brandSubtitle,
   actions = [],
+  showBackButton = false,
+  onBackClick,
   children,
 }: DashboardLayoutProps) {
   return (
@@ -44,6 +48,15 @@ export default function DashboardLayout({
       <header className="bg-[#01411C] px-4 py-4 text-white shadow-md sm:px-6 lg:px-10">
         <div className="mx-auto flex w-full max-w-none items-center justify-between">
           <div className="flex items-center gap-3">
+            {showBackButton && (
+              <button
+                onClick={onBackClick}
+                className="p-1 hover:bg-white/10 rounded-lg transition-colors"
+                aria-label="Go back"
+              >
+                <ArrowLeft className="h-6 w-6" />
+              </button>
+            )}
             <Scale className="h-8 w-8" />
             <div>
               <h1 className="text-lg font-semibold">{brandTitle}</h1>
