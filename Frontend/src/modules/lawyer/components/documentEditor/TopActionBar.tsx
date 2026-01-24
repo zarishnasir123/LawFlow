@@ -20,6 +20,7 @@ interface TopActionBarProps {
     onDownload: () => void;
     onAddAttachment: () => void;
     onAddDocument: () => void;
+    onToggleSidebar?: () => void;
 }
 
 export default function TopActionBar({
@@ -27,6 +28,7 @@ export default function TopActionBar({
     onDownload,
     onAddAttachment,
     onAddDocument,
+    onToggleSidebar,
 }: TopActionBarProps) {
     const { lastSaved, isDirty } = useDocumentEditorStore();
 
@@ -48,45 +50,72 @@ export default function TopActionBar({
 
     return (
         <div className="sticky top-0 z-10 bg-white border-b border-gray-200 shadow-sm">
-            <div className="px-6 py-3 flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                    <h1 className="text-lg font-semibold text-gray-900">
-                        Case Document Preparation
-                    </h1>
-                    <div className="text-sm">{getStatusText()}</div>
+            <div className="px-4 md:px-6 py-3 flex items-center justify-between gap-4">
+                <div className="flex items-center gap-4 flex-1 min-w-0">
+                    <button
+                        onClick={onToggleSidebar}
+                        className="md:hidden p-2 -ml-2 text-gray-600 hover:bg-gray-100 rounded-md"
+                    >
+                        <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            width="24"
+                            height="24"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            className="lucide lucide-menu"
+                        >
+                            <line x1="4" x2="20" y1="12" y2="12" />
+                            <line x1="4" x2="20" y1="6" y2="6" />
+                            <line x1="4" x2="20" y1="18" y2="18" />
+                        </svg>
+                    </button>
+                    <div className="flex flex-col min-w-0">
+                        <h1 className="text-lg font-semibold text-gray-900 truncate">
+                            Case Document Preparation
+                        </h1>
+                        <div className="text-sm">{getStatusText()}</div>
+                    </div>
                 </div>
 
                 <div className="flex items-center gap-2">
                     <button
                         onClick={onSaveDraft}
-                        className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors duration-200 font-medium text-sm"
+                        className="flex items-center gap-2 px-3 md:px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors duration-200 font-medium text-sm"
+                        title="Save Draft"
                     >
                         <Save className="w-4 h-4" />
-                        Save Draft
+                        <span className="hidden md:inline">Save Draft</span>
                     </button>
 
                     <button
                         onClick={onDownload}
-                        className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors duration-200 font-medium text-sm"
+                        className="flex items-center gap-2 px-3 md:px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors duration-200 font-medium text-sm"
+                        title="Download"
                     >
                         <Download className="w-4 h-4" />
-                        Download
+                        <span className="hidden md:inline">Download</span>
                     </button>
 
                     <button
                         onClick={onAddAttachment}
-                        className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors duration-200 font-medium text-sm"
+                        className="flex items-center gap-2 px-3 md:px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors duration-200 font-medium text-sm"
+                        title="Add Attachment"
                     >
                         <Paperclip className="w-4 h-4" />
-                        Add Attachment
+                        <span className="hidden md:inline">Attachment</span>
                     </button>
 
                     <button
                         onClick={onAddDocument}
-                        className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors duration-200 font-medium text-sm"
+                        className="flex items-center gap-2 px-3 md:px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors duration-200 font-medium text-sm"
+                        title="Add Document"
                     >
                         <FilePlus className="w-4 h-4" />
-                        Add Document
+                        <span className="hidden md:inline">Document</span>
                     </button>
                 </div>
             </div>
