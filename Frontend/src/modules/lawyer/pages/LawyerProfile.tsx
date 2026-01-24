@@ -1,18 +1,45 @@
 import { useNavigate } from "@tanstack/react-router";
 import { Bell, LogOut, User } from "lucide-react";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import ProfileCard from "../../../shared/components/profile/ProfileCard";
 import ProfileField from "../../../shared/components/profile/ProfileField";
 import DashboardLayout from "../../../shared/components/dashboard/DashboardLayout";
+import {
+  ChangePasswordModal,
+  NotificationPreferencesModal,
+  DeactivateAccountModal,
+} from "../components/modals";
 import { useLawyerProfileStore } from "../store/lawyerProfile.store";
 
 export default function LawyerProfile() {
   const navigate = useNavigate();
   const { profile, initializeProfile } = useLawyerProfileStore();
+  const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
+  const [showNotificationModal, setShowNotificationModal] = useState(false);
+  const [showDeactivateModal, setShowDeactivateModal] = useState(false);
 
   useEffect(() => {
     initializeProfile();
   }, [initializeProfile]);
+
+  // Disable background scroll when modal is open
+  useEffect(() => {
+    const isAnyModalOpen =
+      showChangePasswordModal || showNotificationModal || showDeactivateModal;
+
+    if (isAnyModalOpen) {
+      document.documentElement.style.overflow = "hidden";
+      document.body.style.overflow = "hidden";
+    } else {
+      document.documentElement.style.overflow = "";
+      document.body.style.overflow = "";
+    }
+
+    return () => {
+      document.documentElement.style.overflow = "";
+      document.body.style.overflow = "";
+    };
+  }, [showChangePasswordModal, showNotificationModal, showDeactivateModal]);
 
   return (
     <DashboardLayout
@@ -75,22 +102,22 @@ export default function LawyerProfile() {
 
           <div className="flex flex-wrap gap-3">
             <button
-              onClick={() => navigate({ to: "/" })}
-              className="border px-4 py-2 rounded-md text-sm hover:bg-gray-50"
+              onClick={() => setShowChangePasswordModal(true)}
+              className="border px-4 py-2 rounded-md text-sm hover:bg-gray-50 transition"
             >
               Change Password
             </button>
 
             <button
-              onClick={() => navigate({ to: "/" })}
-              className="border px-4 py-2 rounded-md text-sm hover:bg-gray-50"
+              onClick={() => setShowNotificationModal(true)}
+              className="border px-4 py-2 rounded-md text-sm hover:bg-gray-50 transition"
             >
               Notification Preferences
             </button>
 
             <button
-              onClick={() => navigate({ to: "/" })}
-              className="border border-red-500 text-red-600 px-4 py-2 rounded-md text-sm hover:bg-red-50"
+              onClick={() => setShowDeactivateModal(true)}
+              className="border border-red-500 text-red-600 px-4 py-2 rounded-md text-sm hover:bg-red-50 transition"
             >
               Deactivate Account
             </button>
@@ -98,6 +125,28 @@ export default function LawyerProfile() {
         </div>
       </ProfileCard>
       </div>
+
+      {/* Change Password Modal */}
+      <ChangePasswordModal
+        isOpen={showChangePasswordModal}
+        onClose={() => setShowChangePasswordModal(false)}
+      />
+
+      {/* Notification Preferences Modal */}
+      <NotificationPreferencesModal
+        isOpen={showNotificationModal}
+        onClose={() => setShowNotificationModal(false)}
+      />
+
+      {/* Deactivate Account Modal */}
+      <DeactivateAccountModal
+        isOpen={showDeactivateModal}
+        onClose={() => setShowDeactivateModal(false)}
+        onConfirm={() => {
+          setShowDeactivateModal(false);
+          navigate({ to: "/login" });
+        }}
+      />
     </DashboardLayout>
   );
 }
