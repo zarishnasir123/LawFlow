@@ -46,8 +46,8 @@ export default function CreateCase() {
 
       console.log("Creating case:", newCase);
 
-      // Navigate back to lawyer dashboard
-      navigate({ to: "/Lawyer-dashboard" });
+      // Navigate to document editor
+      navigate({ to: "/lawyer-case-editor" });
     }
   };
 
