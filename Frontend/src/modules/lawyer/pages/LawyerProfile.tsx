@@ -1,8 +1,9 @@
 import { useNavigate } from "@tanstack/react-router";
-import { ArrowLeft, Bell, LogOut, User } from "lucide-react";
+import { Bell, LogOut, User } from "lucide-react";
 import { useEffect } from "react";
 import ProfileCard from "../../../shared/components/profile/ProfileCard";
 import ProfileField from "../../../shared/components/profile/ProfileField";
+import DashboardLayout from "../../../shared/components/dashboard/DashboardLayout";
 import { useLawyerProfileStore } from "../store/lawyerProfile.store";
 
 export default function LawyerProfile() {
@@ -14,50 +15,29 @@ export default function LawyerProfile() {
   }, [initializeProfile]);
 
   return (
-    <div>
-      {/* Custom Navbar Header */}
-      <div className="sticky top-0 z-50 bg-green-700 text-white shadow-lg">
-        <div className="flex items-center justify-between px-6 py-4">
-          <div className="flex items-center gap-4">
-            <ArrowLeft
-              className="w-6 h-6 cursor-pointer hover:text-green-100 transition"
-              onClick={() => navigate({ to: "/Lawyer-dashboard" })}
-            />
-            <div>
-              <h1 className="text-xl font-semibold">My Profile</h1>
-              <p className="text-sm text-green-100">View and manage your professional information</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-6">
-            <button
-              onClick={() => navigate({ to: "/Lawyer-dashboard" })}
-              className="p-2 hover:bg-green-600 rounded-lg transition"
-              title="Notifications"
-            >
-              <div className="relative">
-                <Bell className="w-6 h-6" />
-                <span className="absolute top-0 right-0 inline-flex items-center justify-center px-2 py-1 text-xs font-bold leading-none text-white transform translate-x-1/2 -translate-y-1/2 bg-red-600 rounded-full">3</span>
-              </div>
-            </button>
-            <button
-              onClick={() => navigate({ to: "/lawyer-profile" })}
-              className="p-2 hover:bg-green-600 rounded-lg transition"
-              title="Profile"
-            >
-              <User className="w-6 h-6" />
-            </button>
-            <button
-              onClick={() => navigate({ to: "/login" })}
-              className="p-2 hover:bg-green-600 rounded-lg transition"
-              title="Logout"
-            >
-              <LogOut className="w-6 h-6" />
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <div className="min-h-screen bg-gray-50 px-6 py-8">
+    <DashboardLayout
+      brandTitle="LawFlow"
+      brandSubtitle="Edit Profile"
+      actions={[
+        {
+          label: "Notifications",
+          icon: Bell,
+          onClick: () => navigate({ to: "/Lawyer-dashboard" }),
+          badge: 3,
+        },
+        {
+          label: "Profile",
+          icon: User,
+          onClick: () => navigate({ to: "/lawyer-profile" }),
+        },
+        {
+          label: "Logout",
+          icon: LogOut,
+          onClick: () => navigate({ to: "/login" }),
+        },
+      ]}
+    >
+      <div className="px-6 py-8">
       <ProfileCard
         name={profile.fullName}
         memberSince="March 10, 2023"
@@ -118,7 +98,7 @@ export default function LawyerProfile() {
         </div>
       </ProfileCard>
       </div>
-    </div>
+    </DashboardLayout>
   );
 }
 
