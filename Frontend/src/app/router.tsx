@@ -41,6 +41,7 @@ import LawyerMessages from "../modules/lawyer/pages/Messages";
 import ChatDetail from "../modules/lawyer/pages/ChatDetail";
 import AiLegalGuidance from "../modules/lawyer/pages/AiLegalGuidance";
 import ServiceCharges from "../modules/lawyer/pages/ServiceCharges";
+import CaseDocumentEditor from "../modules/lawyer/pages/CaseDocumentEditor";
 
 /* =====================================================
    REGISTRAR MODULE IMPORTS
@@ -252,6 +253,12 @@ const lawyerProfileEditRoute = createRoute({
   component: LawyerProfileEdit,
 });
 
+const caseDocumentEditorRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "lawyer-case-editor",
+  component: CaseDocumentEditor,
+});
+
 /* =====================================================
    REGISTRAR ROUTES
    1. Dashboard - Main registrar hub
@@ -396,6 +403,7 @@ const routeTree = rootRoute.addChildren([
   lawyerReturnedCaseDetailRoute,
   lawyerProfileRoute,
   lawyerProfileEditRoute,
+  caseDocumentEditorRoute,
   lawyerHearingsRoute,
   lawyerMessagesRoute,
   lawyerChatDetailRoute,
