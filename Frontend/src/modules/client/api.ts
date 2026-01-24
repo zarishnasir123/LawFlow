@@ -51,27 +51,38 @@ export async function verifyClientCnic(
   );
   return data;
 }
-
 import type { ChatMessage, SendMessagePayload, ClientChatThread } from "../../types/chat";
 import { mockClientThreads, mockClientMessages } from "./data/chat.mock";
 
-/** Get all threads */
+/**
+ * Get all chat threads for a client
+ */
 export async function getClientThreads(): Promise<ClientChatThread[]> {
   return Promise.resolve(mockClientThreads);
 }
 
-/** Get a single thread by ID */
-export async function getClientThreadById(threadId: string): Promise<ClientChatThread | null> {
+/**
+ * Get a single chat thread by ID
+ */
+export async function getClientThreadById(
+  threadId: string
+): Promise<ClientChatThread | null> {
   const thread = mockClientThreads.find((t) => t.id === threadId);
   return Promise.resolve(thread ?? null);
 }
 
-/** Get messages for a specific thread */
-export async function getClientThreadMessages(threadId: string): Promise<ChatMessage[]> {
+/**
+ * Get all messages for a specific client thread
+ */
+export async function getClientThreadMessages(
+  threadId: string
+): Promise<ChatMessage[]> {
   return Promise.resolve(mockClientMessages[threadId] ?? []);
 }
 
-/** Send a message as client */
+/**
+ * Send a message as the client user
+ */
 export async function sendClientThreadMessage(
   threadId: string,
   payload: SendMessagePayload
@@ -79,7 +90,7 @@ export async function sendClientThreadMessage(
   const msg: ChatMessage = {
     id: `cmsg-${Date.now()}`,
     threadId,
-    sender: "client",
+    sender: "client", // 👈 important — client is the sender here
     text: payload.text,
     createdAt: new Date().toISOString(),
   };
@@ -89,3 +100,4 @@ export async function sendClientThreadMessage(
 
   return Promise.resolve(msg);
 }
+
