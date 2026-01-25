@@ -209,19 +209,18 @@ export default function LawyerCases() {
                   onClick={() =>
                     setFilterStatus(
                       status as
-                        | "all"
-                        | "active"
-                        | "pending"
-                        | "on-hold"
-                        | "returned"
-                        | "closed"
+                      | "all"
+                      | "active"
+                      | "pending"
+                      | "on-hold"
+                      | "returned"
+                      | "closed"
                     )
                   }
-                  className={`px-4 py-2 rounded-lg font-medium text-sm transition ${
-                    filterStatus === status
-                      ? "bg-green-600 text-white"
-                      : "bg-gray-200 text-gray-700 hover:bg-gray-300"
-                  }`}
+                  className={`px-4 py-2 rounded-lg font-medium text-sm transition ${filterStatus === status
+                    ? "bg-green-600 text-white"
+                    : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                    }`}
                 >
                   {status.charAt(0).toUpperCase() + status.slice(1)}
                 </button>
@@ -271,11 +270,10 @@ export default function LawyerCases() {
                           caseItem.status.slice(1)}
                       </span>
                       <span
-                        className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                          caseItem.caseType === "civil"
-                            ? "bg-blue-100 text-blue-800"
-                            : "bg-purple-100 text-purple-800"
-                        }`}
+                        className={`px-3 py-1 rounded-full text-xs font-semibold ${caseItem.caseType === "civil"
+                          ? "bg-blue-100 text-blue-800"
+                          : "bg-purple-100 text-purple-800"
+                          }`}
                       >
                         {caseItem.caseType === "civil"
                           ? "Civil"
@@ -422,17 +420,16 @@ export default function LawyerCases() {
 
                 {/* Action Buttons */}
                 <div className="flex flex-wrap gap-3">
-                  <button className="px-4 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors text-sm flex items-center gap-2">
+                  <button
+                    onClick={() => navigate({ to: `/lawyer-case-editor/${caseItem.id}` })}
+                    className="px-4 py-2 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 transition-colors text-sm flex items-center gap-2"
+                  >
                     <FileText className="w-4 h-4" />
-                    View Details
+                    Prepare Documents
                   </button>
-                  <button className="px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition-colors text-sm flex items-center gap-2">
+                  <button className="px-4 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors text-sm flex items-center gap-2">
                     <Users className="w-4 h-4" />
-                    Message Client
-                  </button>
-                  <button className="px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition-colors text-sm flex items-center gap-2">
-                    <Calendar className="w-4 h-4" />
-                    Schedule Hearing
+                    View Details
                   </button>
                 </div>
               </div>

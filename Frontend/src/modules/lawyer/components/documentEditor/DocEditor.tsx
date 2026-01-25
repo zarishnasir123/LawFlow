@@ -1,15 +1,17 @@
-import { useEditor, EditorContent } from "@tiptap/react";
+import { useEditor, EditorContent, type JSONContent } from "@tiptap/react";
 import { useEffect, useRef } from "react";
 import StarterKit from "@tiptap/starter-kit";
 import Underline from "@tiptap/extension-underline";
 import TextAlign from "@tiptap/extension-text-align";
 import { Table, TableRow, TableHeader, TableCell } from "@tiptap/extension-table";
 import BubbleMenuExtension from "@tiptap/extension-bubble-menu";
+import { AttachmentBlock } from "../../extensions/AttachmentBlock";
+import { useDocumentEditorStore } from "../../store/documentEditor.store";
 import EditorToolbar from "./EditorToolbar";
 
 interface DocEditorProps {
-  content: string;
-  onContentChange: (content: string) => void;
+  content: string | JSONContent;
+  onContentChange: (content: JSONContent) => void;
   isLoading: boolean;
 }
 
@@ -20,6 +22,7 @@ export default function DocEditor({
 }: DocEditorProps) {
   const isInitialMount = useRef(true);
   const isUpdating = useRef(false);
+  const { setEditorRef } = useDocumentEditorStore();
 
   const editor = useEditor({
     extensions: [
@@ -63,14 +66,14 @@ export default function DocEditor({
           return editor.isActive('table');
         },
       }),
+      AttachmentBlock,  // NEW: Attachment insertion support
     ],
     content: "",
     onUpdate: ({ editor }) => {
       if (!isUpdating.current) {
-        let html = editor.getHTML();
-        // Automatically highlight {{PLACEHOLDER}} patterns
-        html = html.replace(/\{\{([^}]+)\}\}/g, '<span style="background-color: #fef3c7; padding: 2px 4px; border-radius: 3px; font-weight: 500; color: #92400e;">{{$1}}</span>');
-        onContentChange(html);
+        // Emit JSON instead of HTML
+        const json = editor.getJSON();
+        onContentChange(json);
       }
     },
     editorProps: {
@@ -118,6 +121,17 @@ export default function DocEditor({
       }
     }
   }, [content, editor, isLoading]);
+
+  // Register editor instance in store for attachment insertion
+  useEffect(() => {
+    if (editor) {
+      setEditorRef(editor);
+    }
+    return () => {
+      setEditorRef(null);
+    };
+  }, [editor, setEditorRef]);
+
 
   return (
     <div className="flex-1 flex flex-col bg-gray-50 overflow-hidden">
