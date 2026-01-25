@@ -1,6 +1,12 @@
-import { useState } from "react"; // ✅ added
+import { useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { UserCheck, Clock, Activity, Shield } from "lucide-react";
+import {
+  UserCheck,
+  Clock,
+  Activity,
+  Shield,
+  FileText,
+} from "lucide-react";
 
 import { AdminHeader } from "../components/AdminHeader";
 import { ActionCard } from "../components/ActionCard";
@@ -13,16 +19,12 @@ import {
   adminRecentActivity,
 } from "../dashboard.mock";
 
-// ✅ Logout modal import (same modal used everywhere)
 import LogoutConfirmationModal from "../../admin/components/modals/LogoutConfirmationModal";
 
 export default function AdminDashboardPage() {
   const navigate = useNavigate();
-
-  // ✅ modal state
   const [logoutModalOpen, setLogoutModalOpen] = useState(false);
 
-  // ✅ confirm logout handler
   const handleLogout = () => {
     localStorage.clear();
     setLogoutModalOpen(false);
@@ -31,20 +33,18 @@ export default function AdminDashboardPage() {
 
   return (
     <>
-      {/* Logout Confirmation Modal */}
       <LogoutConfirmationModal
         open={logoutModalOpen}
         onCancel={() => setLogoutModalOpen(false)}
         onConfirm={handleLogout}
       />
 
-     
       <div className="min-h-screen bg-gray-50">
         <AdminHeader
           notificationCount={3}
           onOpenNotifications={() => navigate({ to: "/admin-notifications" })}
           onOpenProfile={() => navigate({ to: "/admin-profile" })}
-          onLogout={() => setLogoutModalOpen(true)} // ✅ changed only this
+          onLogout={() => setLogoutModalOpen(true)}
         />
 
         <div className="container mx-auto px-6 py-8">
@@ -83,7 +83,7 @@ export default function AdminDashboardPage() {
           </div>
 
           {/* Main Actions */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
             <ActionCard
               title="Pending Verifications"
               description="Review and approve user registrations"
@@ -107,6 +107,17 @@ export default function AdminDashboardPage() {
             />
 
             <ActionCard
+              title="Manage Templates"
+              description="Create, edit and manage legal document templates"
+              badgeText="Templates"
+              icon={FileText}
+              iconBgClass="bg-green-100"
+              iconTextClass="text-green-700"
+              badgeClassName="bg-green-100 text-green-700"
+              onClick={() => navigate({ to: "/admin-templates" })}
+            />
+
+            <ActionCard
               title="System Reports"
               description="View system activity and analytics"
               badgeText="View Reports"
@@ -123,10 +134,7 @@ export default function AdminDashboardPage() {
             <PendingVerificationList
               items={adminPendingVerifications}
               onViewAll={() => navigate({ to: "/admin-verifications" })}
-              onReview={(item) => {
-                console.log("Review user:", item);
-                navigate({ to: "/admin-verifications" });
-              }}
+              onReview={() => navigate({ to: "/admin-verifications" })}
             />
 
             <RecentActivityList items={adminRecentActivity} />
