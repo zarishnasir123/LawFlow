@@ -32,11 +32,6 @@ import ReturnedCaseDetail from "../modules/lawyer/pages/ReturnedCaseDetail";
 import CreateCase from "../modules/lawyer/pages/CreateCase";
 import LawyerProfile from "../modules/lawyer/pages/LawyerProfile";
 import LawyerProfileEdit from "../modules/lawyer/pages/LawyerProfileEdit";
-import LawyerNewCase from "../modules/lawyer/pages/LawyerNewCase";
-import LawyerMessages from "../modules/lawyer/pages/Messages";
-import LawyerChatDetail from "../modules/lawyer/pages/ChatDetail";
-import LawyerHearings from "../modules/lawyer/pages/Hearings";
-import CaseDocumentEditor from "../modules/lawyer/pages/CaseDocumentEditor";
 
 /* =========================
    REGISTRAR
@@ -175,36 +170,6 @@ const lawyerProfileEditRoute = createRoute({
   component: LawyerProfileEdit,
 });
 
-const lawyerNewCaseRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "lawyer-new-case",
-  component: LawyerNewCase,
-});
-
-const lawyerMessagesRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "lawyer-messages",
-  component: LawyerMessages,
-});
-
-const lawyerChatDetailRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "lawyer-chat/$threadId",
-  component: LawyerChatDetail,
-});
-
-const lawyerHearingsRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "lawyer-hearings",
-  component: LawyerHearings,
-});
-
-const lawyerCaseDocumentEditorRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "lawyer-case-document-editor",
-  component: CaseDocumentEditor,
-});
-
 /* =========================
    REGISTRAR ROUTES
 ========================= */
@@ -321,11 +286,6 @@ const routeTree = rootRoute.addChildren([
   lawyerReturnedCaseDetailRoute,
   lawyerProfileRoute,
   lawyerProfileEditRoute,
-  lawyerNewCaseRoute,
-  lawyerMessagesRoute,
-  lawyerChatDetailRoute,
-  lawyerHearingsRoute,
-  lawyerCaseDocumentEditorRoute,
 
   registrarDashboardRoute,
   reviewCasesRoute,
