@@ -8,7 +8,6 @@ import {
   LogOut,
   MessageCircle,
   PenTool,
- 
   User,
 } from "lucide-react";
 
@@ -20,7 +19,10 @@ import StatCard from "../../../shared/components/dashboard/StatCard";
 import UpcomingHearings from "../../../shared/components/dashboard/UpcomingHearings";
 
 import { useLoginStore } from "../../auth/store";
-import { LogoutConfirmationModal } from "../components/modals";
+import {
+  LogoutConfirmationModal,
+  NotificationPreferencesModal,
+} from "../components/modals";
 
 import type {
   ActivityItem,
@@ -34,7 +36,9 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const email = useLoginStore((state) => state.email);
 
+  // modal states
   const [showLogoutModal, setShowLogoutModal] = useState(false);
+  const [showNotificationModal, setShowNotificationModal] = useState(false);
 
   const displayName = (() => {
     if (!email) return "Client";
@@ -102,7 +106,7 @@ export default function Dashboard() {
             label: "Notifications",
             icon: Bell,
             badge: 3,
-            onClick: () => navigate({ to: "/client-dashboard" }),
+            onClick: () => setShowNotificationModal(true), //  open notifications modal
           },
           {
             label: "Profile",
@@ -112,7 +116,7 @@ export default function Dashboard() {
           {
             label: "Logout",
             icon: LogOut,
-            onClick: () => setShowLogoutModal(true),
+            onClick: () => setShowLogoutModal(true), //  open logout modal
           },
         ]}
       >
@@ -151,10 +155,15 @@ export default function Dashboard() {
         </section>
       </DashboardLayout>
 
+      {/* Notification Modal */}
+      <NotificationPreferencesModal
+        isOpen={showNotificationModal}
+        onClose={() => setShowNotificationModal(false)}
+      />
+
       {/* Logout Modal */}
       <LogoutConfirmationModal
         open={showLogoutModal}
-        
         onCancel={() => setShowLogoutModal(false)}
         onConfirm={() => {
           setShowLogoutModal(false);

@@ -12,6 +12,10 @@ import {
 } from "../data/aiGuidance.mock.ts";
 import { formatDate } from "../../../shared/utils/formatDate";
 
+// ✅ Import modals (same as other dashboards)
+import LogoutConfirmationModal from "../../lawyer/components/modals/LogoutConfirmationModal";
+import NotificationPreferencesModal from "../../client/components/modals/NotificationPreferencesModal";
+
 export default function AiLegalGuidance() {
   const navigate = useNavigate();
   const email = useLoginStore((state) => state.email);
@@ -35,6 +39,10 @@ export default function AiLegalGuidance() {
     getInitialAiGuidanceMessages()
   );
   const [loading, setLoading] = useState(false);
+
+  // ✅ Modal states
+  const [logoutModalOpen, setLogoutModalOpen] = useState(false);
+  const [notificationModalOpen, setNotificationModalOpen] = useState(false);
 
   // Auto-scroll to bottom when messages change
   useEffect(() => {
@@ -66,145 +74,179 @@ export default function AiLegalGuidance() {
     }
   };
 
+  const handleLogout = () => {
+    setLogoutModalOpen(false);
+    navigate({ to: "/login" });
+  };
+
   const showSuggestions = messages.length === 2;
 
   return (
-    <DashboardLayout
-      brandTitle="LawFlow"
-      brandSubtitle="AI Legal Assistant"
-      actions={[
-        {
-          label: "Notifications",
-          icon: Bell,
-          onClick: () => navigate({ to: "/Lawyer-dashboard" }),
-          badge: 3,
-        },
-        {
-          label: "Profile",
-          icon: User,
-          onClick: () => navigate({ to: "/Lawyer-dashboard" }),
-        },
-        {
-          label: "Logout",
-          icon: LogOut,
-          onClick: () => navigate({ to: "/login" }),
-        },
-      ]}
-    >
-      <div className="h-screen flex flex-col">
-        {/* Scrollable Messages Container - Hide Scrollbar, Full Width */}
-        <div className="flex-1 overflow-y-auto scrollbar-hide" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
-          <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
-            <div className="space-y-4">
-              {messages.map((m) => (
-                <div
-                  key={m.id}
-                  className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}
-                >
-                  {m.role === "ai" && (
-                    <div className="w-8 h-8 rounded-full bg-purple-600 flex items-center justify-center text-white text-xs font-bold flex-shrink-0 mr-3">
-                      <Lightbulb className="w-5 h-5" />
-                    </div>
-                  )}
-                  
-                  <div>
-                    <div
-                      className={`max-w-xl rounded-2xl p-4 ${
-                        m.role === "user"
-                          ? "bg-[#01411C] text-white rounded-br-none"
-                          : "bg-purple-100 text-gray-900 border-l-4 border-purple-600 rounded-bl-none"
-                      }`}
-                    >
-                      {m.kind === "intro" && m.role === "ai" && (
-                        <div className="mb-2 pb-2 border-b border-purple-300">
-                          <span className="text-sm font-semibold text-purple-700">AI Assistant</span>
-                        </div>
-                      )}
+    <>
+      {/* ✅ Modals */}
+      <LogoutConfirmationModal
+        open={logoutModalOpen}
+        onCancel={() => setLogoutModalOpen(false)}
+        onConfirm={handleLogout}
+      />
 
-                      <p className="text-sm whitespace-pre-line leading-relaxed">{m.text}</p>
-                      <p className={`text-xs mt-2 ${m.role === "user" ? "text-white opacity-70" : "text-purple-700 opacity-75"}`}>{m.time}</p>
+      <NotificationPreferencesModal
+        isOpen={notificationModalOpen}
+        onClose={() => setNotificationModalOpen(false)}
+      />
+
+      <DashboardLayout
+        brandTitle="LawFlow"
+        brandSubtitle="AI Legal Assistant"
+        actions={[
+          {
+            label: "Notifications",
+            icon: Bell,
+            badge: 3,
+            onClick: () => setNotificationModalOpen(true), // ✅ open notifications modal
+          },
+          {
+            label: "Profile",
+            icon: User,
+            onClick: () => navigate({ to: "/lawyer-profile" }),
+          },
+          {
+            label: "Logout",
+            icon: LogOut,
+            onClick: () => setLogoutModalOpen(true), // ✅ open logout modal
+          },
+        ]}
+      >
+        <div className="h-screen flex flex-col">
+          {/* Scrollable Messages */}
+          <div
+            className="flex-1 overflow-y-auto scrollbar-hide"
+            style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
+          >
+            <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
+              <div className="space-y-4">
+                {messages.map((m) => (
+                  <div
+                    key={m.id}
+                    className={`flex ${
+                      m.role === "user" ? "justify-end" : "justify-start"
+                    }`}
+                  >
+                    {m.role === "ai" && (
+                      <div className="w-8 h-8 rounded-full bg-purple-600 flex items-center justify-center text-white text-xs font-bold flex-shrink-0 mr-3">
+                        <Lightbulb className="w-5 h-5" />
+                      </div>
+                    )}
+
+                    <div>
+                      <div
+                        className={`max-w-xl rounded-2xl p-4 ${
+                          m.role === "user"
+                            ? "bg-[#01411C] text-white rounded-br-none"
+                            : "bg-purple-100 text-gray-900 border-l-4 border-purple-600 rounded-bl-none"
+                        }`}
+                      >
+                        {m.kind === "intro" && m.role === "ai" && (
+                          <div className="mb-2 pb-2 border-b border-purple-300">
+                            <span className="text-sm font-semibold text-purple-700">
+                              AI Assistant
+                            </span>
+                          </div>
+                        )}
+
+                        <p className="text-sm whitespace-pre-line leading-relaxed">
+                          {m.text}
+                        </p>
+                        <p
+                          className={`text-xs mt-2 ${
+                            m.role === "user"
+                              ? "text-white opacity-70"
+                              : "text-purple-700 opacity-75"
+                          }`}
+                        >
+                          {m.time}
+                        </p>
+                      </div>
+                    </div>
+
+                    {m.role === "user" && (
+                      <div className="w-8 h-8 rounded-full bg-[#01411C] flex items-center justify-center text-white text-xs font-bold flex-shrink-0 ml-3">
+                        {lawyerName.charAt(0).toUpperCase()}
+                      </div>
+                    )}
+                  </div>
+                ))}
+
+                {loading && (
+                  <div className="flex justify-start">
+                    <div className="max-w-xl rounded-2xl p-4 bg-white border border-gray-200">
+                      <p className="text-sm text-gray-600">AI is thinking…</p>
                     </div>
                   </div>
-
-                  {m.role === "user" && (
-                    <div className="w-8 h-8 rounded-full bg-[#01411C] flex items-center justify-center text-white text-xs font-bold flex-shrink-0 ml-3">
-                      {lawyerName.charAt(0).toUpperCase()}
-                    </div>
-                  )}
-                </div>
-              ))}
-
-              {loading && (
-                <div className="flex justify-start">
-                  <div className="max-w-xl rounded-2xl p-4 bg-white border border-gray-200">
-                    <p className="text-sm text-gray-600">AI is thinking…</p>
-                  </div>
-                </div>
-              )}
-              
-              {/* Auto-scroll anchor */}
-              <div ref={messagesEndRef} />
-            </div>
-          </div>
-
-          {/* Quick Suggestions (only at start) */}
-          {showSuggestions && (
-            <div className="w-full px-4 sm:px-6 lg:px-8 pb-6">
-              <div className="bg-purple-50 border border-purple-200 rounded-2xl p-4">
-                <div className="flex items-center gap-2 mb-3">
-                  <Lightbulb className="w-4 h-4 text-purple-600" />
-                  <h4 className="text-sm font-medium text-purple-900">Quick Suggestions</h4>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                  {aiGuidanceQuickSuggestions.map((s: string) => (
-                    <button
-                      key={s}
-                      type="button"
-                      onClick={() => setInput(s)}
-                      className="text-left px-3 py-2 bg-white border border-purple-200 rounded-xl text-sm text-purple-700 hover:bg-purple-100 transition-colors"
-                    >
-                      {s}
-                    </button>
-                  ))}
-                </div>
+                )}
+                <div ref={messagesEndRef} />
               </div>
             </div>
-          )}
 
-          {/* Auto-scroll anchor */}
-          <div ref={messagesEndRef} />
-        </div>
+            {/* Quick Suggestions */}
+            {showSuggestions && (
+              <div className="w-full px-4 sm:px-6 lg:px-8 pb-6">
+                <div className="bg-purple-50 border border-purple-200 rounded-2xl p-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <Lightbulb className="w-4 h-4 text-purple-600" />
+                    <h4 className="text-sm font-medium text-purple-900">
+                      Quick Suggestions
+                    </h4>
+                  </div>
 
-        {/* Sticky Composer at Bottom - Full Width, Mobile Responsive */}
-        <div className="sticky bottom-0 border-t border-gray-300 bg-white z-20 shadow-lg">
-          <div className="w-full px-3 sm:px-4 md:px-6 lg:px-8 py-2 sm:py-3">
-            <div className="flex items-center gap-2 sm:gap-3">
-              <input
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && send()}
-                placeholder="Ask about legal procedures, documents, or case guidance…"
-                className="flex-1 rounded-lg sm:rounded-xl border-2 border-gray-300 bg-white px-3 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm outline-none focus:border-[#01411C] focus:ring-2 focus:ring-[#01411C]/20 transition-colors"
-              />
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                    {aiGuidanceQuickSuggestions.map((s: string) => (
+                      <button
+                        key={s}
+                        type="button"
+                        onClick={() => setInput(s)}
+                        className="text-left px-3 py-2 bg-white border border-purple-200 rounded-xl text-sm text-purple-700 hover:bg-purple-100 transition-colors"
+                      >
+                        {s}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+            <div ref={messagesEndRef} />
+          </div>
 
-              <button
-                type="button"
-                onClick={send}
-                disabled={!input.trim() || loading}
-                className={`inline-flex items-center justify-center rounded-lg sm:rounded-xl px-3 sm:px-4 py-2 sm:py-3 text-white transition flex-shrink-0 ${
-                  !input.trim() || loading
-                    ? "bg-purple-300 cursor-not-allowed"
-                    : "bg-purple-600 hover:bg-purple-700"
-                }`}
-                aria-label="Send"
-              >
-                <Send className="h-4 sm:h-5 w-4 sm:w-5" />
-              </button>
+          {/* Sticky Composer */}
+          <div className="sticky bottom-0 border-t border-gray-300 bg-white z-20 shadow-lg">
+            <div className="w-full px-3 sm:px-4 md:px-6 lg:px-8 py-2 sm:py-3">
+              <div className="flex items-center gap-2 sm:gap-3">
+                <input
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && send()}
+                  placeholder="Ask about legal procedures, documents, or case guidance…"
+                  className="flex-1 rounded-lg sm:rounded-xl border-2 border-gray-300 bg-white px-3 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm outline-none focus:border-[#01411C] focus:ring-2 focus:ring-[#01411C]/20 transition-colors"
+                />
+
+                <button
+                  type="button"
+                  onClick={send}
+                  disabled={!input.trim() || loading}
+                  className={`inline-flex items-center justify-center rounded-lg sm:rounded-xl px-3 sm:px-4 py-2 sm:py-3 text-white transition flex-shrink-0 ${
+                    !input.trim() || loading
+                      ? "bg-purple-300 cursor-not-allowed"
+                      : "bg-purple-600 hover:bg-purple-700"
+                  }`}
+                  aria-label="Send"
+                >
+                  <Send className="h-4 sm:h-5 w-4 sm:w-5" />
+                </button>
+              </div>
             </div>
           </div>
         </div>
-      </div>
-    </DashboardLayout>
+      </DashboardLayout>
+    </>
   );
 }

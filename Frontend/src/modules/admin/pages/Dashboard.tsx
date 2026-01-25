@@ -1,4 +1,4 @@
-import { useState } from "react"; // ✅ added
+import { useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { UserCheck, Clock, Activity, Shield } from "lucide-react";
 
@@ -13,16 +13,18 @@ import {
   adminRecentActivity,
 } from "../dashboard.mock";
 
-// ✅ Logout modal import (same modal used everywhere)
+//  Import modals
 import LogoutConfirmationModal from "../../admin/components/modals/LogoutConfirmationModal";
+import NotificationPreferencesModal from "../../client/components/modals/NotificationPreferencesModal";
 
 export default function AdminDashboardPage() {
   const navigate = useNavigate();
 
-  // ✅ modal state
+  // Modal states
   const [logoutModalOpen, setLogoutModalOpen] = useState(false);
+  const [notificationModalOpen, setNotificationModalOpen] = useState(false);
 
-  // ✅ confirm logout handler
+  // Confirm logout handler
   const handleLogout = () => {
     localStorage.clear();
     setLogoutModalOpen(false);
@@ -31,24 +33,30 @@ export default function AdminDashboardPage() {
 
   return (
     <>
-      {/* Logout Confirmation Modal */}
+      {/*  Logout Confirmation Modal */}
       <LogoutConfirmationModal
         open={logoutModalOpen}
         onCancel={() => setLogoutModalOpen(false)}
         onConfirm={handleLogout}
       />
 
-     
+      {/*  Notification Preferences Modal */}
+      <NotificationPreferencesModal
+        isOpen={notificationModalOpen}
+        onClose={() => setNotificationModalOpen(false)}
+      />
+
       <div className="min-h-screen bg-gray-50">
         <AdminHeader
           notificationCount={3}
-          onOpenNotifications={() => navigate({ to: "/admin-notifications" })}
+          //  open notification modal instead of navigating
+          onOpenNotifications={() => setNotificationModalOpen(true)}
           onOpenProfile={() => navigate({ to: "/admin-profile" })}
-          onLogout={() => setLogoutModalOpen(true)} // ✅ changed only this
+          onLogout={() => setLogoutModalOpen(true)} // ✅ open logout modal
         />
 
         <div className="container mx-auto px-6 py-8">
-          {/* Welcome */}
+          {/* Welcome Section */}
           <div className="bg-white rounded-xl shadow-sm p-6 mb-8 border border-green-100">
             <div className="flex items-center justify-between">
               <div>
@@ -63,7 +71,7 @@ export default function AdminDashboardPage() {
             </div>
           </div>
 
-          {/* Stats */}
+          {/* Dashboard Stats */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
             {adminDashboardStats.map((s, idx) => {
               const Icon = s.icon;
@@ -118,7 +126,7 @@ export default function AdminDashboardPage() {
             />
           </div>
 
-          {/* Lists */}
+          {/* Pending Verifications + Recent Activity */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <PendingVerificationList
               items={adminPendingVerifications}

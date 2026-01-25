@@ -1,4 +1,4 @@
-import { useState } from "react"; // <-- added useState
+import { useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { Bell, LogOut, User } from "lucide-react";
 import DashboardLayout from "../../../shared/components/dashboard/DashboardLayout";
@@ -8,6 +8,7 @@ import RecentCases from "../../../shared/components/dashboard/RecentCases";
 import UpcomingHearings from "../../../shared/components/dashboard/UpcomingHearings";
 import QuickActions from "../../../shared/components/dashboard/QuickActions";
 import { useLoginStore } from "../../auth/store";
+
 import {
   lawyerDashboardActivity,
   lawyerDashboardCases,
@@ -16,20 +17,21 @@ import {
   lawyerDashboardStats,
 } from "../data/dashboard.mock";
 
-// Import the modal
+// Import both modals
 import LogoutConfirmationModal from "../../lawyer/components/modals/LogoutConfirmationModal";
+import NotificationPreferencesModal from "../../client/components/modals/NotificationPreferencesModal";
 
 export default function LawyerDashboard() {
   const navigate = useNavigate();
   const email = useLoginStore((state) => state.email);
 
-  // <-- Added modal state
+  //  Modal states
   const [logoutModalOpen, setLogoutModalOpen] = useState(false);
+  const [notificationModalOpen, setNotificationModalOpen] = useState(false);
 
   const displayName = (() => {
     if (!email) return "Lawyer";
     const handle = email.split("@")[0] ?? "";
-    if (!handle) return "Lawyer";
     return handle
       .replace(/[._-]+/g, " ")
       .trim()
@@ -39,7 +41,6 @@ export default function LawyerDashboard() {
       .join(" ");
   })();
 
-  // <-- Added logout handler
   const handleLogout = () => {
     setLogoutModalOpen(false);
     navigate({ to: "/login" });
@@ -47,14 +48,20 @@ export default function LawyerDashboard() {
 
   return (
     <>
-      {/* <-- Logout Modal */}
+      {/*  Logout Modal */}
       <LogoutConfirmationModal
         open={logoutModalOpen}
         onCancel={() => setLogoutModalOpen(false)}
         onConfirm={handleLogout}
       />
 
-      {/* <-- Rest of your existing dashboard code unchanged */}
+      {/*  Notification Modal */}
+      <NotificationPreferencesModal
+        isOpen={notificationModalOpen}
+        onClose={() => setNotificationModalOpen(false)}
+      />
+
+      {/*  Main Dashboard */}
       <DashboardLayout
         brandTitle="LawFlow"
         brandSubtitle="Lawyer Portal"
@@ -62,8 +69,8 @@ export default function LawyerDashboard() {
           {
             label: "Notifications",
             icon: Bell,
-            onClick: () => navigate({ to: "/Lawyer-dashboard" }),
             badge: 3,
+            onClick: () => setNotificationModalOpen(true), //  open notification modal
           },
           {
             label: "Profile",
@@ -73,7 +80,7 @@ export default function LawyerDashboard() {
           {
             label: "Logout",
             icon: LogOut,
-            onClick: () => setLogoutModalOpen(true), // <-- open modal instead of direct navigate
+            onClick: () => setLogoutModalOpen(true), // open logout modal
           },
         ]}
       >

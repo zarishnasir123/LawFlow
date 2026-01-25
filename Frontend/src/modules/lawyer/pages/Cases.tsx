@@ -115,7 +115,7 @@ export default function LawyerCases() {
         {
           label: "Profile",
           icon: User,
-          onClick: () => navigate({ to: "/Lawyer-dashboard" }),
+          onClick: () => navigate({ to: "/lawyer-profile" }),
         },
         {
           label: "Logout",
