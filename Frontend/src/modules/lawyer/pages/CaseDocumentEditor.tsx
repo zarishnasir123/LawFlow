@@ -287,7 +287,7 @@ export default function CaseDocumentEditor() {
         {
           label: "Notifications",
           icon: Bell,
-          onClick: () => navigate({ to: "/Lawyer-dashboard" }),
+          onClick: () => navigate({ to: "/lawyer-dashboard" }),
           badge: 3,
         },
         {
