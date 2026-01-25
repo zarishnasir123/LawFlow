@@ -1,7 +1,8 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import * as mammoth from "mammoth";
+import { type JSONContent } from "@tiptap/react";
 import { Bell, LogOut, User } from "lucide-react";
-import { useNavigate } from "@tanstack/react-router";
+import { useNavigate, useParams } from "@tanstack/react-router";
 import DashboardLayout from "../../../shared/components/dashboard/DashboardLayout";
 import DocumentSidebar from "../components/documentEditor/DocumentSidebar";
 import DocEditor from "../components/documentEditor/DocEditor";
@@ -39,48 +40,67 @@ const DOCS = [
 
 export default function CaseDocumentEditor() {
   const navigate = useNavigate();
+  const { caseId } = useParams({ strict: false }) as { caseId?: string }; // Retrieve generic params
+
   const {
     currentDocId,
     setCurrentDocId,
-    saveDocumentContent,
-    getDocumentContent,
+    activeEditorRef,
+    documentsById,
+    attachmentsById,
+    saveDocumentJSON,
+    getDocumentJSON,
     setLoading,
     isLoading,
     saveDraft,
     loadDraft,
     addAttachment,
     addUploadedDocument,
+    initializeDefaultBundle,
   } = useDocumentEditorStore();
 
-  const [editorContent, setEditorContent] = useState("");
+  const [editorContent, setEditorContent] = useState<string | JSONContent>("");
   const [isDownloadModalOpen, setIsDownloadModalOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const attachmentInputRef = useRef<HTMLInputElement>(null);
 
-  // Load draft on mount
+  // Load draft on mount (or initialize defaults)
   useEffect(() => {
-    loadDraft();
-  }, [loadDraft]);
+    // If caseId is present, load that specific draft. Otherwise generic.
+    loadDraft(caseId);
+
+    // We only init defaults if the bundle is empty (handled inside store or here?)
+    // initializeDefaultBundle checks emptiness internally.
+    initializeDefaultBundle(DOCS);
+  }, [loadDraft, initializeDefaultBundle, caseId]);
 
   // Auto-save every 30 seconds
   useEffect(() => {
     const interval = setInterval(() => {
-      if (currentDocId && editorContent) {
-        saveDocumentContent(currentDocId, editorContent);
-        saveDraft();
+      if (currentDocId && activeEditorRef) {
+        saveDocumentJSON(currentDocId, activeEditorRef.getJSON());
+        saveDraft(caseId);
       }
     }, 30000);
 
     return () => clearInterval(interval);
-  }, [currentDocId, editorContent, saveDocumentContent, saveDraft]);
+  }, [currentDocId, activeEditorRef, saveDocumentJSON, saveDraft, caseId]);
 
   const loadDocument = useCallback(
     async (docId: string) => {
-      // Check if content is cached first
-      const cachedContent = getDocumentContent(docId);
-      if (cachedContent) {
+      // Check if content is cached (JSON)
+      const cachedJSON = getDocumentJSON(docId);
+      if (cachedJSON) {
         setCurrentDocId(docId);
-        setEditorContent(cachedContent);
+        setEditorContent(cachedJSON);
+        return;
+      }
+
+      // Check for legacy HTML (migration)
+      const docData = documentsById[docId];
+      if (docData?.legacyHtml) {
+        setCurrentDocId(docId);
+        setEditorContent(docData.legacyHtml);
         return;
       }
 
@@ -93,94 +113,32 @@ export default function CaseDocumentEditor() {
 
       try {
         console.log(`[DOCX Loader] Loading document: ${doc.title}`);
-        console.log(`[DOCX Loader] URL: ${doc.url}`);
 
+        // ... (existing fetch logic) ...
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 5000);
-
         const response = await fetch(doc.url, { signal: controller.signal });
         clearTimeout(timeoutId);
 
-        console.log(`[DOCX Loader] Fetch response status: ${response.status}`);
-
         if (!response.ok) {
-          console.error(
-            `[DOCX Loader] Failed to fetch: ${response.status} ${response.statusText}`
-          );
-          const placeholderContent = `
-            <h1>${doc.title.toUpperCase()}</h1>
-            <p><strong>Document Type:</strong> ${doc.url.split("/").pop()}</p>
-            <p>📝 Failed to load document (${response.status
-            }). Please ensure the DOCX file exists at: <code>${doc.url
-            }</code></p>
-            <hr />
-            <h2>Sample Content</h2>
-            <p>You can now edit this document using the formatting toolbar above.</p>
-          `;
-          setEditorContent(placeholderContent);
-          saveDocumentContent(docId, placeholderContent);
-          return;
+          throw new Error(`Failed to fetch: ${response.status}`);
         }
 
         const arrayBuffer = await response.arrayBuffer();
-        console.log(
-          `[DOCX Loader] ArrayBuffer size: ${arrayBuffer.byteLength} bytes`
-        );
-
         const result = await mammoth.convertToHtml({ arrayBuffer });
-        console.log(`[DOCX Loader] Mammoth conversion complete`);
-        console.log(
-          `[DOCX Loader] HTML content length: ${result.value.length} characters`
-        );
-
-        if (result.messages && result.messages.length > 0) {
-          console.warn(`[DOCX Loader] Mammoth messages:`, result.messages);
-        }
-
         const htmlContent = result.value;
 
-        if (!htmlContent || htmlContent.trim().length === 0) {
-          console.warn(`[DOCX Loader] Converted HTML is empty`);
-          const emptyContent = `
-            <h1>${doc.title}</h1>
-            <p>⚠️ Document converted but appears to be empty.</p>
-            <p>You can start editing here.</p>
-          `;
-          setEditorContent(emptyContent);
-          saveDocumentContent(docId, emptyContent);
-        } else {
-          console.log(`[DOCX Loader] Successfully loaded document: ${doc.title}`);
-          setEditorContent(htmlContent);
-          saveDocumentContent(docId, htmlContent);
-        }
+        // Initialize as HTML (DocEditor will handle it)
+        setEditorContent(htmlContent);
+        // Note: We don't save immediately, wait for auto-save or edit
       } catch (error) {
-        const errorMessage =
-          error instanceof Error ? error.message : String(error);
         console.error(`[DOCX Loader] Error loading document:`, error);
-
-        let errorReason = "Unknown error";
-        if (errorMessage.includes("aborted")) {
-          errorReason = "Request timeout (5 seconds)";
-        } else if (errorMessage.includes("Failed to fetch")) {
-          errorReason = "Network error or file not found";
-        }
-
-        const errorContent = `
-          <h1>Error Loading Document</h1>
-          <p>⚠️ Could not load: ${doc.url}</p>
-          <p><strong>Reason:</strong> ${errorReason}</p>
-          <p>Please ensure the DOCX file exists in the public folder.</p>
-          <hr />
-          <p>For now, you can edit with this placeholder content.</p>
-        `;
-        setEditorContent(errorContent);
-        saveDocumentContent(docId, errorContent);
+        setEditorContent(`<p>Error loading document: ${String(error)}</p>`);
       } finally {
-        console.log(`[DOCX Loader] Loading complete, setting loading to false`);
         setLoading(false);
       }
     },
-    [saveDocumentContent, getDocumentContent, setCurrentDocId, setLoading]
+    [getDocumentJSON, documentsById, setCurrentDocId, setLoading]
   );
 
   // Auto-open first document on mount
@@ -190,14 +148,16 @@ export default function CaseDocumentEditor() {
     }
   }, [currentDocId, loadDocument]);
 
-  const handleContentChange = (newContent: string) => {
+  const handleContentChange = (newContent: JSONContent) => {
     setEditorContent(newContent);
+    // Optionally auto-save immediately on change? Or wait for interval.
+    // Interval is safer for performance.
   };
 
   const handleDocumentSelect = (docId: string) => {
     // Save current document before switching
-    if (currentDocId && editorContent) {
-      saveDocumentContent(currentDocId, editorContent);
+    if (currentDocId && activeEditorRef) {
+      saveDocumentJSON(currentDocId, activeEditorRef.getJSON());
     }
 
     if (docId !== currentDocId) {
@@ -206,10 +166,38 @@ export default function CaseDocumentEditor() {
   };
 
   const handleSaveDraft = () => {
-    if (currentDocId && editorContent) {
-      saveDocumentContent(currentDocId, editorContent);
+    if (currentDocId && activeEditorRef) {
+      saveDocumentJSON(currentDocId, activeEditorRef.getJSON());
     }
-    saveDraft();
+    saveDraft(caseId);
+  };
+
+  const handleInsertAttachment = (attachmentId: string) => {
+    if (!currentDocId) {
+      alert("Please open a document first.");
+      return;
+    }
+
+    if (!activeEditorRef) {
+      console.error("Editor not initialized");
+      return;
+    }
+
+    const attachment = attachmentsById[attachmentId];
+    if (!attachment) return;
+
+    // Insert AttachmentBlock at cursor
+    activeEditorRef.chain().focus().insertContent({
+      type: 'attachmentBlock',
+      attrs: {
+        attachmentId: attachment.id,
+        name: attachment.name,
+        url: attachment.url,
+        mimeType: attachment.type,
+        size: attachment.size,
+        uploadedAt: attachment.uploadedAt,
+      },
+    }).run();
   };
 
   const handleDownload = () => {
@@ -324,8 +312,8 @@ export default function CaseDocumentEditor() {
 
         <div className="flex flex-1 overflow-hidden">
           <DocumentSidebar
-            documents={DOCS}
             onDocumentSelect={handleDocumentSelect}
+            onInsertAttachment={handleInsertAttachment}
           />
           <DocEditor
             content={editorContent}
@@ -338,7 +326,7 @@ export default function CaseDocumentEditor() {
           isOpen={isDownloadModalOpen}
           onClose={() => setIsDownloadModalOpen(false)}
           currentDocTitle={currentDocTitle}
-          currentDocContent={editorContent}
+          currentDocContent={activeEditorRef?.getHTML() || (typeof editorContent === 'string' ? editorContent : "")}
         />
 
         {/* Hidden file inputs */}

@@ -6,6 +6,7 @@ import {
   MessageCircle,
   Sparkles,
   CreditCard,
+  Briefcase,
 } from "lucide-react";
 import type {
   ActivityItem,
@@ -45,21 +46,27 @@ export const lawyerDashboardQuickActions: QuickActionItem[] = [
     to: "/lawyer-new-case",
   },
   {
-    label: "AI Assistant",
-    icon: Sparkles,
-    className: "bg-purple-600 hover:bg-purple-700",
-    to: "/lawyer-ai-guidance",
+    label: "My Cases",
+    icon: Briefcase,
+    className: "bg-[#01411C] hover:bg-[#024a23]",
+    to: "/lawyer-cases",
   },
   {
     label: "Returned Cases",
     icon: FolderOpen,
-    className: "bg-red-600 hover:bg-red-700",
+    className: "bg-rose-700 hover:bg-rose-800",
     to: "/lawyer-returned-cases",
+  },
+  {
+    label: "AI Assistant",
+    icon: Sparkles,
+    className: "bg-[#01411C] hover:bg-[#024a23]",
+    to: "/lawyer-ai-guidance",
   },
   {
     label: "Signatures",
     icon: FileText,
-    className: "bg-purple-600 hover:bg-purple-700",
+    className: "bg-[#01411C] hover:bg-[#024a23]",
     to: "/lawyer-document-review",
   },
   {
@@ -77,7 +84,7 @@ export const lawyerDashboardQuickActions: QuickActionItem[] = [
   {
     label: "Service Charges",
     icon: CreditCard,
-    className: "bg-blue-600 hover:bg-blue-700",
+    className: "bg-[#01411C] hover:bg-[#024a23]",
     to: "/lawyer-service-charges",
   },
 ];

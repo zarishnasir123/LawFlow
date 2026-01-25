@@ -108,7 +108,7 @@ export default function LawyerDashboard() {
             <RecentCases
               cases={lawyerDashboardCases}
               onViewAll={() => navigate({ to: "/lawyer-cases" })}
-              onSelectCase={() => navigate({ to: "/lawyer-cases" })}
+              onSelectCase={(caseItem: any) => navigate({ to: `/lawyer-case-editor/${caseItem.id}` })}
             />
           </div>
 

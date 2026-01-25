@@ -102,20 +102,20 @@ export default function TopActionBar({
 
                     <button
                         onClick={onAddAttachment}
-                        className="flex items-center gap-2 px-3 md:px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors duration-200 font-medium text-sm"
-                        title="Add Attachment"
+                        className="flex items-center gap-2 px-3 md:px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors duration-200 font-medium text-sm border border-gray-200"
+                        title="Add Attachment (PDF, Image, Evidence)"
                     >
                         <Paperclip className="w-4 h-4" />
-                        <span className="hidden md:inline">Attachment</span>
+                        <span className="hidden md:inline">Add Attachment (Evidence)</span>
                     </button>
 
                     <button
                         onClick={onAddDocument}
-                        className="flex items-center gap-2 px-3 md:px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors duration-200 font-medium text-sm"
-                        title="Add Document"
+                        className="flex items-center gap-2 px-3 md:px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors duration-200 font-medium text-sm border border-gray-200"
+                        title="Add Editable Document (DOCX)"
                     >
                         <FilePlus className="w-4 h-4" />
-                        <span className="hidden md:inline">Document</span>
+                        <span className="hidden md:inline">Add Document (Editable)</span>
                     </button>
                 </div>
             </div>

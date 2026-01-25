@@ -259,6 +259,12 @@ const caseDocumentEditorRoute = createRoute({
   component: CaseDocumentEditor,
 });
 
+const caseDocumentEditorDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "lawyer-case-editor/$caseId",
+  component: CaseDocumentEditor,
+});
+
 /* =====================================================
    REGISTRAR ROUTES
    1. Dashboard - Main registrar hub
@@ -404,6 +410,7 @@ const routeTree = rootRoute.addChildren([
   lawyerProfileRoute,
   lawyerProfileEditRoute,
   caseDocumentEditorRoute,
+  caseDocumentEditorDetailRoute,
   lawyerHearingsRoute,
   lawyerMessagesRoute,
   lawyerChatDetailRoute,
