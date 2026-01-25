@@ -5,7 +5,7 @@ import CaseCard from "./CaseCard";
 type RecentCasesProps = {
   cases: CaseItem[];
   onViewAll: () => void;
-  onSelectCase: () => void;
+  onSelectCase: (caseItem: CaseItem) => void;
 };
 
 export default function RecentCases({ cases, onViewAll, onSelectCase }: RecentCasesProps) {
@@ -40,7 +40,7 @@ export default function RecentCases({ cases, onViewAll, onSelectCase }: RecentCa
             key={caseItem.id}
             item={caseItem}
             statusClassName={statusClassName(caseItem.status)}
-            onClick={onSelectCase}
+            onClick={() => onSelectCase(caseItem)}
           />
         ))}
       </div>

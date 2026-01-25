@@ -5,67 +5,69 @@ import {
   Outlet,
 } from "@tanstack/react-router";
 
-/* ================= AUTH ================= */
+/* =========================
+   MARKETING & AUTH
+========================= */
 import Landing from "../modules/marketing/pages/Landing";
 import Register from "../modules/auth/pages/Register";
 import Login from "../modules/auth/pages/Login";
 import ForgotPassword from "../modules/auth/pages/ForgotPassword";
 
-/* ================= CLIENT ================= */
+/* =========================
+   CLIENT
+========================= */
 import ClientDashboard from "../modules/client/pages/Dashboard";
 import ClientProfile from "../modules/client/pages/ClientProfile";
 import ClientEditProfile from "../modules/client/pages/ClientEditProfile";
 import ClientMessages from "../modules/client/pages/Messages";
 import ClientChatDetail from "../modules/client/pages/ChatDetail";
-import ClientHearings from "../modules/client/pages/Hearings";
-import FindLawyer from "../modules/client/pages/FindLawyer";
-import CaseTracking from "../modules/client/pages/CaseTracking";
 
-/* ================= LAWYER ================= */
+/* =========================
+   LAWYER
+========================= */
 import LawyerDashboard from "../modules/lawyer/pages/Dashboard";
 import LawyerCases from "../modules/lawyer/pages/Cases";
 import ReturnedCases from "../modules/lawyer/pages/ReturnedCases";
 import ReturnedCaseDetail from "../modules/lawyer/pages/ReturnedCaseDetail";
 import CreateCase from "../modules/lawyer/pages/CreateCase";
-import LawyerNewCase from "../modules/lawyer/pages/LawyerNewCase";
 import LawyerProfile from "../modules/lawyer/pages/LawyerProfile";
 import LawyerProfileEdit from "../modules/lawyer/pages/LawyerProfileEdit";
-import LawyerHearings from "../modules/lawyer/pages/Hearings";
-import LawyerMessages from "../modules/lawyer/pages/Messages";
-import ChatDetail from "../modules/lawyer/pages/ChatDetail";
-import AiLegalGuidance from "../modules/lawyer/pages/AiLegalGuidance";
-import ServiceCharges from "../modules/lawyer/pages/ServiceCharges";
-import CaseDocumentEditor from "../modules/lawyer/pages/CaseDocumentEditor";
 
-/* ================= REGISTRAR ================= */
-import { ViewCases } from "../modules/registrar/pages/viewCases";
+/* =========================
+   REGISTRAR
+========================= */
 import { RegistrarDashboard } from "../modules/registrar/pages/Dashboard";
 import ReviewCases from "../modules/registrar/pages/ReviewCases";
-import ApprovedCases from "../modules/registrar/pages/ApprovedCases";
-import ReturnCase from "../modules/registrar/pages/ReturnCase";
-import ScheduleHearing from "../modules/registrar/pages/ScheduleHearing";
 
-/* ================= ADMIN ================= */
+/* =========================
+   ADMIN
+========================= */
 import AdminDashboardPage from "../modules/admin/pages/Dashboard";
 import AdminRegistrarsPage from "../modules/admin/pages/Registrars";
+import CreateRegistrar from "../modules/admin/pages/CreateRegistrar";
+import EditRegistrar from "../modules/admin/pages/EditRegistrar";
 import AdminStatisticPage from "../modules/admin/pages/Reports";
 import AdminVerificationsPage from "../modules/admin/pages/Verifications";
 import AdminProfilePage from "../modules/admin/pages/Profile";
 import AdminNotificationsPage from "../modules/admin/pages/Notifications";
-import CreateRegistrar from "../modules/admin/pages/CreateRegistrar";
-import EditRegistrar from "../modules/admin/pages/EditRegistrar";
 
-/* ================= TEMPLATES ================= */
+/* =========================
+   ADMIN TEMPLATES
+========================= */
 import ManageTemplates from "../modules/admin/pages/ManageTemplates";
 import CreateTemplate from "../modules/admin/pages/CreateTemplate";
 import EditTemplate from "../modules/admin/pages/EditTemplate";
 
-/* ================= ROOT ================= */
+/* =========================
+   ROOT
+========================= */
 const rootRoute = createRootRoute({
   component: () => <Outlet />,
 });
 
-/* ================= BASIC ================= */
+/* =========================
+   AUTH ROUTES
+========================= */
 const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
@@ -90,7 +92,109 @@ const forgotPasswordRoute = createRoute({
   component: ForgotPassword,
 });
 
-/* ================= ADMIN ROUTES ================= */
+/* =========================
+   CLIENT ROUTES
+========================= */
+const clientDashboardRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "client-dashboard",
+  component: ClientDashboard,
+});
+
+const clientProfileRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "client-profile",
+  component: ClientProfile,
+});
+
+const clientEditProfileRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "client-profile-edit",
+  component: ClientEditProfile,
+});
+
+const clientMessagesRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "client-messages",
+  component: ClientMessages,
+});
+
+const clientChatDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "client-chat/$threadId",
+  component: ClientChatDetail,
+});
+
+/* =========================
+   LAWYER ROUTES
+========================= */
+const lawyerDashboardRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "lawyer-dashboard",
+  component: LawyerDashboard,
+});
+
+const lawyerCasesRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "lawyer-cases",
+  component: LawyerCases,
+});
+
+const lawyerCreateCaseRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "lawyer-create-case",
+  component: CreateCase,
+});
+
+const lawyerReturnedCasesRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "lawyer-returned-cases",
+  component: ReturnedCases,
+});
+
+const lawyerReturnedCaseDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "lawyer-case-detail/$caseId",
+  component: ReturnedCaseDetail,
+});
+
+const lawyerProfileRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "lawyer-profile",
+  component: LawyerProfile,
+});
+
+const lawyerProfileEditRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "lawyer-profile/edit",
+  component: LawyerProfileEdit,
+});
+
+/* =========================
+   REGISTRAR ROUTES
+========================= */
+const registrarDashboardRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "registrar-dashboard",
+  component: () => (
+    <RegistrarDashboard
+      logout={() => {
+        localStorage.clear();
+        window.location.href = "/login";
+      }}
+    />
+  ),
+});
+
+const reviewCasesRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "review-cases/$caseId",
+  component: ReviewCases,
+});
+
+/* =========================
+   ADMIN ROUTES
+========================= */
 const adminDashboardRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "admin-dashboard",
@@ -115,7 +219,9 @@ const adminEditRegistrarRoute = createRoute({
   component: EditRegistrar,
 });
 
-/* ===== TEMPLATES ===== */
+/* =========================
+   ADMIN TEMPLATE ROUTES
+========================= */
 const adminTemplatesRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "admin-templates",
@@ -158,27 +264,45 @@ const adminNotificationsRoute = createRoute({
   component: AdminNotificationsPage,
 });
 
-/* ================= ROUTE TREE (NO DUPLICATES) ================= */
+/* =========================
+   ROUTE TREE
+========================= */
 const routeTree = rootRoute.addChildren([
   indexRoute,
   registerRoute,
   loginRoute,
   forgotPasswordRoute,
 
+  clientDashboardRoute,
+  clientProfileRoute,
+  clientEditProfileRoute,
+  clientMessagesRoute,
+  clientChatDetailRoute,
+
+  lawyerDashboardRoute,
+  lawyerCasesRoute,
+  lawyerCreateCaseRoute,
+  lawyerReturnedCasesRoute,
+  lawyerReturnedCaseDetailRoute,
+  lawyerProfileRoute,
+  lawyerProfileEditRoute,
+
+  registrarDashboardRoute,
+  reviewCasesRoute,
+
   adminDashboardRoute,
-adminRegistrarsRoute,
-adminCreateRegistrarRoute,
-adminEditRegistrarRoute,
+  adminRegistrarsRoute,
+  adminCreateRegistrarRoute,
+  adminEditRegistrarRoute,
 
-adminTemplatesRoute,
-adminCreateTemplateRoute,
-adminEditTemplateRoute,
+  adminTemplatesRoute,
+  adminCreateTemplateRoute,
+  adminEditTemplateRoute,
 
-adminStatisticsRoute,
-adminVerificationsRoute,
-adminProfileRoute,
-adminNotificationsRoute,
-
+  adminStatisticsRoute,
+  adminVerificationsRoute,
+  adminProfileRoute,
+  adminNotificationsRoute,
 ]);
 
 export const router = createRouter({ routeTree });
