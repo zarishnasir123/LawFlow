@@ -88,13 +88,13 @@ export default function ServiceCharges() {
         {
           label: "Notifications",
           icon: Bell,
-          onClick: () => navigate({ to: "/lawyer-dashboard" }),
+          onClick: () => navigate({ to: "/Lawyer-dashboard" }),
           badge: 3,
         },
         {
           label: "Profile",
           icon: User,
-          onClick: () => navigate({ to: "/lawyer-dashboard" }),
+          onClick: () => navigate({ to: "/Lawyer-dashboard" }),
         },
         {
           label: "Logout",
