@@ -9,10 +9,10 @@ function formatFileSize(bytes: number): string {
     return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
 }
 
-function getFileIcon(mimeType: string) {
-    if (mimeType.includes('pdf')) return File;
-    if (mimeType.includes('image')) return ImageIcon;
-    return FileText;
+function FileIcon({ mimeType, className }: { mimeType: string; className: string }) {
+    if (mimeType.includes('pdf')) return <File className={className} />;
+    if (mimeType.includes('image')) return <ImageIcon className={className} />;
+    return <FileText className={className} />;
 }
 
 export function AttachmentBlockComponent({ node, deleteNode }: NodeViewProps) {
@@ -30,8 +30,6 @@ export function AttachmentBlockComponent({ node, deleteNode }: NodeViewProps) {
     // Check if attachment still exists in the store (Rule A: attachment stays in bundle)
     const attachmentExists = attachmentsById[attachmentId];
     const isMissing = !attachmentExists;
-
-    const Icon = getFileIcon(mimeType);
 
     const handleOpen = () => {
         if (!isMissing && url) {
@@ -75,7 +73,7 @@ export function AttachmentBlockComponent({ node, deleteNode }: NodeViewProps) {
                         {isMissing ? (
                             <AlertTriangle className="w-6 h-6 text-red-600" />
                         ) : (
-                            <Icon className="w-6 h-6 text-blue-600" />
+                            <FileIcon mimeType={mimeType} className="w-6 h-6 text-blue-600" />
                         )}
                     </div>
 
