@@ -70,25 +70,31 @@ export default function SignatureRequestPanel({
   const canSend = selectedItems.size > 0;
 
   return (
-    <div className="fixed right-0 top-0 h-screen w-full sm:w-96 bg-white border-l border-gray-200 shadow-lg z-40 overflow-y-auto">
+    <div className="fixed right-0 top-0 h-screen w-full sm:w-[26rem] bg-slate-50 border-l border-slate-200 shadow-2xl z-40 flex flex-col overflow-hidden">
       {/* Header */}
-      <div className="sticky top-0 bg-white border-b border-gray-200 p-4 flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-gray-900">
-          Request Client Signature
-        </h2>
+      <div className="sticky top-0 bg-white/95 backdrop-blur border-b border-slate-200 px-5 py-4 flex items-center justify-between">
+        <div>
+          <h2 className="text-lg font-semibold text-slate-900">
+            Request Client Signature
+          </h2>
+          <p className="text-xs text-slate-500 mt-0.5">
+            Choose files that require client approval
+          </p>
+        </div>
         <button
           onClick={onClose}
-          className="p-1 text-gray-500 hover:bg-gray-100 rounded-md transition-colors"
+          className="p-1.5 text-slate-500 hover:bg-slate-100 rounded-md transition-colors"
+          aria-label="Close signature request panel"
         >
           <X className="w-5 h-5" />
         </button>
       </div>
 
       {/* Content */}
-      <div className="p-4 space-y-4">
+      <div className="flex-1 overflow-y-auto px-5 py-5 space-y-4">
         {/* Pending Count */}
         {pendingCount > 0 && (
-          <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 flex items-start gap-2">
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-3.5 flex items-start gap-2">
             <AlertCircle className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />
             <div>
               <p className="text-xs font-medium text-amber-700">Pending</p>
@@ -99,9 +105,9 @@ export default function SignatureRequestPanel({
 
         {/* Success Message */}
         {showSuccess && (
-          <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3">
+          <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3.5">
             <p className="text-sm text-emerald-800 font-medium">
-              ✓ Signature requests sent to client!
+              Success: Signature requests sent to client.
             </p>
           </div>
         )}
@@ -113,7 +119,7 @@ export default function SignatureRequestPanel({
           </h3>
 
           {bundleItems.length === 0 ? (
-            <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 text-center">
+            <div className="bg-white border border-slate-200 rounded-xl p-4 text-center">
               <p className="text-sm text-gray-600">No documents in bundle</p>
             </div>
           ) : (
@@ -125,30 +131,32 @@ export default function SignatureRequestPanel({
                 return (
                   <label
                     key={item.id}
-                    className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
+                    className={`flex items-start gap-3 p-3.5 rounded-xl border cursor-pointer transition-all ${
                       isSelected
-                        ? "bg-blue-50 border-blue-200"
-                        : "bg-white border-gray-200 hover:border-gray-300"
-                    } ${isRequested && !isSelected ? "opacity-60" : ""}`}
+                        ? "bg-emerald-50 border-emerald-300 ring-2 ring-emerald-200/60"
+                        : isRequested
+                          ? "bg-amber-50/50 border-amber-200"
+                          : "bg-white border-slate-200 hover:border-slate-300 hover:shadow-sm"
+                    } ${isRequested && !isSelected ? "opacity-75" : ""}`}
                   >
                     <input
                       type="checkbox"
                       checked={isSelected}
                       onChange={() => handleToggleItem(item.id)}
                       disabled={isRequested && !isSelected}
-                      className="mt-1 w-4 h-4 rounded border-gray-300 text-blue-600 cursor-pointer"
+                      className="mt-1 w-4 h-4 rounded border-slate-300 accent-emerald-600 cursor-pointer"
                     />
 
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-900 truncate">
+                      <p className="text-sm font-semibold text-slate-900 truncate">
                         {item.title}
                       </p>
                       <div className="flex items-center gap-2 mt-1">
-                        <span className="inline-block px-2 py-0.5 text-xs font-medium bg-gray-100 text-gray-700 rounded">
+                        <span className="inline-block px-2 py-0.5 text-xs font-medium bg-slate-100 text-slate-700 rounded-full">
                           {item.type === "DOC" ? "Document" : "Attachment"}
                         </span>
                         {isRequested && (
-                          <span className="inline-block px-2 py-0.5 text-xs font-medium bg-amber-100 text-amber-800 rounded">
+                          <span className="inline-block px-2 py-0.5 text-xs font-medium bg-amber-100 text-amber-800 rounded-full">
                             Pending
                           </span>
                         )}
@@ -163,8 +171,8 @@ export default function SignatureRequestPanel({
 
         {/* Selected Count */}
         {selectedItems.size > 0 && (
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-            <p className="text-sm text-blue-900">
+          <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3.5">
+            <p className="text-sm text-emerald-900">
               <strong>{selectedItems.size}</strong> document{selectedItems.size !== 1 ? 's' : ''} selected
             </p>
           </div>
@@ -172,14 +180,14 @@ export default function SignatureRequestPanel({
       </div>
 
       {/* Footer - Action Buttons */}
-      <div className="sticky bottom-0 bg-white border-t border-gray-200 p-4 space-y-2">
+      <div className="sticky bottom-0 bg-white/95 backdrop-blur border-t border-slate-200 px-5 py-4 space-y-2">
         <button
           onClick={handleSendRequests}
           disabled={!canSend}
-          className={`w-full flex items-center justify-center gap-2 px-4 py-2 rounded-lg font-medium text-sm transition-colors ${
+          className={`w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-semibold text-sm transition-colors ${
             canSend
-              ? "bg-emerald-600 text-white hover:bg-emerald-700"
-              : "bg-gray-100 text-gray-400 cursor-not-allowed"
+              ? "bg-emerald-600 text-white hover:bg-emerald-700 shadow-lg shadow-emerald-200/60"
+              : "bg-slate-100 text-slate-400 cursor-not-allowed"
           }`}
         >
           <Send className="w-4 h-4" />
@@ -188,7 +196,7 @@ export default function SignatureRequestPanel({
 
         <button
           onClick={onClose}
-          className="w-full px-4 py-2 rounded-lg font-medium text-sm border border-gray-200 text-gray-700 hover:bg-gray-50 transition-colors"
+          className="w-full px-4 py-2.5 rounded-xl font-medium text-sm border border-slate-200 text-slate-700 hover:bg-slate-50 transition-colors"
         >
           Close
         </button>
