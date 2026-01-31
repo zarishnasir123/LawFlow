@@ -4,17 +4,8 @@ import DashboardLayout from "../../../shared/components/dashboard/DashboardLayou
 import Card from "../../../shared/components/dashboard/Card";
 import { caseInfo, timeline } from "../data/casetrack.mock";
 
-export default function CaseTracking() {
-  const navigate = useNavigate();
-
-  const statusColors: Record<string, string> = {
-    Completed: "border-green-500 text-green-700 bg-green-50",
-    "In Progress": "border-blue-500 text-blue-700 bg-blue-50",
-    Pending: "border-gray-400 text-gray-600 bg-gray-50",
-  };
-
-  // A simple inline badge component (no need for UI folder)
-  const Badge = ({ text, color }: { text: string; color?: string }) => (
+function Badge({ text, color }: { text: string; color?: string }) {
+  return (
     <span
       className={`inline-block text-xs font-medium px-2 py-1 rounded-md ${
         color || "bg-gray-100 text-gray-600"
@@ -23,6 +14,16 @@ export default function CaseTracking() {
       {text}
     </span>
   );
+}
+
+export default function CaseTracking() {
+  const navigate = useNavigate();
+
+  const statusColors: Record<string, string> = {
+    Completed: "border-green-500 text-green-700 bg-green-50",
+    "In Progress": "border-blue-500 text-blue-700 bg-blue-50",
+    Pending: "border-gray-400 text-gray-600 bg-gray-50",
+  };
 
   return (
     <DashboardLayout
@@ -40,7 +41,7 @@ export default function CaseTracking() {
       }
     >
       <div className="space-y-6">
-        {/* ─── Case Info ─── */}
+        {/* --- Case Info --- */}
         <Card className="p-6 border border-green-100 shadow-sm">
           <h2 className="text-xl font-semibold text-gray-900 mb-1">
             {caseInfo.caseNumber}{" "}
@@ -71,7 +72,7 @@ export default function CaseTracking() {
           </div>
         </Card>
 
-        {/* ─── Case Timeline ─── */}
+        {/* --- Case Timeline --- */}
         <Card className="p-6 border border-gray-100 shadow-sm">
           <h3 className="text-lg font-semibold text-gray-900 mb-4">
             Case Timeline
@@ -110,7 +111,7 @@ export default function CaseTracking() {
                     {step.description}
                   </p>
                   <p className="text-xs text-gray-500 mt-1">
-                    {step.date} • {step.time}
+                    {step.date} - {step.time}
                   </p>
                 </div>
               </div>
