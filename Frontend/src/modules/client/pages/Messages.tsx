@@ -1,4 +1,5 @@
 import { useMemo, useState, useEffect, useRef } from "react";
+import { useNavigate, useSearch } from "@tanstack/react-router";
 import {
   Search,
   MessageCircle,
@@ -17,6 +18,8 @@ import {
 } from "../api"; // ✅ Fixed imports
 
 export default function ClientMessages() {
+  const { thread } = useSearch({ strict: false }) as { thread?: string };
+  const navigate = useNavigate();
   const [threads, setThreads] = useState<ClientChatThread[]>([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
@@ -60,6 +63,28 @@ export default function ClientMessages() {
     };
     loadThreads();
   }, []);
+
+  useEffect(() => {
+    if (!thread || selectedThreadId) return;
+    const match = threads.find((item) => item.id === thread);
+    if (match) {
+      setSelectedThreadId(match.id);
+    }
+  }, [thread, threads, selectedThreadId]);
+
+  const handleThreadSelect = (threadId: string) => {
+    setSelectedThreadId(threadId);
+    navigate({
+      to: "/client-messages",
+      search: { thread: threadId },
+      replace: true,
+    });
+  };
+
+  const handleThreadClear = () => {
+    setSelectedThreadId(null);
+    navigate({ to: "/client-messages", search: {}, replace: true });
+  };
 
   // ✅ Load messages when a thread is selected
   useEffect(() => {
@@ -164,7 +189,7 @@ export default function ClientMessages() {
               filteredThreads.map((thread) => (
                 <button
                   key={thread.id}
-                  onClick={() => setSelectedThreadId(thread.id)}
+                  onClick={() => handleThreadSelect(thread.id)}
                   className={`w-full px-5 py-3.5 text-left border-b-2 border-gray-300 hover:bg-green-50/50 transition ${
                     selectedThreadId === thread.id
                       ? "bg-green-50/80 border-l-4 border-l-[#01411C]"
@@ -243,7 +268,7 @@ export default function ClientMessages() {
                   <div className="flex items-center gap-4">
                     {selectedThreadId && (
                       <button
-                        onClick={() => setSelectedThreadId(null)}
+                        onClick={handleThreadClear}
                         className="sm:hidden text-gray-600 hover:text-[#01411C] transition hover:bg-gray-100 p-1.5 rounded-lg"
                         title="Back"
                       >

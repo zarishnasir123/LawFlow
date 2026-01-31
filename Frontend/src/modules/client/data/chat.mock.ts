@@ -4,7 +4,7 @@ import type { ChatMessage, ClientChatThread } from "../../../types/chat";
 export const mockClientThreads: ClientChatThread[] = [
   {
     id: "t-1",
-    lawyer: { id: "l-1", name: "Ayesha Khan", initials: "A", status: "online" },
+    lawyer: { id: "l-1", name: "Adv. Ayesha Khan", initials: "A", status: "online" },
     caseId: "LC-2024-0156",
     tags: ["Property Dispute", "Urgent"],
     lastMessage: "Please send the documents.",
@@ -22,7 +22,7 @@ export const mockClientThreads: ClientChatThread[] = [
   },
   {
     id: "t-3",
-    lawyer: { id: "l-3", name: "Fatima Noor", initials: "F", status: "online" },
+    lawyer: { id: "l-3", name: "Adv. Fatima Ali", initials: "F", status: "online" },
     caseId: "LC-2024-0138",
     tags: ["Document Review"],
     lastMessage: "Please review the documents before signing.",
