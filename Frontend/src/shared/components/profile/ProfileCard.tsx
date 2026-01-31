@@ -36,13 +36,15 @@ export default function ProfileCard({
           <span className="px-3 py-1 text-xs rounded-full bg-gray-100">
             {roleLabel}
           </span>
-          <button
-            onClick={onEdit}
-            className="flex items-center gap-2 border px-3 py-1.5 rounded-md text-sm hover:bg-gray-50"
-          >
-            <Pencil size={14} />
-            Edit Profile
-          </button>
+          {onEdit && (
+            <button
+              onClick={onEdit}
+              className="flex items-center gap-2 border px-3 py-1.5 rounded-md text-sm hover:bg-gray-50"
+            >
+              <Pencil size={14} />
+              Edit Profile
+            </button>
+          )}
         </div>
       </div>
 

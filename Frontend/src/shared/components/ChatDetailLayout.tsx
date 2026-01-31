@@ -1,18 +1,16 @@
 import type { ReactNode } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { ArrowLeft, PhoneCall } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 
 interface ChatDetailLayoutProps {
   clientName?: string;
   clientStatus?: "online" | "offline";
-  onVoiceCall?: () => void;
   children: ReactNode;
 }
 
 export default function ChatDetailLayout({
   clientName = "Client",
   clientStatus = "offline",
-  onVoiceCall,
   children,
 }: ChatDetailLayoutProps) {
   const navigate = useNavigate();
@@ -39,18 +37,6 @@ export default function ChatDetailLayout({
             </p>
           </div>
 
-          {/* Right: Voice call */}
-          {onVoiceCall && (
-            <button
-              onClick={onVoiceCall}
-              className="ml-4 flex items-center gap-2 rounded-lg bg-white/10 px-3 py-2 text-sm font-medium text-white transition hover:bg-white/20"
-              title="Start voice call"
-              type="button"
-            >
-              <PhoneCall className="h-4 w-4" />
-              Call
-            </button>
-          )}
         </div>
       </nav>
 

@@ -3,7 +3,6 @@ import { useParams } from "@tanstack/react-router";
 import ChatDetailLayout from "../../../shared/components/ChatDetailLayout";
 import ChatMessageBubble from "../components/ChatMessageBubble";
 import ChatComposer from "../components/ChatComposer";
-import { initiateVoiceCall } from "../utils/voicecall";
 
 import {
   getClientThreadById,
@@ -53,19 +52,9 @@ export default function ClientChatDetail() {
     setMessages((prev) => [...prev, newMsg]);
   };
 
-  // Voice call
-  const handleVoiceCall = () => {
-    if (thread?.lawyer) {
-      initiateVoiceCall({
-        clientId: thread.lawyer.id,
-        clientName: thread.lawyer.name,
-      });
-    }
-  };
-
   if (loading) {
     return (
-      <ChatDetailLayout clientName="Loading..." onVoiceCall={handleVoiceCall}>
+      <ChatDetailLayout clientName="Loading...">
         <div className="flex items-center justify-center h-full">
           <p className="text-gray-500">Loading chat...</p>
         </div>
@@ -87,7 +76,6 @@ export default function ClientChatDetail() {
     <ChatDetailLayout
       clientName={thread.lawyer.name} // show lawyer
       clientStatus={thread.lawyer.status}
-      onVoiceCall={handleVoiceCall} // ✅ voice call button
     >
       <div className="flex flex-col h-full bg-white">
         {/* Messages container */}

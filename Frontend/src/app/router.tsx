@@ -24,6 +24,7 @@ import ClientChatDetail from "../modules/client/pages/ChatDetail";
 import ClientHearings from "../modules/client/pages/Hearings";
 import FindLawyer from "../modules/client/pages/FindLawyer";
 import CaseTracking from "../modules/client/pages/CaseTracking";
+import LawyerProfileView from "../modules/client/pages/LawyerProfileView";
 
 /* =====================================================
    LAWYER MODULE IMPORTS
@@ -138,6 +139,12 @@ export const findLawyerRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "FindLawyer",
   component: FindLawyer,
+});
+
+const clientLawyerProfileRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "client-lawyer/$lawyerId",
+  component: LawyerProfileView,
 });
 
 export const casetrackingRoute = createRoute({
@@ -398,6 +405,7 @@ const routeTree = rootRoute.addChildren([
   clientChatDetailRoute,
   clientHearingsRoute,
   findLawyerRoute,
+  clientLawyerProfileRoute,
   casetrackingRoute,
 
   // Lawyer Routes
