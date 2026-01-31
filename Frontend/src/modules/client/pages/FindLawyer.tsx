@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { ArrowLeft, Search } from "lucide-react";
-import DashboardLayout from "../../../shared/components/dashboard/DashboardLayout";
+import { Search } from "lucide-react";
+import ClientLayout from "../components/ClientLayout";
 import LawyerCard from "../components/LawyerCard";
 import type { Lawyer } from "../components/LawyerCard";
 
@@ -53,21 +53,10 @@ export default function FindLawyer() {
   }, [lawyers, query, category, city]);
 
   return (
-    <DashboardLayout
-      brandTitle={
-        <div
-          className="flex items-start gap-3 cursor-pointer"
-          onClick={() => navigate({ to: "/client-dashboard" })}
-        >
-          <ArrowLeft className="mt-1 h-5 w-5 text-white" />
-          <div className="flex flex-col">
-            <span className="text-lg font-semibold">Find a Lawyer</span>
-            <p className="text-sm text-green-100">
-              Browse and select from verified lawyers
-            </p>
-          </div>
-        </div>
-      }
+    <ClientLayout
+      brandSubtitle="Find a Lawyer"
+      showBackButton
+      onBackClick={() => navigate({ to: "/client-dashboard" })}
     >
       {/* Filters */}
       <div className="mb-6 rounded-xl bg-white p-4 shadow-sm">
@@ -119,6 +108,6 @@ export default function FindLawyer() {
           </div>
         )}
       </div>
-    </DashboardLayout>
+    </ClientLayout>
   );
 }

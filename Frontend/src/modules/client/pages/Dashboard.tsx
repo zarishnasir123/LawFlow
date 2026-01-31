@@ -1,18 +1,8 @@
 import { useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
-import {
-  Bell,
-  Calendar,
-  FileText,
-  Gavel,
-  LogOut,
-  MessageCircle,
-  PenTool,
- 
-  User,
-} from "lucide-react";
+import { useEffect } from "react";
+import { Calendar, FileText, Gavel, MessageCircle, PenTool } from "lucide-react";
 
-import DashboardLayout from "../../../shared/components/dashboard/DashboardLayout";
+import ClientLayout from "../components/ClientLayout";
 import QuickActions from "../../../shared/components/dashboard/QuickActions";
 import RecentActivity from "../../../shared/components/dashboard/RecentActivity";
 import RecentCases from "../../../shared/components/dashboard/RecentCases";
@@ -20,7 +10,7 @@ import StatCard from "../../../shared/components/dashboard/StatCard";
 import UpcomingHearings from "../../../shared/components/dashboard/UpcomingHearings";
 
 import { useLoginStore } from "../../auth/store";
-import { LogoutConfirmationModal } from "../components/modals";
+import { useClientProfileStore } from "../store";
 
 import type {
   ActivityItem,
@@ -33,10 +23,14 @@ import type {
 export default function Dashboard() {
   const navigate = useNavigate();
   const email = useLoginStore((state) => state.email);
+  const { profile, initializeProfile } = useClientProfileStore();
 
-  const [showLogoutModal, setShowLogoutModal] = useState(false);
+  useEffect(() => {
+    initializeProfile();
+  }, [initializeProfile]);
 
   const displayName = (() => {
+    if (profile?.fullName) return profile.fullName;
     if (!email) return "Client";
     const handle = email.split("@")[0] ?? "";
     return handle
@@ -51,13 +45,19 @@ export default function Dashboard() {
   const stats: DashboardStat[] = [
     { label: "Active Cases", value: "2", icon: FileText, accentClassName: "bg-blue-500" },
     { label: "Upcoming Hearings", value: "1", icon: Calendar, accentClassName: "bg-purple-500" },
-    { label: "Pending Signatures", value: "1", icon: FileText, accentClassName: "bg-yellow-500" },
+    {
+      label: "Pending Signatures",
+      value: "1",
+      icon: FileText,
+      accentClassName: "bg-yellow-500",
+      onClick: () => navigate({ to: "/case-tracking", search: { view: "pending" } }),
+    },
     { label: "Messages", value: "3", icon: MessageCircle, accentClassName: "bg-green-500" },
   ];
 
   const quickActions: QuickActionItem[] = [
     { label: "Find a Lawyer", icon: Gavel, className: "bg-[#01411C] hover:bg-[#024a23]", to: "/FindLawyer" },
-    { label: "Pending Signatures", icon: PenTool, className: "bg-yellow-600 hover:bg-yellow-700", to: "/client-dashboard" },
+    { label: "Pending Signatures", icon: PenTool, className: "bg-yellow-600 hover:bg-yellow-700", to: "/case-tracking?view=pending" },
     { label: "Messages", icon: MessageCircle, className: "bg-[#01411C] hover:bg-[#024a23]", to: "/client-messages" },
     { label: "Hearings", icon: Calendar, className: "bg-[#01411C] hover:bg-[#024a23]", to: "/client-hearings" },
   ];
@@ -84,7 +84,7 @@ export default function Dashboard() {
   ];
 
   const hearings: HearingItem[] = [
-    { id: 1, caseNumber: "LC-2024-0156", title: "Property Dispute", dateTime: "January 30, 2025 • 10:00 AM" },
+    { id: 1, caseNumber: "LC-2024-0156", title: "Property Dispute", dateTime: "January 30, 2025 - 10:00 AM" },
   ];
 
   const activityItems: ActivityItem[] = [
@@ -94,28 +94,7 @@ export default function Dashboard() {
 
   return (
     <>
-      <DashboardLayout
-        brandTitle="LawFlow"
-        brandSubtitle="Client Portal"
-        actions={[
-          {
-            label: "Notifications",
-            icon: Bell,
-            badge: 3,
-            onClick: () => navigate({ to: "/client-dashboard" }),
-          },
-          {
-            label: "Profile",
-            icon: User,
-            onClick: () => navigate({ to: "/client-profile" }),
-          },
-          {
-            label: "Logout",
-            icon: LogOut,
-            onClick: () => setShowLogoutModal(true),
-          },
-        ]}
-      >
+      <ClientLayout brandSubtitle="Client Dashboard">
         <div className="mb-6">
           <h2 className="text-xl font-semibold text-gray-900">
             Welcome back, {displayName}
@@ -149,18 +128,7 @@ export default function Dashboard() {
             <RecentActivity items={activityItems} />
           </div>
         </section>
-      </DashboardLayout>
-
-      {/* Logout Modal */}
-      <LogoutConfirmationModal
-        open={showLogoutModal}
-        
-        onCancel={() => setShowLogoutModal(false)}
-        onConfirm={() => {
-          setShowLogoutModal(false);
-          navigate({ to: "/login" });
-        }}
-      />
+      </ClientLayout>
     </>
   );
 }

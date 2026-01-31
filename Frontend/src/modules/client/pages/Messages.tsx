@@ -1,15 +1,11 @@
 import { useMemo, useState, useEffect, useRef } from "react";
-import { useNavigate } from "@tanstack/react-router";
 import {
-  Bell,
-  User,
-  LogOut,
   Search,
   MessageCircle,
   ArrowLeft,
   Download,
 } from "lucide-react";
-import DashboardLayout from "../../../shared/components/dashboard/DashboardLayout";
+import ClientLayout from "../components/ClientLayout";
 import ChatMessageBubble from "../components/ChatMessageBubble";
 import ChatComposer from "../components/ChatComposer";
 import LawyerInfoSidebar from "../components/lawyerInfoSidebar";
@@ -21,7 +17,6 @@ import {
 } from "../api"; // ✅ Fixed imports
 
 export default function ClientMessages() {
-  const navigate = useNavigate();
   const [threads, setThreads] = useState<ClientChatThread[]>([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
@@ -129,28 +124,7 @@ export default function ClientMessages() {
   };
 
   return (
-    <DashboardLayout
-      brandTitle="LawFlow"
-      brandSubtitle="Your Messages"
-      actions={[
-        {
-          label: "Notifications",
-          icon: Bell,
-          onClick: () => navigate({ to: "/client-dashboard" }),
-          badge: 3,
-        },
-        {
-          label: "Profile",
-          icon: User,
-          onClick: () => navigate({ to: "/client-profile" }),
-        },
-        {
-          label: "Logout",
-          icon: LogOut,
-          onClick: () => navigate({ to: "/login" }),
-        },
-      ]}
-    >
+    <ClientLayout brandSubtitle="Your Messages">
       <div className="flex gap-4 h-[calc(100vh-130px)] lg:gap-5 p-2">
         {/* Sidebar */}
         <div
@@ -391,6 +365,6 @@ export default function ClientMessages() {
           )}
         </div>
       </div>
-    </DashboardLayout>
+    </ClientLayout>
   );
 }

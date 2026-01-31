@@ -1,8 +1,5 @@
 import { useState } from "react";
 import {
-  Bell,
-  LogOut,
-  User,
   Clock,
   CheckCircle,
   ClipboardList,
@@ -16,7 +13,7 @@ import {
   Download,
 } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
-import DashboardLayout from "../../../shared/components/dashboard/DashboardLayout";
+import ClientLayout from "../components/ClientLayout";
 import { getInitialHearings } from "../data/hearings.mock";
 
 interface Hearing {
@@ -49,27 +46,10 @@ export default function LawyerHearings() {
   const completedCount = mockHearings.filter((h) => h.status === "completed").length;
 
   return (
-    <DashboardLayout
-      brandTitle="LawFlow"
-      brandSubtitle="Lawyer Portal"
-      actions={[
-        {
-          label: "Notifications",
-          icon: Bell,
-          onClick: () => navigate({ to: "/Lawyer-dashboard" }),
-          badge: 3,
-        },
-        {
-          label: "Profile",
-          icon: User,
-          onClick: () => navigate({ to: "/Lawyer-dashboard" }),
-        },
-        {
-          label: "Logout",
-          icon: LogOut,
-          onClick: () => navigate({ to: "/login" }),
-        },
-      ]}
+    <ClientLayout
+      brandSubtitle="Hearings"
+      showBackButton
+      onBackClick={() => navigate({ to: "/client-dashboard" })}
     >
       <div className="space-y-6">
         {/* Header */}
@@ -297,6 +277,6 @@ export default function LawyerHearings() {
           </div>
         )}
       </div>
-    </DashboardLayout>
+    </ClientLayout>
   );
 }
