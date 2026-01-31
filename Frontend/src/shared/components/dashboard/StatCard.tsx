@@ -8,9 +8,14 @@ export default function StatCard({
   value,
   icon: Icon,
   accentClassName,
+  onClick,
 }: StatCardProps) {
-  return (
-    <Card className="flex items-center justify-between">
+  const cardClasses = ["flex items-center justify-between", onClick ? "cursor-pointer" : ""]
+    .filter(Boolean)
+    .join(" ");
+
+  const content = (
+    <>
       <div className="space-y-2">
         <div className={["inline-flex rounded-xl p-3", accentClassName].join(" ")}>
           <Icon className="h-6 w-6 text-white" />
@@ -18,6 +23,23 @@ export default function StatCard({
         <p className="text-sm text-gray-600">{label}</p>
       </div>
       <span className="text-3xl font-bold text-gray-900">{value}</span>
-    </Card>
+    </>
   );
+
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        className={[
+          "rounded-2xl border border-green-100/70 bg-white p-5 shadow-sm",
+          cardClasses,
+        ].join(" ")}
+      >
+        {content}
+      </button>
+    );
+  }
+
+  return <Card className={cardClasses}>{content}</Card>;
 }

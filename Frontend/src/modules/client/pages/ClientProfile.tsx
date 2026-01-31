@@ -1,23 +1,22 @@
 import { useNavigate } from "@tanstack/react-router";
-import { Bell, LogOut, User } from "lucide-react";
 import { useEffect, useState } from "react";
 
-import DashboardLayout from "../../../shared/components/dashboard/DashboardLayout";
+import ClientLayout from "../components/ClientLayout";
+import useClientLayout from "../components/useClientLayout";
 import ProfileCard from "../../../shared/components/profile/ProfileCard";
 import ProfileField from "../../../shared/components/profile/ProfileField";
 import {
   ChangePasswordModal,
-  NotificationPreferencesModal,
   DeactivateAccountModal,
 } from "../components/modals";
 import { useClientProfileStore } from "../store";
 
 export default function ClientProfile() {
   const navigate = useNavigate();
+  const { openNotificationModal } = useClientLayout();
   const { profile, initializeProfile } = useClientProfileStore();
 
   const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
-  const [showNotificationModal, setShowNotificationModal] = useState(false);
   const [showDeactivateModal, setShowDeactivateModal] = useState(false);
 
   // Initialize profile
@@ -27,8 +26,7 @@ export default function ClientProfile() {
 
   // Disable scroll when modal is open
   useEffect(() => {
-    const isAnyModalOpen =
-      showChangePasswordModal || showNotificationModal || showDeactivateModal;
+    const isAnyModalOpen = showChangePasswordModal || showDeactivateModal;
 
     if (isAnyModalOpen) {
       document.documentElement.style.overflow = "hidden";
@@ -42,31 +40,10 @@ export default function ClientProfile() {
       document.documentElement.style.overflow = "";
       document.body.style.overflow = "";
     };
-  }, [showChangePasswordModal, showNotificationModal, showDeactivateModal]);
+  }, [showChangePasswordModal, showDeactivateModal]);
 
   return (
-    <DashboardLayout
-      brandTitle="LawFlow"
-      brandSubtitle="Client Profile"
-      actions={[
-        {
-          label: "Notifications",
-          icon: Bell,
-          onClick: () => setShowNotificationModal(true),
-          badge: 2, // You can adjust badge count
-        },
-        {
-          label: "Profile",
-          icon: User,
-          onClick: () => navigate({ to: "/client-profile" }),
-        },
-        {
-          label: "Logout",
-          icon: LogOut,
-          onClick: () => navigate({ to: "/login" }),
-        },
-      ]}
-    >
+    <ClientLayout brandSubtitle="Client Profile">
       <div className="px-6 py-8">
         <ProfileCard
           name={profile.fullName}
@@ -99,7 +76,7 @@ export default function ClientProfile() {
               </button>
 
               <button
-                onClick={() => setShowNotificationModal(true)}
+                onClick={openNotificationModal}
                 className="border px-4 py-2 rounded-md text-sm hover:bg-gray-50 transition"
               >
                 Notification Preferences
@@ -121,10 +98,6 @@ export default function ClientProfile() {
         isOpen={showChangePasswordModal}
         onClose={() => setShowChangePasswordModal(false)}
       />
-      <NotificationPreferencesModal
-        isOpen={showNotificationModal}
-        onClose={() => setShowNotificationModal(false)}
-      />
       <DeactivateAccountModal
         isOpen={showDeactivateModal}
         onClose={() => setShowDeactivateModal(false)}
@@ -133,6 +106,6 @@ export default function ClientProfile() {
           navigate({ to: "/login" });
         }}
       />
-    </DashboardLayout>
+    </ClientLayout>
   );
 }

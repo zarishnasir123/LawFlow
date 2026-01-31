@@ -5,6 +5,7 @@ export type DashboardStat = {
   value: string;
   icon: LucideIcon;
   accentClassName: string;
+  onClick?: () => void;
 };
 
 export type QuickActionItem = {

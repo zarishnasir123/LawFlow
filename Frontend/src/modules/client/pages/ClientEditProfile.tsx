@@ -1,46 +1,17 @@
 import { useNavigate } from "@tanstack/react-router";
-import { Bell, LogOut, User } from "lucide-react";
-import { useEffect, useState } from "react";
-import DashboardLayout from "../../../shared/components/dashboard/DashboardLayout";
+import { useEffect } from "react";
+import ClientLayout from "../components/ClientLayout";
 import ProfileCard from "../../../shared/components/profile/ProfileCard";
 import { useClientProfileStore } from "../store";
-import {
-  ChangePasswordModal,
-  NotificationPreferencesModal,
-  DeactivateAccountModal,
-} from "../components/modals";
 
 export default function ClientProfileEdit() {
   const navigate = useNavigate();
   const { profile, initializeProfile, updateField, updateProfile } = useClientProfileStore();
 
-  const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
-  const [showNotificationModal, setShowNotificationModal] = useState(false);
-  const [showDeactivateModal, setShowDeactivateModal] = useState(false);
-
   // Initialize profile
   useEffect(() => {
     initializeProfile();
   }, [initializeProfile]);
-
-  // Disable scroll when modals are open
-  useEffect(() => {
-    const isAnyModalOpen =
-      showChangePasswordModal || showNotificationModal || showDeactivateModal;
-
-    if (isAnyModalOpen) {
-      document.documentElement.style.overflow = "hidden";
-      document.body.style.overflow = "hidden";
-    } else {
-      document.documentElement.style.overflow = "";
-      document.body.style.overflow = "";
-    }
-
-    return () => {
-      document.documentElement.style.overflow = "";
-      document.body.style.overflow = "";
-    };
-  }, [showChangePasswordModal, showNotificationModal, showDeactivateModal]);
 
   const handleChange = (field: string, value: string) => {
     updateField(field as keyof typeof profile, value);
@@ -52,27 +23,10 @@ export default function ClientProfileEdit() {
   };
 
   return (
-    <DashboardLayout
-      brandTitle="LawFlow"
+    <ClientLayout
       brandSubtitle="Edit Profile"
-      actions={[
-        {
-          label: "Notifications",
-          icon: Bell,
-          onClick: () => setShowNotificationModal(true),
-          badge: 2,
-        },
-        {
-          label: "Profile",
-          icon: User,
-          onClick: () => navigate({ to: "/client-profile" }),
-        },
-        {
-          label: "Logout",
-          icon: LogOut,
-          onClick: () => navigate({ to: "/login" }),
-        },
-      ]}
+      showBackButton
+      onBackClick={() => navigate({ to: "/client-profile" })}
     >
       <div className="px-6 py-8">
         <ProfileCard
@@ -128,24 +82,7 @@ export default function ClientProfileEdit() {
         </ProfileCard>
       </div>
 
-      {/* Modals */}
-      <ChangePasswordModal
-        isOpen={showChangePasswordModal}
-        onClose={() => setShowChangePasswordModal(false)}
-      />
-      <NotificationPreferencesModal
-        isOpen={showNotificationModal}
-        onClose={() => setShowNotificationModal(false)}
-      />
-      <DeactivateAccountModal
-        isOpen={showDeactivateModal}
-        onClose={() => setShowDeactivateModal(false)}
-        onConfirm={() => {
-          setShowDeactivateModal(false);
-          navigate({ to: "/login" });
-        }}
-      />
-    </DashboardLayout>
+    </ClientLayout>
   );
 }
 

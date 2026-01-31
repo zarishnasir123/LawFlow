@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Scale, ArrowLeft } from "lucide-react";
+import { Scale } from "lucide-react";
 import type { HeaderAction } from "../../types/dashboard";
 
 type DashboardLayoutProps = {
@@ -36,29 +36,19 @@ function HeaderActionButton({ action }: HeaderActionButtonProps) {
   );
 }
 
-export default function DashboardLayout({
-  brandTitle = "LawFlow",
-  brandSubtitle = "Lawyer Portal",
-  pageSubtitle,
-  actions = [],
-  showBackButton = false,
-  onBackClick,
-  children,
-}: DashboardLayoutProps) {
+export default function DashboardLayout(props: DashboardLayoutProps) {
+  const {
+    brandTitle = "LawFlow",
+    brandSubtitle = "Lawyer Portal",
+    pageSubtitle,
+    actions = [],
+    children,
+  } = props;
   return (
     <div className="min-h-screen bg-gray-50">
       <header className="bg-[#01411C] px-4 py-4 text-white shadow-md sm:px-6 lg:px-10">
         <div className="mx-auto flex w-full max-w-none items-center justify-between">
           <div className="flex items-center gap-3">
-            {showBackButton && (
-              <button
-                onClick={onBackClick}
-                className="p-1 hover:bg-white/10 rounded-lg transition-colors"
-                aria-label="Go back"
-              >
-                <ArrowLeft className="h-6 w-6" />
-              </button>
-            )}
             <Scale className="h-8 w-8" />
             <div>
               <h1 className="text-lg font-semibold">{brandTitle}</h1>
