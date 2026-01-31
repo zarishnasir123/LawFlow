@@ -10,7 +10,7 @@ import {
   Download,
   MessageSquare,
 } from "lucide-react";
-import DashboardLayout from "../../../shared/components/dashboard/DashboardLayout";
+import LawyerLayout from "../components/LawyerLayout";
 import { getInitialCases } from "../data/cases.mock";
 
 // Detail page for a specific returned case
@@ -23,16 +23,19 @@ export default function ReturnedCaseDetail() {
 
   if (!caseItem) {
     return (
-      <DashboardLayout brandTitle="Case Not Found">
+      <LawyerLayout brandTitle="Case Not Found">
         <div className="flex items-center justify-center h-96">
           <p className="text-gray-500 text-lg">This returned case does not exist</p>
         </div>
-      </DashboardLayout>
+      </LawyerLayout>
     );
   }
 
   return (
-    <DashboardLayout brandTitle={caseItem.caseTitle} brandSubtitle="Returned Case Details">
+    <LawyerLayout
+      brandTitle={caseItem.caseTitle}
+      brandSubtitle="Returned Case Details"
+    >
       <div className="space-y-6">
         {/* Back Button and Status */}
         <div className="flex items-center justify-between">
@@ -214,6 +217,6 @@ export default function ReturnedCaseDetail() {
           </div>
         </div>
       </div>
-    </DashboardLayout>
+    </LawyerLayout>
   );
 }

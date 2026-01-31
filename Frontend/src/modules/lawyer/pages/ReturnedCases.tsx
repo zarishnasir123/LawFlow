@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { AlertCircle, Search, FileText, Users, Phone, Mail, Bell, LogOut, User, UploadCloud, X } from "lucide-react";
+import { AlertCircle, Search, FileText, Users, Phone, Mail, UploadCloud, X } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
-import DashboardLayout from "../../../shared/components/dashboard/DashboardLayout";
+import LawyerLayout from "../components/LawyerLayout";
 import { getInitialCases } from "../data/cases.mock";
 
 // Component to display all returned cases with filtering and search
@@ -23,27 +23,9 @@ export default function ReturnedCases() {
   );
 
   return (
-    <DashboardLayout
+    <LawyerLayout
       brandTitle="LawFlow"
       brandSubtitle="Returned Cases"
-      actions={[
-        {
-          label: "Notifications",
-          icon: Bell,
-          onClick: () => navigate({ to: "/Lawyer-dashboard" }),
-          badge: 3,
-        },
-        {
-          label: "Profile",
-          icon: User,
-          onClick: () => navigate({ to: "/Lawyer-dashboard" }),
-        },
-        {
-          label: "Logout",
-          icon: LogOut,
-          onClick: () => navigate({ to: "/login" }),
-        },
-      ]}
     >
       <div className="space-y-6">
         {/* Stats */}
@@ -317,6 +299,6 @@ export default function ReturnedCases() {
           </div>
         </div>
       )}
-    </DashboardLayout>
+    </LawyerLayout>
   );
 }

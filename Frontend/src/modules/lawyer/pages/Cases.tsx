@@ -1,8 +1,5 @@
 import { useState } from "react";
 import {
-  Bell,
-  LogOut,
-  User,
   Search,
   CheckCircle,
   Clock,
@@ -16,7 +13,7 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
-import DashboardLayout from "../../../shared/components/dashboard/DashboardLayout";
+import LawyerLayout from "../components/LawyerLayout";
 import { getInitialCases } from "../data/cases.mock";
 
 // Case interface matching mock data
@@ -102,27 +99,9 @@ export default function LawyerCases() {
   const totalCasesCount = mockCases.length;
 
   return (
-    <DashboardLayout
+    <LawyerLayout
       brandTitle="LawFlow"
       brandSubtitle="My Cases"
-      actions={[
-        {
-          label: "Notifications",
-          icon: Bell,
-          onClick: () => navigate({ to: "/Lawyer-dashboard" }),
-          badge: 3,
-        },
-        {
-          label: "Profile",
-          icon: User,
-          onClick: () => navigate({ to: "/Lawyer-dashboard" }),
-        },
-        {
-          label: "Logout",
-          icon: LogOut,
-          onClick: () => navigate({ to: "/login" }),
-        },
-      ]}
     >
       <div className="space-y-6">
         {/* Header */}
@@ -444,6 +423,6 @@ export default function LawyerCases() {
           )}
         </div>
       </div>
-    </DashboardLayout>
+    </LawyerLayout>
   );
 }

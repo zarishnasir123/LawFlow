@@ -6,6 +6,7 @@ import {
   MoreVertical,
   MessageCircle,
 } from "lucide-react";
+import LawyerLayout from "../components/LawyerLayout";
 import ChatMessageBubble from "../components/ChatMessageBubble";
 import ChatComposer from "../components/ChatComposer";
 import { getThreadMessages, sendThreadMessage, getThreadById } from "../api";
@@ -54,22 +55,36 @@ export default function ChatDetail() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-screen bg-white">
-        <p className="text-gray-500">Loading chat...</p>
-      </div>
+      <LawyerLayout
+        brandTitle="LawFlow"
+        brandSubtitle="Chat"
+      >
+        <div className="flex items-center justify-center h-[calc(100vh-130px)] bg-white rounded-xl border border-gray-200">
+          <p className="text-gray-500">Loading chat...</p>
+        </div>
+      </LawyerLayout>
     );
   }
 
   if (!thread) {
     return (
-      <div className="flex items-center justify-center h-screen bg-white">
-        <p className="text-gray-500">Chat not found</p>
-      </div>
+      <LawyerLayout
+        brandTitle="LawFlow"
+        brandSubtitle="Chat"
+      >
+        <div className="flex items-center justify-center h-[calc(100vh-130px)] bg-white rounded-xl border border-gray-200">
+          <p className="text-gray-500">Chat not found</p>
+        </div>
+      </LawyerLayout>
     );
   }
 
   return (
-    <div className="min-h-screen bg-white flex flex-col">
+    <LawyerLayout
+      brandTitle="LawFlow"
+      brandSubtitle="Chat"
+    >
+      <div className="flex flex-col h-[calc(100vh-130px)] bg-white rounded-xl border border-gray-200 overflow-hidden">
       {/* Header */}
       <div className="sticky top-0 z-40 bg-white border-b border-gray-200 shadow-sm">
         <div className="px-6 py-4 flex items-center justify-between">
@@ -200,6 +215,7 @@ export default function ChatDetail() {
           </div>
         </div>
       </div>
-    </div>
+      </div>
+    </LawyerLayout>
   );
 }

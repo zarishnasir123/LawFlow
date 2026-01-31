@@ -1,7 +1,5 @@
-import { useState } from "react"; // <-- added useState
 import { useNavigate } from "@tanstack/react-router";
-import { Bell, LogOut, User } from "lucide-react";
-import DashboardLayout from "../../../shared/components/dashboard/DashboardLayout";
+import LawyerLayout from "../components/LawyerLayout";
 import StatCard from "../../../shared/components/dashboard/StatCard";
 import RecentActivity from "../../../shared/components/dashboard/RecentActivity";
 import RecentCases from "../../../shared/components/dashboard/RecentCases";
@@ -17,15 +15,9 @@ import {
   lawyerDashboardStats,
 } from "../data/dashboard.mock";
 
-// Import the modal
-import LogoutConfirmationModal from "../../lawyer/components/modals/LogoutConfirmationModal";
-
 export default function LawyerDashboard() {
   const navigate = useNavigate();
   const email = useLoginStore((state) => state.email);
-
-  // <-- Added modal state
-  const [logoutModalOpen, setLogoutModalOpen] = useState(false);
 
   const displayName = (() => {
     if (!email) return "Lawyer";
@@ -40,45 +32,12 @@ export default function LawyerDashboard() {
       .join(" ");
   })();
 
-  // <-- Added logout handler
-  const handleLogout = () => {
-    setLogoutModalOpen(false);
-    navigate({ to: "/login" });
-  };
-
   return (
-    <>
-      {/* <-- Logout Modal */}
-      <LogoutConfirmationModal
-        open={logoutModalOpen}
-        onCancel={() => setLogoutModalOpen(false)}
-        onConfirm={handleLogout}
-      />
-
-      {/* <-- Rest of your existing dashboard code unchanged */}
-      <DashboardLayout
-        brandTitle="LawFlow"
-        brandSubtitle="Lawyer Portal"
-        pageSubtitle="Lawyer Dashboard"
-        actions={[
-          {
-            label: "Notifications",
-            icon: Bell,
-            onClick: () => navigate({ to: "/Lawyer-dashboard" }),
-            badge: 3,
-          },
-          {
-            label: "Profile",
-            icon: User,
-            onClick: () => navigate({ to: "/lawyer-profile" }),
-          },
-          {
-            label: "Logout",
-            icon: LogOut,
-            onClick: () => setLogoutModalOpen(true), // <-- open modal instead of direct navigate
-          },
-        ]}
-      >
+    <LawyerLayout
+      brandTitle="LawFlow"
+      brandSubtitle="Lawyer Portal"
+      pageSubtitle="Lawyer Dashboard"
+    >
         {/* HEADER */}
         <div className="mb-6">
           <h2 className="text-xl font-semibold text-gray-900">
@@ -122,7 +81,6 @@ export default function LawyerDashboard() {
             <RecentActivity items={lawyerDashboardActivity} />
           </div>
         </section>
-      </DashboardLayout>
-    </>
+    </LawyerLayout>
   );
 }

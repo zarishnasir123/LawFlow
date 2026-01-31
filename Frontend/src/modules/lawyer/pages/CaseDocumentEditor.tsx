@@ -1,9 +1,8 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import * as mammoth from "mammoth";
 import { type JSONContent } from "@tiptap/react";
-import { Bell, LogOut, User } from "lucide-react";
-import { useNavigate, useParams } from "@tanstack/react-router";
-import DashboardLayout from "../../../shared/components/dashboard/DashboardLayout";
+import { useParams } from "@tanstack/react-router";
+import LawyerLayout from "../components/LawyerLayout";
 import DocumentSidebar from "../components/documentEditor/DocumentSidebar";
 import DocEditor from "../components/documentEditor/DocEditor";
 import TopActionBar from "../components/documentEditor/TopActionBar";
@@ -41,7 +40,6 @@ const DOCS = [
 ];
 
 export default function CaseDocumentEditor() {
-  const navigate = useNavigate();
   const { caseId } = useParams({ strict: false }) as { caseId?: string }; // Retrieve generic params
 
   const {
@@ -290,27 +288,9 @@ export default function CaseDocumentEditor() {
     DOCS.find((d) => d.id === currentDocId)?.title || "Document";
 
   return (
-    <DashboardLayout
+    <LawyerLayout
       brandTitle="LawFlow"
       brandSubtitle="Case Document Preparation"
-      actions={[
-        {
-          label: "Notifications",
-          icon: Bell,
-          onClick: () => navigate({ to: "/Lawyer-dashboard" }),
-          badge: 3,
-        },
-        {
-          label: "Profile",
-          icon: User,
-          onClick: () => navigate({ to: "/lawyer-profile" }),
-        },
-        {
-          label: "Logout",
-          icon: LogOut,
-          onClick: () => navigate({ to: "/login" }),
-        },
-      ]}
     >
       <div className="flex flex-col h-full bg-gray-50 -m-6">
         <TopActionBar
@@ -366,6 +346,6 @@ export default function CaseDocumentEditor() {
           className="hidden"
         />
       </div>
-    </DashboardLayout>
+    </LawyerLayout>
   );
 }
