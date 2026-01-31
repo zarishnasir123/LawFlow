@@ -104,7 +104,7 @@ export default function LawyerCases() {
   return (
     <DashboardLayout
       brandTitle="LawFlow"
-      brandSubtitle="Lawyer Portal"
+      brandSubtitle="My Cases"
       actions={[
         {
           label: "Notifications",

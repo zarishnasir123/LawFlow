@@ -44,7 +44,7 @@ export default function LawyerProfile() {
   return (
     <DashboardLayout
       brandTitle="LawFlow"
-      brandSubtitle="Edit Profile"
+      brandSubtitle="My Profile"
       actions={[
         {
           label: "Notifications",
