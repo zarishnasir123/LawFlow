@@ -1,5 +1,14 @@
 import { X, FileText, Package } from "lucide-react";
-import { useDocumentEditorStore } from "../../store/documentEditor.store";
+import * as mammoth from "mammoth";
+import { generateHTML } from "@tiptap/core";
+import StarterKit from "@tiptap/starter-kit";
+import TextAlign from "@tiptap/extension-text-align";
+import { Table, TableRow, TableHeader, TableCell } from "@tiptap/extension-table";
+import type { JSONContent } from "@tiptap/react";
+import { AttachmentBlock } from "../../extensions/AttachmentBlock";
+import { ImageAttachment } from "../../extensions/ImageAttachment";
+import { useDocumentEditorStore, type Attachment } from "../../store/documentEditor.store";
+import { DEFAULT_CASE_DOCS } from "../../data/defaultCaseDocuments";
 
 interface DownloadModalProps {
     isOpen: boolean;
@@ -14,9 +23,144 @@ export default function DownloadModal({
     currentDocTitle,
     currentDocContent,
 }: DownloadModalProps) {
-    const { documentContents, attachments } = useDocumentEditorStore();
+    const {
+        documentContents,
+        attachments,
+        documentsById,
+        attachmentsById,
+        bundleItems,
+        currentDocId,
+        activeEditorRef,
+    } = useDocumentEditorStore();
 
     if (!isOpen) return null;
+
+    const exportExtensions = [
+        StarterKit,
+        TextAlign.configure({
+            types: ["heading", "paragraph"],
+            alignments: ["left", "center", "right", "justify"],
+        }),
+        Table.configure({
+            resizable: true,
+            HTMLAttributes: {
+                class: "border-collapse table-auto w-full",
+            },
+        }),
+        TableRow,
+        TableHeader.configure({
+            HTMLAttributes: {
+                class: "border border-gray-300 px-4 py-2 bg-gray-100 font-bold",
+            },
+        }),
+        TableCell.configure({
+            HTMLAttributes: {
+                class: "border border-gray-300 px-4 py-2",
+            },
+        }),
+        AttachmentBlock,
+        ImageAttachment,
+    ];
+
+    const resolveDocHtml = (docId: string) => {
+        if (docId === currentDocId && activeEditorRef) {
+            return activeEditorRef.getHTML();
+        }
+        const doc = documentsById[docId];
+        if (doc?.contentJSON) {
+            return generateHTML(doc.contentJSON as JSONContent, exportExtensions);
+        }
+        if (doc?.legacyHtml) return doc.legacyHtml;
+        if (documentContents[docId]) return documentContents[docId];
+        return "<p></p>";
+    };
+
+    const resolveTemplateUrl = (path: string) => {
+        if (path.startsWith("http://") || path.startsWith("https://")) {
+            return path;
+        }
+        const base = import.meta.env.BASE_URL || "/";
+        const normalizedBase = base.endsWith("/") ? base : `${base}/`;
+        const normalizedPath = path.startsWith("/") ? path.slice(1) : path;
+        return `${normalizedBase}${normalizedPath}`;
+    };
+
+    const resolveDocHtmlAsync = async (docId: string) => {
+        if (docId === currentDocId && activeEditorRef) {
+            return activeEditorRef.getHTML();
+        }
+
+        const doc = documentsById[docId];
+        if (doc?.contentJSON) {
+            return generateHTML(doc.contentJSON as JSONContent, exportExtensions);
+        }
+        if (doc?.legacyHtml) return doc.legacyHtml;
+        if (documentContents[docId]) return documentContents[docId];
+
+        const templateUrl =
+            doc?.url || DEFAULT_CASE_DOCS.find((entry) => entry.id === docId)?.url;
+        if (!templateUrl) return "<p></p>";
+
+        try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 15000);
+            const response = await fetch(resolveTemplateUrl(templateUrl), { signal: controller.signal });
+            clearTimeout(timeoutId);
+            if (!response.ok) {
+                throw new Error(`Failed to fetch: ${response.status}`);
+            }
+            const arrayBuffer = await response.arrayBuffer();
+            const result = await mammoth.convertToHtml({ arrayBuffer });
+            return result.value || "<p></p>";
+        } catch (error) {
+            console.error("[Download] Failed to load template for export:", error);
+            return "<p></p>";
+        }
+    };
+
+    const collectImageAttachmentIds = (content: JSONContent | null | undefined, bucket: Set<string>) => {
+        if (!content) return;
+        const walk = (node: JSONContent) => {
+            const isImageAttachment =
+                node.type === "imageAttachment" ||
+                (node.type === "attachmentBlock" &&
+                    typeof node.attrs?.mimeType === "string" &&
+                    node.attrs.mimeType.includes("image"));
+
+            if (isImageAttachment && node.attrs?.attachmentId) {
+                bucket.add(String(node.attrs.attachmentId));
+            }
+            if (node.content) {
+                node.content.forEach((child) => walk(child));
+            }
+        };
+        walk(content);
+    };
+
+    const collectImageAttachmentIdsFromHtml = (html: string, bucket: Set<string>) => {
+        if (typeof DOMParser === "undefined") return;
+        const parsed = new DOMParser().parseFromString(html, "text/html");
+
+        parsed
+            .querySelectorAll("[data-image-attachment][data-attachment-id]")
+            .forEach((node) => {
+                const id = node.getAttribute("data-attachment-id");
+                if (id) bucket.add(id);
+            });
+
+        parsed
+            .querySelectorAll("[data-attachment-block][data-attachment-id][data-mime-type]")
+            .forEach((node) => {
+                const mime = node.getAttribute("data-mime-type") || "";
+                if (!mime.includes("image")) return;
+                const id = node.getAttribute("data-attachment-id");
+                if (id) bucket.add(id);
+            });
+    };
+
+    const getAttachment = (attachmentId: string): Attachment | undefined => {
+        return attachmentsById[attachmentId] || attachments.find((att) => att.id === attachmentId);
+    };
 
     const downloadCurrentDocument = () => {
         const printWindow = window.open("", "_blank");
@@ -42,6 +186,9 @@ export default function DownloadModal({
             p { margin-bottom: 8pt; }
             table { border-collapse: collapse; width: 100%; margin: 12pt 0; }
             th, td { border: 1px solid #000; padding: 6pt; text-align: left; }
+            figure.image-attachment-wrapper { margin: 16pt 0; }
+            figure.image-attachment-wrapper img { max-width: 100%; height: auto; display: block; }
+            figure.image-attachment-wrapper figcaption { font-size: 10pt; color: #333; margin-top: 6pt; }
             @media print {
               body { margin: 0; padding: 1in; }
             }
@@ -60,44 +207,92 @@ export default function DownloadModal({
         }, 250);
     };
 
-    const downloadEntireCaseFile = () => {
+    const downloadEntireCaseFile = async () => {
         const printWindow = window.open("", "_blank");
         if (!printWindow) return;
 
-        const allDocs = Object.entries(documentContents)
-            .map(
-                ([id, content]) => `
+        const embeddedImageIds = new Set<string>();
+        if (currentDocId && activeEditorRef) {
+            collectImageAttachmentIds(activeEditorRef.getJSON() as JSONContent, embeddedImageIds);
+        }
+        bundleItems.forEach((item) => {
+            if (item.type !== "DOC") return;
+            const doc = documentsById[item.refId];
+            if (doc?.contentJSON) {
+                collectImageAttachmentIds(doc.contentJSON, embeddedImageIds);
+                return;
+            }
+            if (doc?.legacyHtml) {
+                collectImageAttachmentIdsFromHtml(doc.legacyHtml, embeddedImageIds);
+                return;
+            }
+            if (documentContents[item.refId]) {
+                collectImageAttachmentIdsFromHtml(documentContents[item.refId], embeddedImageIds);
+            }
+        });
+
+        const docHtmlById = new Map<string, string>();
+        for (const item of bundleItems) {
+            if (item.type !== "DOC") continue;
+            const html = await resolveDocHtmlAsync(item.refId);
+            docHtmlById.set(item.refId, html);
+        }
+
+        const sections = bundleItems
+            .map((item) => {
+                if (item.type === "DOC") {
+                    const docTitle = documentsById[item.refId]?.title || item.title || item.refId;
+                    const html = docHtmlById.get(item.refId) || resolveDocHtml(item.refId);
+                    return `
       <div style="page-break-after: always;">
         <h1 style="text-transform: uppercase; border-bottom: 2px solid #000; padding-bottom: 8pt;">
-          ${id}
+          ${docTitle}
         </h1>
-        ${content}
+        ${html}
       </div>
-    `
-            )
-            .join("");
+    `;
+                }
 
-        const attachmentsList =
-            attachments.length > 0
-                ? `
-      <div style="page-break-before: always;">
-        <h1 style="border-bottom: 2px solid #000; padding-bottom: 8pt;">
-          ATTACHMENTS
+                const attachment = getAttachment(item.refId);
+                if (!attachment) return "";
+
+                const isImage = attachment.type.startsWith("image/");
+                if (isImage && embeddedImageIds.has(attachment.id)) {
+                    return "";
+                }
+
+                if (isImage) {
+                    return `
+      <div style="page-break-after: always;">
+        <h1 style="text-transform: uppercase; border-bottom: 2px solid #000; padding-bottom: 8pt;">
+          Attachment - ${attachment.name}
         </h1>
-        <ul style="list-style: decimal; padding-left: 24pt;">
-          ${attachments
-                    .map(
-                        (att) => `
-            <li style="margin-bottom: 6pt;">
-              <strong>${att.name}</strong> (${(att.size / 1024).toFixed(1)} KB)
-            </li>
-          `
-                    )
-                    .join("")}
-        </ul>
+        <div style="margin-top: 12pt;">
+          <img src="${attachment.url}" alt="${attachment.name}" style="max-width: 100%; height: auto; border: 1px solid #000;" />
+          <p style="font-size: 10pt; margin-top: 6pt;">${attachment.name} (${(attachment.size / 1024).toFixed(1)} KB)</p>
+        </div>
       </div>
-    `
-                : "";
+    `;
+                }
+
+                return `
+      <div style="page-break-after: always;">
+        <h1 style="text-transform: uppercase; border-bottom: 2px solid #000; padding-bottom: 8pt;">
+          Attachment - ${attachment.name}
+        </h1>
+        <p style="margin-top: 12pt;">
+          <strong>File:</strong> ${attachment.name}
+        </p>
+        <p>
+          <strong>Type:</strong> ${attachment.type}
+        </p>
+        <p>
+          <strong>Size:</strong> ${(attachment.size / 1024).toFixed(1)} KB
+        </p>
+      </div>
+    `;
+            })
+            .join("");
 
         const html = `
       <!DOCTYPE html>
@@ -119,6 +314,9 @@ export default function DownloadModal({
             p { margin-bottom: 8pt; }
             table { border-collapse: collapse; width: 100%; margin: 12pt 0; }
             th, td { border: 1px solid #000; padding: 6pt; text-align: left; }
+            figure.image-attachment-wrapper { margin: 16pt 0; }
+            figure.image-attachment-wrapper img { max-width: 100%; height: auto; display: block; }
+            figure.image-attachment-wrapper figcaption { font-size: 10pt; color: #333; margin-top: 6pt; }
             ul { margin: 12pt 0; }
             li { margin-bottom: 6pt; }
             @media print {
@@ -133,8 +331,7 @@ export default function DownloadModal({
             </h1>
             <p style="font-size: 14pt;">Recovery of Money</p>
           </div>
-          ${allDocs}
-          ${attachmentsList}
+          ${sections}
         </body>
       </html>
     `;
@@ -179,8 +376,8 @@ export default function DownloadModal({
                     </button>
 
                     <button
-                        onClick={() => {
-                            downloadEntireCaseFile();
+                        onClick={async () => {
+                            await downloadEntireCaseFile();
                             onClose();
                         }}
                         className="w-full flex items-center gap-3 p-4 border-2 border-gray-200 rounded-lg hover:border-emerald-500 hover:bg-emerald-50 transition-all group"
@@ -199,7 +396,7 @@ export default function DownloadModal({
 
                 <div className="p-4 bg-gray-50 border-t border-gray-200 rounded-b-lg">
                     <p className="text-xs text-gray-600">
-                        💡 Tip: Use your browser's print dialog to save as PDF
+                        Tip: Use your browser's print dialog to save as PDF
                     </p>
                 </div>
             </div>

@@ -1,5 +1,6 @@
 import { NodeViewWrapper } from '@tiptap/react';
 import type { NodeViewProps } from '@tiptap/core';
+import { useEffect, useState } from 'react';
 import { File, FileText, Image as ImageIcon, X, Download, AlertTriangle } from 'lucide-react';
 import { useDocumentEditorStore } from '../store/documentEditor.store';
 
@@ -15,8 +16,35 @@ function FileIcon({ mimeType, className }: { mimeType: string; className: string
     return <FileText className={className} />;
 }
 
-export function AttachmentBlockComponent({ node, deleteNode }: NodeViewProps) {
+function getImageAttachmentNumber(editor: NodeViewProps['editor'], getPos: NodeViewProps['getPos']) {
+    if (!editor || typeof getPos !== 'function') return null;
+    const targetPos = getPos();
+    let count = 0;
+    let index: number | null = null;
+
+    editor.state.doc.descendants((docNode, pos) => {
+        const isImageAttachment =
+            docNode.type.name === 'imageAttachment' ||
+            (docNode.type.name === 'attachmentBlock' &&
+                typeof docNode.attrs?.mimeType === 'string' &&
+                docNode.attrs.mimeType.includes('image'));
+
+        if (isImageAttachment) {
+            count += 1;
+            if (pos === targetPos) {
+                index = count;
+            }
+        }
+        return true;
+    });
+
+    return index;
+}
+
+export function AttachmentBlockComponent({ node, deleteNode, editor, getPos }: NodeViewProps) {
     const { attachmentsById } = useDocumentEditorStore();
+    const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+    const [imageNumber, setImageNumber] = useState<number | null>(null);
 
     const {
         attachmentId,
@@ -30,8 +58,25 @@ export function AttachmentBlockComponent({ node, deleteNode }: NodeViewProps) {
     // Check if attachment still exists in the store (Rule A: attachment stays in bundle)
     const attachmentExists = attachmentsById[attachmentId];
     const isMissing = !attachmentExists;
+    const isImage = mimeType?.includes('image');
+
+    useEffect(() => {
+        if (!isImage) return;
+        const updateIndex = () => {
+            setImageNumber(getImageAttachmentNumber(editor, getPos));
+        };
+        updateIndex();
+        editor?.on('transaction', updateIndex);
+        return () => {
+            editor?.off('transaction', updateIndex);
+        };
+    }, [editor, getPos, isImage]);
 
     const handleOpen = () => {
+        if (!isMissing && url && isImage) {
+            setIsPreviewOpen(true);
+            return;
+        }
         if (!isMissing && url) {
             window.open(url, '_blank');
         }
@@ -92,7 +137,13 @@ export function AttachmentBlockComponent({ node, deleteNode }: NodeViewProps) {
                                     {!isMissing && size && (
                                         <>
                                             <span>{formatFileSize(size)}</span>
-                                            <span>•</span>
+                                            <span>-</span>
+                                        </>
+                                    )}
+                                    {isImage && imageNumber && (
+                                        <>
+                                            <span>Image Attachment #{imageNumber}</span>
+                                            <span>-</span>
                                         </>
                                     )}
                                     {uploadedAt && (
@@ -101,7 +152,7 @@ export function AttachmentBlockComponent({ node, deleteNode }: NodeViewProps) {
                                 </div>
                                 {isMissing && (
                                     <p className="text-xs text-red-700 mt-1">
-                                        ⚠️ This attachment has been deleted from the bundle.
+                                        Warning: This attachment has been deleted from the bundle.
                                     </p>
                                 )}
                             </div>
@@ -113,10 +164,14 @@ export function AttachmentBlockComponent({ node, deleteNode }: NodeViewProps) {
                                         <button
                                             onClick={handleOpen}
                                             className="p-1.5 hover:bg-blue-200 rounded transition-colors"
-                                            title="Open attachment"
+                                            title={isImage ? 'Preview image' : 'Open attachment'}
                                             type="button"
                                         >
-                                            <Download className="w-4 h-4 text-blue-700" />
+                                            {isImage ? (
+                                                <ImageIcon className="w-4 h-4 text-blue-700" />
+                                            ) : (
+                                                <Download className="w-4 h-4 text-blue-700" />
+                                            )}
                                         </button>
                                         <button
                                             onClick={handleDownload}
@@ -144,9 +199,57 @@ export function AttachmentBlockComponent({ node, deleteNode }: NodeViewProps) {
                                 </button>
                             </div>
                         </div>
+                        {!isMissing && isImage && url && (
+                            <button
+                                type="button"
+                                onClick={() => setIsPreviewOpen(true)}
+                                className="mt-3 block w-full overflow-hidden rounded-md border border-blue-200 bg-white shadow-sm"
+                                title="Preview image"
+                            >
+                                <img
+                                    src={url}
+                                    alt={name}
+                                    className="max-h-[260px] w-full object-contain"
+                                />
+                            </button>
+                        )}
                     </div>
                 </div>
             </div>
+            {isPreviewOpen && !isMissing && url && isImage && (
+                <div
+                    className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-6"
+                    onClick={() => setIsPreviewOpen(false)}
+                >
+                    <div
+                        className="max-h-[90vh] w-full max-w-4xl rounded-lg bg-white p-4 shadow-2xl"
+                        onClick={(event) => event.stopPropagation()}
+                    >
+                        <div className="mb-3 flex items-center justify-between">
+                            <div>
+                                <p className="text-sm font-semibold text-gray-900">
+                                    {isImage && imageNumber ? `Image Attachment #${imageNumber} - ${name}` : name}
+                                </p>
+                                <p className="text-xs text-gray-500">{mimeType}</p>
+                            </div>
+                            <button
+                                onClick={() => setIsPreviewOpen(false)}
+                                className="rounded-full p-1 text-gray-500 hover:bg-gray-100"
+                                type="button"
+                            >
+                                <X className="h-5 w-5" />
+                            </button>
+                        </div>
+                        <div className="max-h-[75vh] overflow-auto rounded-md border border-gray-200 bg-gray-50 p-3">
+                            <img
+                                src={url}
+                                alt={name}
+                                className="mx-auto max-h-[70vh] w-auto object-contain"
+                            />
+                        </div>
+                    </div>
+                </div>
+            )}
         </NodeViewWrapper>
     );
 }

@@ -1,24 +1,19 @@
 import type { ReactNode } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { ArrowLeft, MessageSquare, Users } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 
 interface ChatDetailLayoutProps {
   clientName?: string;
   clientStatus?: "online" | "offline";
-  clientImage?: string;
-  onVoiceCall?: () => void;
   children: ReactNode;
 }
 
 export default function ChatDetailLayout({
   clientName = "Client",
   clientStatus = "offline",
-  clientImage,
-  onVoiceCall,
   children,
 }: ChatDetailLayoutProps) {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = React.useState<"messages" | "participants">("messages");
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
@@ -38,7 +33,7 @@ export default function ChatDetailLayout({
           <div className="flex-1 ml-4">
             <h1 className="text-lg font-semibold">{clientName}</h1>
             <p className="text-xs text-gray-300">
-              {clientStatus === "online" ? "🟢 Online" : "⚫ Offline"}
+              {clientStatus === "online" ? "Online" : "Offline"}
             </p>
           </div>
         </div>
@@ -49,5 +44,3 @@ export default function ChatDetailLayout({
     </div>
   );
 }
-
-import React from "react";

@@ -1,11 +1,11 @@
 import { useEditor, EditorContent, type JSONContent } from "@tiptap/react";
 import { useEffect, useRef } from "react";
 import StarterKit from "@tiptap/starter-kit";
-import Underline from "@tiptap/extension-underline";
 import TextAlign from "@tiptap/extension-text-align";
 import { Table, TableRow, TableHeader, TableCell } from "@tiptap/extension-table";
 import BubbleMenuExtension from "@tiptap/extension-bubble-menu";
 import { AttachmentBlock } from "../../extensions/AttachmentBlock";
+import { ImageAttachment } from "../../extensions/ImageAttachment";
 import { useDocumentEditorStore } from "../../store/documentEditor.store";
 import EditorToolbar from "./EditorToolbar";
 
@@ -38,7 +38,6 @@ export default function DocEditor({
           },
         },
       }),
-      Underline,
       TextAlign.configure({
         types: ["heading", "paragraph"],
         alignments: ["left", "center", "right", "justify"],
@@ -66,7 +65,8 @@ export default function DocEditor({
           return editor.isActive('table');
         },
       }),
-      AttachmentBlock,  // NEW: Attachment insertion support
+      AttachmentBlock,
+      ImageAttachment,
     ],
     content: "",
     onUpdate: ({ editor }) => {
@@ -106,7 +106,7 @@ export default function DocEditor({
           if (editor.isFocused && from !== undefined) {
             try {
               editor.commands.setTextSelection({ from, to });
-            } catch (e) {
+            } catch {
               // If position is invalid, just focus at end
               editor.commands.focus('end');
             }

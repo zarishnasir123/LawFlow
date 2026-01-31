@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { CaseType } from "../constants/caseTypes";
+import type { CaseType } from "../constants/caseTypes";
 
 interface NewCaseState {
   category: "civil" | "family" | null;
