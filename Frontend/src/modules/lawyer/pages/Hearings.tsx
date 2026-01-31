@@ -51,7 +51,7 @@ export default function LawyerHearings() {
   return (
     <DashboardLayout
       brandTitle="LawFlow"
-      brandSubtitle="Lawyer Portal"
+      brandSubtitle="Your Hearings"
       actions={[
         {
           label: "Notifications",

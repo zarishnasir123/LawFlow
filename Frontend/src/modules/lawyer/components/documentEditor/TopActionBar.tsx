@@ -1,4 +1,4 @@
-import { Save, Download, Paperclip, FilePlus, Check } from "lucide-react";
+import { Save, Download, Paperclip, FilePlus, Check, FileSignature } from "lucide-react";
 import { useDocumentEditorStore } from "../../store/documentEditor.store";
 
 function formatTimeAgo(dateString: string): string {
@@ -20,6 +20,8 @@ interface TopActionBarProps {
     onDownload: () => void;
     onAddAttachment: () => void;
     onAddDocument: () => void;
+    onRequestSignatures?: () => void;
+    signaturePendingCount?: number;
     onToggleSidebar?: () => void;
 }
 
@@ -28,6 +30,8 @@ export default function TopActionBar({
     onDownload,
     onAddAttachment,
     onAddDocument,
+    onRequestSignatures,
+    signaturePendingCount,
     onToggleSidebar,
 }: TopActionBarProps) {
     const { lastSaved, isDirty } = useDocumentEditorStore();
@@ -100,13 +104,29 @@ export default function TopActionBar({
                         <span className="hidden md:inline">Download</span>
                     </button>
 
+                    {onRequestSignatures && (
+                        <button
+                            onClick={onRequestSignatures}
+                            className="relative flex items-center gap-2 px-3 md:px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors duration-200 font-medium text-sm"
+                            title="Request Client Signatures"
+                        >
+                            <FileSignature className="w-4 h-4" />
+                            <span className="hidden md:inline">Signatures</span>
+                            {signaturePendingCount !== undefined && signaturePendingCount > 0 && (
+                                <span className="absolute -top-2 -right-2 w-5 h-5 bg-amber-500 text-white text-xs font-bold rounded-full flex items-center justify-center">
+                                    {signaturePendingCount}
+                                </span>
+                            )}
+                        </button>
+                    )}
+
                     <button
                         onClick={onAddAttachment}
                         className="flex items-center gap-2 px-3 md:px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors duration-200 font-medium text-sm border border-gray-200"
                         title="Add Attachment (PDF, Image, Evidence)"
                     >
                         <Paperclip className="w-4 h-4" />
-                        <span className="hidden md:inline">Add Attachment (Evidence)</span>
+                        <span className="hidden md:inline">Add Attachment</span>
                     </button>
 
                     <button
@@ -115,7 +135,7 @@ export default function TopActionBar({
                         title="Add Editable Document (DOCX)"
                     >
                         <FilePlus className="w-4 h-4" />
-                        <span className="hidden md:inline">Add Document (Editable)</span>
+                        <span className="hidden md:inline">Add Document</span>
                     </button>
                 </div>
             </div>

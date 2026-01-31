@@ -7,6 +7,7 @@ import RecentActivity from "../../../shared/components/dashboard/RecentActivity"
 import RecentCases from "../../../shared/components/dashboard/RecentCases";
 import UpcomingHearings from "../../../shared/components/dashboard/UpcomingHearings";
 import QuickActions from "../../../shared/components/dashboard/QuickActions";
+import type { CaseItem } from "../../../shared/types/dashboard";
 import { useLoginStore } from "../../auth/store";
 import {
   lawyerDashboardActivity,
@@ -58,6 +59,7 @@ export default function LawyerDashboard() {
       <DashboardLayout
         brandTitle="LawFlow"
         brandSubtitle="Lawyer Portal"
+        pageSubtitle="Lawyer Dashboard"
         actions={[
           {
             label: "Notifications",
@@ -108,7 +110,7 @@ export default function LawyerDashboard() {
             <RecentCases
               cases={lawyerDashboardCases}
               onViewAll={() => navigate({ to: "/lawyer-cases" })}
-              onSelectCase={(caseItem: any) => navigate({ to: `/lawyer-case-editor/${caseItem.id}` })}
+              onSelectCase={(caseItem: CaseItem) => navigate({ to: `/lawyer-case-editor/${caseItem.id}` })}
             />
           </div>
 

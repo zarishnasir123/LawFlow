@@ -8,7 +8,9 @@ import DocumentSidebar from "../components/documentEditor/DocumentSidebar";
 import DocEditor from "../components/documentEditor/DocEditor";
 import TopActionBar from "../components/documentEditor/TopActionBar";
 import DownloadModal from "../components/documentEditor/DownloadModal";
+import SignatureRequestPanel from "../signatures/components/SignatureRequestPanel";
 import { useDocumentEditorStore } from "../store/documentEditor.store";
+import { useSignatureRequestsStore } from "../signatures/store/signatureRequests.store";
 
 const DOCS = [
   {
@@ -57,12 +59,20 @@ export default function CaseDocumentEditor() {
     addAttachment,
     addUploadedDocument,
     initializeDefaultBundle,
+    bundleItems,
   } = useDocumentEditorStore();
+
+  const { countPendingSignatures } = useSignatureRequestsStore();
 
   const [editorContent, setEditorContent] = useState<string | JSONContent>("");
   const [isDownloadModalOpen, setIsDownloadModalOpen] = useState(false);
+  const [isSignaturePanelOpen, setIsSignaturePanelOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const attachmentInputRef = useRef<HTMLInputElement>(null);
+
+  const signaturePendingCount = caseId
+    ? countPendingSignatures(caseId)
+    : undefined;
 
   // Load draft on mount (or initialize defaults)
   useEffect(() => {
@@ -282,7 +292,7 @@ export default function CaseDocumentEditor() {
   return (
     <DashboardLayout
       brandTitle="LawFlow"
-      brandSubtitle="Lawyer Portal"
+      brandSubtitle="Case Document Preparation"
       actions={[
         {
           label: "Notifications",
@@ -306,6 +316,8 @@ export default function CaseDocumentEditor() {
         <TopActionBar
           onSaveDraft={handleSaveDraft}
           onDownload={handleDownload}
+          onRequestSignatures={() => setIsSignaturePanelOpen(true)}
+          signaturePendingCount={signaturePendingCount}
           onAddAttachment={handleAddAttachment}
           onAddDocument={handleAddDocument}
         />
@@ -328,6 +340,15 @@ export default function CaseDocumentEditor() {
           currentDocTitle={currentDocTitle}
           currentDocContent={activeEditorRef?.getHTML() || (typeof editorContent === 'string' ? editorContent : "")}
         />
+
+        {/* Signature Request Panel */}
+        {isSignaturePanelOpen && (
+          <SignatureRequestPanel
+            caseId={caseId || "default-case"}
+            bundleItems={bundleItems}
+            onClose={() => setIsSignaturePanelOpen(false)}
+          />
+        )}
 
         {/* Hidden file inputs */}
         <input

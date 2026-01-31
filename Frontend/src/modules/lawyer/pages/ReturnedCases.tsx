@@ -24,8 +24,8 @@ export default function ReturnedCases() {
 
   return (
     <DashboardLayout
-      brandTitle="Returned Cases"
-      brandSubtitle="Cases Sent Back for Corrections"
+      brandTitle="LawFlow"
+      brandSubtitle="Returned Cases"
       actions={[
         {
           label: "Notifications",
