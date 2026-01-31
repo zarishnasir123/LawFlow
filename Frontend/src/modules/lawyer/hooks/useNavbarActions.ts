@@ -1,17 +1,15 @@
-import { useNavigate } from "@tanstack/react-router";
 import { Bell, LogOut, User } from "lucide-react";
 import type { HeaderAction } from "../../../shared/types/dashboard";
 import { useProfileHandler } from "./useProfileHandler";
 
-export function useNavbarActions(onLogout: () => void): HeaderAction[] {
-  const navigate = useNavigate();
+export function useNavbarActions(onLogout: () => void, onNotificationClick: () => void): HeaderAction[] {
   const { handleProfileClick } = useProfileHandler();
 
   return [
     {
       label: "Notifications",
       icon: Bell,
-      onClick: () => navigate({ to: "/Lawyer-dashboard" }),
+      onClick: onNotificationClick,
       badge: 3,
     },
     {

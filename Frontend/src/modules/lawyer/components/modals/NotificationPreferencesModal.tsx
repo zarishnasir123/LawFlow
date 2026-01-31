@@ -1,5 +1,5 @@
-import { X } from "lucide-react";
-import { useState } from "react";
+import { Bell, X } from "lucide-react";
+import { useEffect, useState } from "react";
 
 interface NotificationPreferencesModalProps {
   isOpen: boolean;
@@ -7,11 +7,11 @@ interface NotificationPreferencesModalProps {
 }
 
 interface Preferences {
-  emailNotifications: boolean;
-  smsNotifications: boolean;
+  gmailNotifications: boolean;
   caseUpdates: boolean;
   hearingReminders: boolean;
   messageNotifications: boolean;
+  documentNotifications: boolean;
   systemUpdates: boolean;
 }
 
@@ -29,7 +29,7 @@ function NotificationToggle({
   onChange,
 }: NotificationToggleProps) {
   return (
-    <div className="flex items-center justify-between p-3 rounded-lg border border-gray-200 hover:bg-gray-50">
+    <div className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-sm transition hover:border-emerald-200 hover:shadow-md">
       <div>
         <p className="text-sm font-medium text-gray-900">{label}</p>
         <p className="text-xs text-gray-500">{description}</p>
@@ -55,11 +55,11 @@ export default function NotificationPreferencesModal({
   onClose,
 }: NotificationPreferencesModalProps) {
   const [preferences, setPreferences] = useState<Preferences>({
-    emailNotifications: true,
-    smsNotifications: false,
+    gmailNotifications: true,
     caseUpdates: true,
     hearingReminders: true,
     messageNotifications: true,
+    documentNotifications: true,
     systemUpdates: false,
   });
   const [isSaving, setIsSaving] = useState(false);
@@ -85,41 +85,53 @@ export default function NotificationPreferencesModal({
     }, 800);
   };
 
+  useEffect(() => {
+    if (!isOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-md"
+      className="fixed inset-0 z-[60] flex items-end justify-end bg-black/30 backdrop-blur-[2px] sm:items-center sm:justify-center"
       onClick={onClose}
     >
       <div
-        className="w-full max-w-md rounded-lg bg-white p-6 shadow-lg"
+        className="relative h-[600px] w-full max-w-md rounded-t-lg bg-gradient-to-b from-white to-slate-50 shadow-[0_24px_60px_rgba(15,23,42,0.28)] ring-1 ring-black/5 sm:rounded-lg"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-gray-900">
+        <button
+          onClick={onClose}
+          className="absolute right-4 top-4 rounded-full p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition"
+          aria-label="Close"
+        >
+          <X className="h-5 w-5" />
+        </button>
+
+        <div className="border-b border-slate-200 px-6 pt-6 pb-4 text-center">
+          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
+            <Bell className="h-6 w-6" />
+          </div>
+          <h2 className="text-lg font-semibold text-slate-900">
             Notification Preferences
           </h2>
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 transition"
-          >
-            <X className="h-5 w-5" />
-          </button>
+          <p className="mt-1 text-xs text-slate-500">
+            Choose what alerts you want to receive.
+          </p>
         </div>
 
-        <div className="space-y-4 mb-6">
+        <div className="flex h-[calc(100%-156px)] flex-col">
+          <div className="flex-1 overflow-y-auto px-6 py-4 space-y-3">
           <NotificationToggle
-            label="Email Notifications"
-            description="Receive updates via email"
-            checked={preferences.emailNotifications}
-            onChange={() => handleToggle("emailNotifications")}
-          />
-          <NotificationToggle
-            label="SMS Notifications"
-            description="Receive updates via text message"
-            checked={preferences.smsNotifications}
-            onChange={() => handleToggle("smsNotifications")}
+            label="Gmail Notifications"
+            description="Receive updates via Gmail"
+            checked={preferences.gmailNotifications}
+            onChange={() => handleToggle("gmailNotifications")}
           />
           <NotificationToggle
             label="Case Updates"
@@ -140,33 +152,42 @@ export default function NotificationPreferencesModal({
             onChange={() => handleToggle("messageNotifications")}
           />
           <NotificationToggle
+            label="Document Requests"
+            description="Get notified about document sharing and signing"
+            checked={preferences.documentNotifications}
+            onChange={() => handleToggle("documentNotifications")}
+          />
+          <NotificationToggle
             label="System Updates"
             description="Receive system maintenance notifications"
             checked={preferences.systemUpdates}
             onChange={() => handleToggle("systemUpdates")}
           />
-        </div>
-
-        {success && (
-          <div className="rounded-md bg-green-50 p-3 text-sm text-green-600 mb-4">
-            {success}
           </div>
-        )}
 
-        <div className="flex gap-3">
-          <button
-            onClick={handleSave}
-            disabled={isSaving}
-            className="flex-1 rounded-md bg-green-700 px-4 py-2 text-sm font-medium text-white hover:bg-green-800 disabled:opacity-50 transition"
-          >
-            {isSaving ? "Saving..." : "Save Preferences"}
-          </button>
-          <button
-            onClick={onClose}
-            className="flex-1 rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition"
-          >
-            Close
-          </button>
+          <div className="border-t border-slate-200 px-6 py-4">
+            {success && (
+              <div className="mb-3 rounded-md bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-700">
+                {success}
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                onClick={handleSave}
+                disabled={isSaving}
+                className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700 disabled:opacity-50 transition"
+              >
+                {isSaving ? "Saving..." : "Save Preferences"}
+              </button>
+              <button
+                onClick={onClose}
+                className="rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 transition"
+              >
+                Close
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </div>
