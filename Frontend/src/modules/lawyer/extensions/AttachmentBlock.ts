@@ -76,13 +76,25 @@ export const AttachmentBlock = Node.create({
     },
 
     renderHTML({ HTMLAttributes }) {
-        // Atom node: self-contained, no children (no 0)
+        const mimeType = HTMLAttributes["data-mime-type"] || "";
+        const url = HTMLAttributes["data-url"] || "";
+        const name = HTMLAttributes["data-name"] || "";
+        const isImage = typeof mimeType === "string" && mimeType.includes("image");
+
         return [
-            'div',
+            "div",
             mergeAttributes(HTMLAttributes, {
-                'data-attachment-block': 'true',
-                class: 'attachment-block-wrapper',
+                "data-attachment-block": "true",
+                class: "attachment-block-wrapper",
             }),
+            isImage && url
+                ? [
+                      "figure",
+                      {},
+                      ["img", { src: url, alt: name }],
+                      ["figcaption", {}, name],
+                  ]
+                : ["p", {}, name],
         ];
     },
 

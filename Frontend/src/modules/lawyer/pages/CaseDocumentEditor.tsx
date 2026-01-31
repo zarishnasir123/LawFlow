@@ -10,34 +10,17 @@ import DownloadModal from "../components/documentEditor/DownloadModal";
 import SignatureRequestPanel from "../signatures/components/SignatureRequestPanel";
 import { useDocumentEditorStore } from "../store/documentEditor.store";
 import { useSignatureRequestsStore } from "../signatures/store/signatureRequests.store";
+import { DEFAULT_CASE_DOCS } from "../data/defaultCaseDocuments";
 
-const DOCS = [
-  {
-    id: "plaint",
-    title: "Plaint",
-    url: "/templates/civil/recovery-of-money/01_Plaint_Suit_for_Recovery_of_Money.docx",
-  },
-  {
-    id: "affidavit",
-    title: "Affidavit",
-    url: "/templates/civil/recovery-of-money/02_Affidavit_In_Support.docx",
-  },
-  {
-    id: "vakalatnama",
-    title: "Vakalatnama",
-    url: "/templates/civil/recovery-of-money/03_Vakalatnama.docx",
-  },
-  {
-    id: "witnesses",
-    title: "List of Witnesses",
-    url: "/templates/civil/recovery-of-money/04_List_of_Witnesses.docx",
-  },
-  {
-    id: "annexures",
-    title: "Annexures",
-    url: "/templates/civil/recovery-of-money/05_List_of_Documents_Annexures.docx",
-  },
-];
+const resolveTemplateUrl = (path: string) => {
+  if (path.startsWith("http://") || path.startsWith("https://")) {
+    return path;
+  }
+  const base = import.meta.env.BASE_URL || "/";
+  const normalizedBase = base.endsWith("/") ? base : `${base}/`;
+  const normalizedPath = path.startsWith("/") ? path.slice(1) : path;
+  return `${normalizedBase}${normalizedPath}`;
+};
 
 export default function CaseDocumentEditor() {
   const { caseId } = useParams({ strict: false }) as { caseId?: string }; // Retrieve generic params
@@ -47,7 +30,6 @@ export default function CaseDocumentEditor() {
     setCurrentDocId,
     activeEditorRef,
     documentsById,
-    attachmentsById,
     saveDocumentJSON,
     getDocumentJSON,
     setLoading,
@@ -79,7 +61,7 @@ export default function CaseDocumentEditor() {
 
     // We only init defaults if the bundle is empty (handled inside store or here?)
     // initializeDefaultBundle checks emptiness internally.
-    initializeDefaultBundle(DOCS);
+    initializeDefaultBundle(DEFAULT_CASE_DOCS);
   }, [loadDraft, initializeDefaultBundle, caseId]);
 
   // Auto-save every 30 seconds
@@ -113,7 +95,7 @@ export default function CaseDocumentEditor() {
       }
 
       // Load from DOCX
-      const doc = DOCS.find((d) => d.id === docId);
+      const doc = DEFAULT_CASE_DOCS.find((d) => d.id === docId);
       if (!doc) return;
 
       setCurrentDocId(docId);
@@ -124,8 +106,8 @@ export default function CaseDocumentEditor() {
 
         // ... (existing fetch logic) ...
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 5000);
-        const response = await fetch(doc.url, { signal: controller.signal });
+        const timeoutId = setTimeout(() => controller.abort(), 15000);
+        const response = await fetch(resolveTemplateUrl(doc.url), { signal: controller.signal });
         clearTimeout(timeoutId);
 
         if (!response.ok) {
@@ -140,8 +122,12 @@ export default function CaseDocumentEditor() {
         setEditorContent(htmlContent);
         // Note: We don't save immediately, wait for auto-save or edit
       } catch (error) {
+        const message =
+          error instanceof DOMException && error.name === "AbortError"
+            ? "Request timed out while loading the template."
+            : "Unable to load the template. Please check that the file exists in /public/templates.";
         console.error(`[DOCX Loader] Error loading document:`, error);
-        setEditorContent(`<p>Error loading document: ${String(error)}</p>`);
+        setEditorContent(`<p>${message}</p>`);
       } finally {
         setLoading(false);
       }
@@ -152,7 +138,7 @@ export default function CaseDocumentEditor() {
   // Auto-open first document on mount
   useEffect(() => {
     if (!currentDocId) {
-      loadDocument(DOCS[0].id);
+      loadDocument(DEFAULT_CASE_DOCS[0].id);
     }
   }, [currentDocId, loadDocument]);
 
@@ -178,34 +164,6 @@ export default function CaseDocumentEditor() {
       saveDocumentJSON(currentDocId, activeEditorRef.getJSON());
     }
     saveDraft(caseId);
-  };
-
-  const handleInsertAttachment = (attachmentId: string) => {
-    if (!currentDocId) {
-      alert("Please open a document first.");
-      return;
-    }
-
-    if (!activeEditorRef) {
-      console.error("Editor not initialized");
-      return;
-    }
-
-    const attachment = attachmentsById[attachmentId];
-    if (!attachment) return;
-
-    // Insert AttachmentBlock at cursor
-    activeEditorRef.chain().focus().insertContent({
-      type: 'attachmentBlock',
-      attrs: {
-        attachmentId: attachment.id,
-        name: attachment.name,
-        url: attachment.url,
-        mimeType: attachment.type,
-        size: attachment.size,
-        uploadedAt: attachment.uploadedAt,
-      },
-    }).run();
   };
 
   const handleDownload = () => {
@@ -285,7 +243,7 @@ export default function CaseDocumentEditor() {
   };
 
   const currentDocTitle =
-    DOCS.find((d) => d.id === currentDocId)?.title || "Document";
+    DEFAULT_CASE_DOCS.find((d) => d.id === currentDocId)?.title || "Document";
 
   return (
     <LawyerLayout
@@ -305,7 +263,6 @@ export default function CaseDocumentEditor() {
         <div className="flex flex-1 overflow-hidden">
           <DocumentSidebar
             onDocumentSelect={handleDocumentSelect}
-            onInsertAttachment={handleInsertAttachment}
           />
           <DocEditor
             content={editorContent}

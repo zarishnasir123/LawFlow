@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import type { Editor, JSONContent } from "@tiptap/react";
 
 const STORAGE_KEY = "lawyer_case_draft";
 
@@ -35,7 +36,7 @@ export interface BundleItem {
 export interface DocumentData {
   id: string;
   title: string;
-  contentJSON: any;        // TipTap JSON content (instead of HTML)
+  contentJSON: JSONContent | null;        // TipTap JSON content (instead of HTML)
   legacyHtml?: string;     // For migration: old HTML content (converted lazily)
   isTemplate: boolean;
   url?: string;            // For templates
@@ -58,7 +59,7 @@ interface DocumentEditorState {
   bundleItems: BundleItem[];
   documentsById: Record<string, DocumentData>;
   attachmentsById: Record<string, Attachment>;
-  activeEditorRef: any | null;        // Runtime only, never persisted
+  activeEditorRef: Editor | null;        // Runtime only, never persisted
 
   // Existing methods
   setCurrentDocId: (docId: string) => void;
@@ -78,14 +79,16 @@ interface DocumentEditorState {
   setDirty: (dirty: boolean) => void;
 
   // New Bundle System Methods
-  setEditorRef: (editor: any) => void;
+  setEditorRef: (editor: Editor | null) => void;
   reorderBundleItems: (items: BundleItem[]) => void;
   addDocumentToBundle: (doc: DocumentData) => void;
   addAttachmentToBundle: (attachmentId: string) => void;
   removeFromBundle: (bundleItemId: string) => void;
-  saveDocumentJSON: (docId: string, json: any) => void;
-  getDocumentJSON: (docId: string) => any;
-  initializeDefaultBundle: (defaultDocs: { id: string; title: string }[]) => void;
+  saveDocumentJSON: (docId: string, json: JSONContent) => void;
+  getDocumentJSON: (docId: string) => JSONContent | null | undefined;
+  initializeDefaultBundle: (
+    defaultDocs: ReadonlyArray<{ id: string; title: string; url?: string }>
+  ) => void;
 }
 
 export const useDocumentEditorStore = create<DocumentEditorState>((set, get) => ({
@@ -253,7 +256,9 @@ export const useDocumentEditorStore = create<DocumentEditorState>((set, get) => 
     }));
   },
 
-  initializeDefaultBundle: (defaultDocs: { id: string; title: string }[]) => {
+  initializeDefaultBundle: (
+    defaultDocs: ReadonlyArray<{ id: string; title: string; url?: string }>
+  ) => {
     const state = get();
     if (state.bundleItems.length > 0) return; // Already initialized
 
@@ -272,6 +277,7 @@ export const useDocumentEditorStore = create<DocumentEditorState>((set, get) => 
         title: doc.title,
         contentJSON: null,
         isTemplate: true,
+        url: doc.url,
       };
     });
 
@@ -363,12 +369,14 @@ export const useDocumentEditorStore = create<DocumentEditorState>((set, get) => 
         });
 
         // Migrate documentContents to documentsById (with legacyHtml)
-        Object.entries(draft.documentContents || {}).forEach(([docId, html]: [string, any]) => {
+        Object.entries(draft.documentContents || {}).forEach((entry) => {
+          const [docId, html] = entry as [string, unknown];
+          const legacyHtml = typeof html === "string" ? html : String(html ?? "");
           migratedState.documentsById[docId] = {
             id: docId,
             title: docId,  // Will be updated when we know the title
             contentJSON: null,  // Will convert when document is opened
-            legacyHtml: html,  // Keep original HTML for conversion
+            legacyHtml,  // Keep original HTML for conversion
             isTemplate: true,
           };
         });
