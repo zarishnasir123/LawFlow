@@ -1,7 +1,6 @@
 import { useEffect } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { Bell, LogOut, User } from "lucide-react";
-import DashboardLayout from "../../../shared/components/dashboard/DashboardLayout";
+import LawyerLayout from "../components/LawyerLayout";
 import { CIVIL_CASE_TYPES, FAMILY_CASE_TYPES } from "../constants/caseTypes";
 import { useNewCaseStore } from "../store/newCase.store";
 
@@ -31,27 +30,9 @@ export default function LawyerNewCase() {
   const caseTypes = category === "civil" ? CIVIL_CASE_TYPES : FAMILY_CASE_TYPES;
 
   return (
-    <DashboardLayout
+    <LawyerLayout
       brandTitle="LawFlow"
       brandSubtitle="Create New Case"
-      actions={[
-        {
-          label: "Notifications",
-          icon: Bell,
-          onClick: () => navigate({ to: "/Lawyer-dashboard" }),
-          badge: 3,
-        },
-        {
-          label: "Profile",
-          icon: User,
-          onClick: () => navigate({ to: "/lawyer-profile" }),
-        },
-        {
-          label: "Logout",
-          icon: LogOut,
-          onClick: () => navigate({ to: "/login" }),
-        },
-      ]}
     >
       <div className="w-full max-w-5xl mx-auto">
         {/* Step 1: Category Selection */}
@@ -191,6 +172,6 @@ export default function LawyerNewCase() {
           </div>
         )}
       </div>
-    </DashboardLayout>
+    </LawyerLayout>
   );
 }

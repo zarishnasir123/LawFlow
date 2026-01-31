@@ -1,8 +1,7 @@
 import { useState, useRef, useEffect } from "react";
-import { Send, Lightbulb, Bell, User, LogOut } from "lucide-react";
-import { useNavigate } from "@tanstack/react-router";
+import { Send, Lightbulb } from "lucide-react";
 
-import DashboardLayout from "../../../shared/components/dashboard/DashboardLayout";
+import LawyerLayout from "../components/LawyerLayout";
 import { useLoginStore } from "../../auth/store";
 import { askAiLegalGuidance } from "../api";
 import {
@@ -13,7 +12,6 @@ import {
 import { formatDate } from "../../../shared/utils/formatDate";
 
 export default function AiLegalGuidance() {
-  const navigate = useNavigate();
   const email = useLoginStore((state) => state.email);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -69,27 +67,9 @@ export default function AiLegalGuidance() {
   const showSuggestions = messages.length === 2;
 
   return (
-    <DashboardLayout
+    <LawyerLayout
       brandTitle="LawFlow"
       brandSubtitle="AI Legal Assistant"
-      actions={[
-        {
-          label: "Notifications",
-          icon: Bell,
-          onClick: () => navigate({ to: "/Lawyer-dashboard" }),
-          badge: 3,
-        },
-        {
-          label: "Profile",
-          icon: User,
-          onClick: () => navigate({ to: "/Lawyer-dashboard" }),
-        },
-        {
-          label: "Logout",
-          icon: LogOut,
-          onClick: () => navigate({ to: "/login" }),
-        },
-      ]}
     >
       <div className="h-screen flex flex-col">
         {/* Scrollable Messages Container - Hide Scrollbar, Full Width */}
@@ -205,6 +185,6 @@ export default function AiLegalGuidance() {
           </div>
         </div>
       </div>
-    </DashboardLayout>
+    </LawyerLayout>
   );
 }

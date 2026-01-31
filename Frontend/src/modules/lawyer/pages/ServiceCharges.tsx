@@ -1,7 +1,6 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "@tanstack/react-router";
-import { Bell, LogOut, User, Plus, Edit2, Trash2 } from "lucide-react";
-import DashboardLayout from "../../../shared/components/dashboard/DashboardLayout";
+import { Plus, Edit2, Trash2 } from "lucide-react";
+import LawyerLayout from "../components/LawyerLayout";
 import { useServiceChargesStore } from "../store";
 import {
   CIVIL_CASE_TYPES,
@@ -12,7 +11,6 @@ import {
 import type { ServiceCharge, CaseType } from "../types/charges";
 
 export default function ServiceCharges() {
-  const navigate = useNavigate();
   const { charges, setCharges, updateCharge, deleteCharge } =
     useServiceChargesStore();
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -81,27 +79,9 @@ export default function ServiceCharges() {
   const familyCharges = charges.filter((c) => c.category === "family");
 
   return (
-    <DashboardLayout
+    <LawyerLayout
       brandTitle="LawFlow"
       brandSubtitle="Lawyer Portal"
-      actions={[
-        {
-          label: "Notifications",
-          icon: Bell,
-          onClick: () => navigate({ to: "/Lawyer-dashboard" }),
-          badge: 3,
-        },
-        {
-          label: "Profile",
-          icon: User,
-          onClick: () => navigate({ to: "/Lawyer-dashboard" }),
-        },
-        {
-          label: "Logout",
-          icon: LogOut,
-          onClick: () => navigate({ to: "/login" }),
-        },
-      ]}
     >
       <div className="space-y-6">
         {/* Header */}
@@ -455,6 +435,6 @@ export default function ServiceCharges() {
           </div>
         </div>
       </div>
-    </DashboardLayout>
+    </LawyerLayout>
   );
 }

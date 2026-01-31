@@ -1,15 +1,11 @@
 import { useMemo, useState, useEffect, useRef } from "react";
-import { useNavigate } from "@tanstack/react-router";
 import {
-  Bell,
-  User,
-  LogOut,
   Search,
   MessageCircle,
   ArrowLeft,
   Download,
 } from "lucide-react";
-import DashboardLayout from "../../../shared/components/dashboard/DashboardLayout";
+import LawyerLayout from "../components/LawyerLayout";
 import ChatMessageBubble from "../components/ChatMessageBubble";
 import ChatComposer from "../components/ChatComposer";
 import ClientInfoSidebar from "../components/ClientInfoSidebar";
@@ -17,7 +13,6 @@ import type { LawyerChatThread, ChatMessage } from "../../../types/chat";
 import { getLawyerThreads, getThreadMessages, sendThreadMessage } from "../api";
 
 export default function Messages() {
-  const navigate = useNavigate();
   const [threads, setThreads] = useState<LawyerChatThread[]>([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
@@ -124,27 +119,9 @@ export default function Messages() {
   };
 
   return (
-    <DashboardLayout
+    <LawyerLayout
       brandTitle="LawFlow"
       brandSubtitle="Direct Messages"
-      actions={[
-        {
-          label: "Notifications",
-          icon: Bell,
-          onClick: () => navigate({ to: "/Lawyer-dashboard" }),
-          badge: 3,
-        },
-        {
-          label: "Profile",
-          icon: User,
-          onClick: () => navigate({ to: "/Lawyer-dashboard" }),
-        },
-        {
-          label: "Logout",
-          icon: LogOut,
-          onClick: () => navigate({ to: "/login" }),
-        },
-      ]}
     >
       <div className="flex gap-4 h-[calc(100vh-130px)] lg:gap-5 p-2">
         {/* Left Sidebar - Conversations - Hidden on mobile when chat is selected */}
@@ -383,6 +360,6 @@ export default function Messages() {
           )}
         </div>
       </div>
-    </DashboardLayout>
+    </LawyerLayout>
   );
 }

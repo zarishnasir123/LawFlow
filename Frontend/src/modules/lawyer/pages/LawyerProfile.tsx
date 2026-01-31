@@ -1,9 +1,8 @@
 import { useNavigate } from "@tanstack/react-router";
-import { Bell, LogOut, User } from "lucide-react";
 import { useEffect, useState } from "react";
 import ProfileCard from "../../../shared/components/profile/ProfileCard";
 import ProfileField from "../../../shared/components/profile/ProfileField";
-import DashboardLayout from "../../../shared/components/dashboard/DashboardLayout";
+import LawyerLayout from "../components/LawyerLayout";
 import {
   ChangePasswordModal,
   NotificationPreferencesModal,
@@ -42,27 +41,9 @@ export default function LawyerProfile() {
   }, [showChangePasswordModal, showNotificationModal, showDeactivateModal]);
 
   return (
-    <DashboardLayout
+    <LawyerLayout
       brandTitle="LawFlow"
       brandSubtitle="My Profile"
-      actions={[
-        {
-          label: "Notifications",
-          icon: Bell,
-          onClick: () => navigate({ to: "/Lawyer-dashboard" }),
-          badge: 3,
-        },
-        {
-          label: "Profile",
-          icon: User,
-          onClick: () => navigate({ to: "/lawyer-profile" }),
-        },
-        {
-          label: "Logout",
-          icon: LogOut,
-          onClick: () => navigate({ to: "/login" }),
-        },
-      ]}
     >
       <div className="px-6 py-8">
       <ProfileCard
@@ -147,7 +128,7 @@ export default function LawyerProfile() {
           navigate({ to: "/login" });
         }}
       />
-    </DashboardLayout>
+    </LawyerLayout>
   );
 }
 

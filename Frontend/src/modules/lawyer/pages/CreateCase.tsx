@@ -1,12 +1,12 @@
 import { useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { Bell, LogOut, User, Briefcase } from "lucide-react";
-import DashboardLayout from "../../../shared/components/dashboard/DashboardLayout";
+import { Briefcase } from "lucide-react";
+import LawyerLayout from "../components/LawyerLayout";
 import { useNewCaseStore } from "../store/newCase.store";
 
 export default function CreateCase() {
-  const navigate = useNavigate();
   const { category, selectedCaseType } = useNewCaseStore();
+  const navigate = useNavigate();
 
   const [formData, setFormData] = useState({
     clientName: "",
@@ -52,27 +52,9 @@ export default function CreateCase() {
   };
 
   return (
-    <DashboardLayout
+    <LawyerLayout
       brandTitle="LawFlow"
       brandSubtitle="Case Details"
-      actions={[
-        {
-          label: "Notifications",
-          icon: Bell,
-          onClick: () => navigate({ to: "/Lawyer-dashboard" }),
-          badge: 3,
-        },
-        {
-          label: "Profile",
-          icon: User,
-          onClick: () => navigate({ to: "/lawyer-profile" }),
-        },
-        {
-          label: "Logout",
-          icon: LogOut,
-          onClick: () => navigate({ to: "/login" }),
-        },
-      ]}
     >
       <div className="max-w-3xl mx-auto">
         <div className="bg-white rounded-lg shadow-md p-8 border-l-4 border-green-500">
@@ -199,6 +181,6 @@ export default function CreateCase() {
           </div>
         </div>
       </div>
-    </DashboardLayout>
+    </LawyerLayout>
   );
 }
