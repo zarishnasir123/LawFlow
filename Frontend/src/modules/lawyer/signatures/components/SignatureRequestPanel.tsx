@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import { X, Send, AlertCircle } from "lucide-react";
 import { useSignatureRequestsStore } from "../store/signatureRequests.store";
+import { useDocumentEditorStore } from "../../store/documentEditor.store";
 import type { BundleItem } from "../../store/documentEditor.store";
 
 interface SignatureRequestPanelProps {
@@ -16,9 +17,12 @@ export default function SignatureRequestPanel({
 }: SignatureRequestPanelProps) {
   const {
     getRequestsByCaseId,
+    getCompletedRequests,
     sendSignatureRequestsForCase,
     countPendingSignatures,
+    updateRequest,
   } = useSignatureRequestsStore();
+  const { addSignedAttachment, attachmentsById } = useDocumentEditorStore();
 
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
   const [showSuccess, setShowSuccess] = useState(false);
@@ -28,12 +32,28 @@ export default function SignatureRequestPanel({
     [caseId, getRequestsByCaseId]
   );
 
-  const requestedBundleItemIds = useMemo(
-    () => new Set(existingRequests.map((req) => req.bundleItemId)),
+  const pendingRequests = useMemo(
+    () => existingRequests.filter((req) => !req.clientSigned),
     [existingRequests]
+  );
+  const requestByBundleItemId = useMemo(
+    () =>
+      new Map(existingRequests.map((req) => [req.bundleItemId, req] as const)),
+    [existingRequests]
+  );
+  const requestedBundleItemIds = useMemo(
+    () => new Set(pendingRequests.map((req) => req.bundleItemId)),
+    [pendingRequests]
   );
 
   const pendingCount = countPendingSignatures(caseId);
+  const signedRequests = useMemo(
+    () =>
+      getCompletedRequests(caseId).filter(
+        (req) => req.clientSigned && req.sentToLawyerAt
+      ),
+    [caseId, getCompletedRequests]
+  );
 
   const handleToggleItem = (bundleItemId: string) => {
     setSelectedItems((prev) => {
@@ -127,6 +147,11 @@ export default function SignatureRequestPanel({
               {bundleItems.map((item) => {
                 const isSelected = selectedItems.has(item.id);
                 const isRequested = requestedBundleItemIds.has(item.id);
+                const request = requestByBundleItemId.get(item.id);
+
+                if (request?.clientSigned) {
+                  return null;
+                }
 
                 return (
                   <label
@@ -175,6 +200,72 @@ export default function SignatureRequestPanel({
             <p className="text-sm text-emerald-900">
               <strong>{selectedItems.size}</strong> document{selectedItems.size !== 1 ? 's' : ''} selected
             </p>
+          </div>
+        )}
+
+        {signedRequests.length > 0 && (
+          <div>
+            <h3 className="text-sm font-medium text-gray-700 mb-3">
+              Client signed documents
+            </h3>
+            <div className="space-y-3">
+              {signedRequests.map((req) => {
+                const isAttached = Boolean(
+                  req.signedAttachmentId &&
+                    attachmentsById[req.signedAttachmentId]
+                );
+
+                return (
+                  <div
+                    key={req.id}
+                    className="rounded-xl border border-emerald-100 bg-white p-3.5"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-900">
+                          {req.docTitle}
+                        </p>
+                        <p className="mt-1 text-xs text-slate-500">
+                          Signed by {req.clientSignatureName || "Client"}
+                        </p>
+                      </div>
+                      <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-700">
+                        Signed
+                      </span>
+                    </div>
+
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!req.signedPdfDataUrl || isAttached) return;
+                          const base64 = req.signedPdfDataUrl.split(",")[1] || "";
+                          const sizeBytes = Math.floor((base64.length * 3) / 4);
+                          const attachmentId = addSignedAttachment(
+                            {
+                              name: `${req.docTitle}-Signed.pdf`,
+                              type: "application/pdf",
+                              size: sizeBytes,
+                              url: req.signedPdfDataUrl,
+                            },
+                            req.bundleItemId
+                          );
+                          updateRequest(req.id, { signedAttachmentId: attachmentId });
+                        }}
+                        className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold ${
+                          isAttached
+                            ? "bg-emerald-50 text-emerald-600"
+                            : "border border-emerald-200 text-emerald-700 hover:bg-emerald-50"
+                        }`}
+                        disabled={isAttached}
+                      >
+                        {isAttached ? "Attached to case" : "Attach to case file"}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
       </div>

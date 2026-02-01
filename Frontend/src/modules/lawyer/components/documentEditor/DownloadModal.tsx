@@ -9,12 +9,19 @@ import { AttachmentBlock } from "../../extensions/AttachmentBlock";
 import { ImageAttachment } from "../../extensions/ImageAttachment";
 import { useDocumentEditorStore, type Attachment } from "../../store/documentEditor.store";
 import { DEFAULT_CASE_DOCS } from "../../data/defaultCaseDocuments";
+import { pdfjs } from "react-pdf";
+
+pdfjs.GlobalWorkerOptions.workerSrc = new URL(
+    "pdfjs-dist/build/pdf.worker.min.mjs",
+    import.meta.url
+).toString();
 
 interface DownloadModalProps {
     isOpen: boolean;
     onClose: () => void;
     currentDocTitle: string;
     currentDocContent: string;
+    selectedAttachmentId?: string | null;
 }
 
 export default function DownloadModal({
@@ -22,6 +29,7 @@ export default function DownloadModal({
     onClose,
     currentDocTitle,
     currentDocContent,
+    selectedAttachmentId,
 }: DownloadModalProps) {
     const {
         documentContents,
@@ -162,11 +170,36 @@ export default function DownloadModal({
         return attachmentsById[attachmentId] || attachments.find((att) => att.id === attachmentId);
     };
 
+    const renderPdfAttachmentPages = async (url: string) => {
+        const response = await fetch(url);
+        const arrayBuffer = await response.arrayBuffer();
+        const pdf = await pdfjs.getDocument({ data: arrayBuffer }).promise;
+        const images: string[] = [];
+
+        for (let pageIndex = 1; pageIndex <= pdf.numPages; pageIndex += 1) {
+            const page = await pdf.getPage(pageIndex);
+            const viewport = page.getViewport({ scale: 1.4 });
+            const canvas = document.createElement("canvas");
+            const context = canvas.getContext("2d");
+            if (!context) continue;
+            canvas.width = viewport.width;
+            canvas.height = viewport.height;
+            await page.render({ canvasContext: context, viewport, canvas }).promise;
+            images.push(canvas.toDataURL("image/png"));
+        }
+
+        return images;
+    };
+
     const downloadCurrentDocument = () => {
         const printWindow = window.open("", "_blank");
         if (!printWindow) return;
 
-        const html = `
+        const selectedAttachment = selectedAttachmentId
+            ? getAttachment(selectedAttachmentId)
+            : undefined;
+
+        const buildHtml = (bodyContent: string) => `
       <!DOCTYPE html>
       <html>
         <head>
@@ -195,16 +228,54 @@ export default function DownloadModal({
           </style>
         </head>
         <body>
-          ${currentDocContent}
+          ${bodyContent}
         </body>
       </html>
     `;
 
-        printWindow.document.write(html);
-        printWindow.document.close();
-        setTimeout(() => {
-            printWindow.print();
-        }, 250);
+        const printHtml = (bodyContent: string) => {
+            const html = buildHtml(bodyContent);
+            printWindow.document.write(html);
+            printWindow.document.close();
+            setTimeout(() => {
+                printWindow.print();
+            }, 250);
+        };
+
+        if (selectedAttachment && selectedAttachment.type.includes("pdf")) {
+            renderPdfAttachmentPages(selectedAttachment.url)
+                .then((pages) => {
+                    if (!pages.length) {
+                        printHtml("<p></p>");
+                        return;
+                    }
+                    const body = pages
+                        .map(
+                            (pageDataUrl) => `
+          <div style="page-break-after: always;">
+            <img src="${pageDataUrl}" alt="${selectedAttachment.name}" style="max-width: 100%; height: auto;" />
+          </div>
+        `
+                        )
+                        .join("");
+                    printHtml(body);
+                })
+                .catch(() => {
+                    printHtml("<p></p>");
+                });
+            return;
+        }
+
+        if (selectedAttachment && selectedAttachment.type.startsWith("image/")) {
+            printHtml(`
+        <div style="page-break-after: always;">
+          <img src="${selectedAttachment.url}" alt="${selectedAttachment.name}" style="max-width: 100%; height: auto;" />
+        </div>
+      `);
+            return;
+        }
+
+        printHtml(currentDocContent || "<p></p>");
     };
 
     const downloadEntireCaseFile = async () => {
@@ -238,61 +309,63 @@ export default function DownloadModal({
             docHtmlById.set(item.refId, html);
         }
 
-        const sections = bundleItems
-            .map((item) => {
-                if (item.type === "DOC") {
-                    const docTitle = documentsById[item.refId]?.title || item.title || item.refId;
-                    const html = docHtmlById.get(item.refId) || resolveDocHtml(item.refId);
-                    return `
+        const sections: string[] = [];
+        for (const item of bundleItems) {
+            if (item.type === "DOC") {
+                const html = docHtmlById.get(item.refId) || resolveDocHtml(item.refId);
+                sections.push(`
       <div style="page-break-after: always;">
-        <h1 style="text-transform: uppercase; border-bottom: 2px solid #000; padding-bottom: 8pt;">
-          ${docTitle}
-        </h1>
         ${html}
       </div>
-    `;
-                }
+    `);
+                continue;
+            }
 
-                const attachment = getAttachment(item.refId);
-                if (!attachment) return "";
+            const attachment = getAttachment(item.refId);
+            if (!attachment) continue;
 
-                const isImage = attachment.type.startsWith("image/");
-                if (isImage && embeddedImageIds.has(attachment.id)) {
-                    return "";
-                }
+            const isImage = attachment.type.startsWith("image/");
+            const isPdf = attachment.type.includes("pdf");
+            if (isImage && embeddedImageIds.has(attachment.id)) {
+                continue;
+            }
 
-                if (isImage) {
-                    return `
+            if (isImage) {
+                sections.push(`
       <div style="page-break-after: always;">
-        <h1 style="text-transform: uppercase; border-bottom: 2px solid #000; padding-bottom: 8pt;">
-          Attachment - ${attachment.name}
-        </h1>
         <div style="margin-top: 12pt;">
-          <img src="${attachment.url}" alt="${attachment.name}" style="max-width: 100%; height: auto; border: 1px solid #000;" />
-          <p style="font-size: 10pt; margin-top: 6pt;">${attachment.name} (${(attachment.size / 1024).toFixed(1)} KB)</p>
+          <img src="${attachment.url}" alt="${attachment.name}" style="max-width: 100%; height: auto;" />
         </div>
       </div>
-    `;
-                }
+    `);
+                continue;
+            }
 
-                return `
+            if (isPdf) {
+                const pages = await renderPdfAttachmentPages(attachment.url);
+                if (pages.length === 0) {
+                    continue;
+                }
+                pages.forEach((pageDataUrl, pageIndex) => {
+                    sections.push(`
       <div style="page-break-after: always;">
-        <h1 style="text-transform: uppercase; border-bottom: 2px solid #000; padding-bottom: 8pt;">
-          Attachment - ${attachment.name}
-        </h1>
+        <div style="margin-top: 12pt;">
+          <img src="${pageDataUrl}" alt="${attachment.name} page ${pageIndex + 1}" style="max-width: 100%; height: auto;" />
+        </div>
+      </div>
+    `);
+                });
+                continue;
+            }
+
+            sections.push(`
+      <div style="page-break-after: always;">
         <p style="margin-top: 12pt;">
-          <strong>File:</strong> ${attachment.name}
-        </p>
-        <p>
-          <strong>Type:</strong> ${attachment.type}
-        </p>
-        <p>
-          <strong>Size:</strong> ${(attachment.size / 1024).toFixed(1)} KB
+          ${attachment.name}
         </p>
       </div>
-    `;
-            })
-            .join("");
+    `);
+        }
 
         const html = `
       <!DOCTYPE html>
@@ -325,13 +398,7 @@ export default function DownloadModal({
           </style>
         </head>
         <body>
-          <div style="text-align: center; margin-bottom: 24pt;">
-            <h1 style="border: none; font-size: 24pt; margin-bottom: 6pt;">
-              CASE FILE
-            </h1>
-            <p style="font-size: 14pt;">Recovery of Money</p>
-          </div>
-          ${sections}
+          ${sections.join("")}
         </body>
       </html>
     `;

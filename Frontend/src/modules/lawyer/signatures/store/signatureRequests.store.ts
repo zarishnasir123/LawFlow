@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { persist } from "zustand/middleware";
 
 export interface SignatureRequest {
   id: string;
@@ -7,9 +8,15 @@ export interface SignatureRequest {
   docTitle: string;
   docType: "DOC" | "ATTACHMENT";
   requestedAt: string;
+  requestedBy?: string;
+  dueAt?: string;
   clientSigned: boolean;
   clientSignedAt?: string;
   clientSignatureName?: string;
+  pdfDataUrl?: string;
+  signedPdfDataUrl?: string;
+  signedAttachmentId?: string;
+  sentToLawyerAt?: string;
 }
 
 interface SignatureRequestsState {
@@ -36,9 +43,10 @@ function generateRequestId(): string {
   return `sig-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 }
 
-export const useSignatureRequestsStore = create<SignatureRequestsState>(
-  (set, get) => ({
-    requests: [],
+export const useSignatureRequestsStore = create<SignatureRequestsState>()(
+  persist(
+    (set, get) => ({
+      requests: [],
 
     addRequest: (request) => {
       const id = generateRequestId();
@@ -117,5 +125,9 @@ export const useSignatureRequestsStore = create<SignatureRequestsState>(
         }
       });
     },
-  })
+    }),
+    {
+      name: "lawflow_signature_requests",
+    }
+  )
 );

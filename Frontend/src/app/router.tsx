@@ -25,6 +25,7 @@ import ClientHearings from "../modules/client/pages/Hearings";
 import FindLawyer from "../modules/client/pages/FindLawyer";
 import CaseTracking from "../modules/client/pages/CaseTracking";
 import LawyerProfileView from "../modules/client/pages/LawyerProfileView";
+import ClientSignatureViewer from "../modules/client/pages/ClientSignatureViewer";
 
 /* =====================================================
    LAWYER MODULE IMPORTS
@@ -43,6 +44,7 @@ import ChatDetail from "../modules/lawyer/pages/ChatDetail";
 import AiLegalGuidance from "../modules/lawyer/pages/AiLegalGuidance";
 import ServiceCharges from "../modules/lawyer/pages/ServiceCharges";
 import CaseDocumentEditor from "../modules/lawyer/pages/CaseDocumentEditor";
+import Signatures from "../modules/lawyer/pages/Signatures";
 
 /* =====================================================
    REGISTRAR MODULE IMPORTS
@@ -171,6 +173,12 @@ const clientHearingsRoute = createRoute({
   component: ClientHearings,
 });
 
+const clientSignatureViewerRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "client-signatures/$requestId",
+  component: ClientSignatureViewer,
+});
+
 /* =====================================================
    LAWYER ROUTES
    1. Dashboard - Main lawyer hub
@@ -234,6 +242,12 @@ const lawyerChatDetailRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "lawyer-chat/$threadId",
   component: ChatDetail,
+});
+
+const lawyerSignaturesRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "lawyer-signatures",
+  component: Signatures,
 });
 
 const lawyerAiGuidanceRoute = createRoute({
@@ -404,6 +418,7 @@ const routeTree = rootRoute.addChildren([
   clientMessagesRoute,
   clientChatDetailRoute,
   clientHearingsRoute,
+  clientSignatureViewerRoute,
   findLawyerRoute,
   clientLawyerProfileRoute,
   casetrackingRoute,
@@ -422,6 +437,7 @@ const routeTree = rootRoute.addChildren([
   lawyerHearingsRoute,
   lawyerMessagesRoute,
   lawyerChatDetailRoute,
+  lawyerSignaturesRoute,
   lawyerAiGuidanceRoute,
   serviceChargesRoute,
 
