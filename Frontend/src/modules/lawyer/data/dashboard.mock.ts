@@ -67,7 +67,7 @@ export const lawyerDashboardQuickActions: QuickActionItem[] = [
     label: "Signatures",
     icon: FileText,
     className: "bg-[#01411C] hover:bg-[#024a23]",
-    to: "/lawyer-document-review",
+    to: "/lawyer-signatures",
   },
   {
     label: "Messages",

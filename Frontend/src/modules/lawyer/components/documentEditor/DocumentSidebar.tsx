@@ -26,9 +26,11 @@ import {
 import clsx from "clsx";
 import { useState } from "react";
 import { useDocumentEditorStore, type BundleItem } from "../../store/documentEditor.store";
+import { useSignatureRequestsStore } from "../../signatures/store/signatureRequests.store";
 
 interface DocumentSidebarProps {
   onDocumentSelect: (docId: string) => void;
+  onAttachmentSelect?: (attachmentId: string | null) => void;
 }
 
 function formatFileSize(bytes: number): string {
@@ -66,6 +68,7 @@ interface SortableBundleItemProps {
   onRemove: () => void;
   onPreview?: () => void;
   fileInfo?: { size: number; type: string }; // Extra info for attachments
+  isSignedAttachment?: boolean;
 }
 
 function SortableBundleItem({
@@ -75,6 +78,7 @@ function SortableBundleItem({
   onRemove,
   onPreview,
   fileInfo,
+  isSignedAttachment,
 }: SortableBundleItemProps) {
   const {
     attributes,
@@ -144,6 +148,11 @@ function SortableBundleItem({
                 Prepared Document
               </p>
             )}
+            {isSignedAttachment && (
+              <span className="mt-1 inline-flex w-fit items-center rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
+                Client Signed
+              </span>
+            )}
           </div>
         </div>
       </div>
@@ -171,6 +180,7 @@ function SortableBundleItem({
 
 export default function DocumentSidebar({
   onDocumentSelect,
+  onAttachmentSelect,
 }: DocumentSidebarProps) {
   const {
     bundleItems,
@@ -179,12 +189,21 @@ export default function DocumentSidebar({
     reorderBundleItems,
     removeFromBundle,
   } = useDocumentEditorStore();
+  const { requests } = useSignatureRequestsStore();
+  const signedAttachmentIds = new Set(
+    requests
+      .filter((req) => req.clientSigned && req.signedAttachmentId)
+      .map((req) => req.signedAttachmentId as string)
+  );
   const [selectedBundleItemId, setSelectedBundleItemId] = useState<string | null>(null);
   const [previewAttachmentId, setPreviewAttachmentId] = useState<string | null>(null);
   const previewAttachment = previewAttachmentId ? attachmentsById[previewAttachmentId] : null;
   const isImagePreview = previewAttachment?.type?.includes("image");
   const isPdfPreview = previewAttachment?.type?.includes("pdf");
   const isPreviewOpen = Boolean(previewAttachment && (isImagePreview || isPdfPreview));
+  const isSignedPreview = Boolean(
+    previewAttachmentId && signedAttachmentIds.has(previewAttachmentId)
+  );
   const derivedSelectedId =
     selectedBundleItemId ||
     (currentDocId
@@ -247,6 +266,10 @@ export default function DocumentSidebar({
                   const isPreviewableAttachment =
                     item.type === "ATTACHMENT" &&
                     (fileInfo?.type?.includes("image") || fileInfo?.type?.includes("pdf"));
+                  const isSignedAttachment =
+                    item.type === "ATTACHMENT" &&
+                    (signedAttachmentIds.has(item.refId) ||
+                      att?.name?.toLowerCase().includes("signed"));
 
                   return (
                     <SortableBundleItem
@@ -254,13 +277,16 @@ export default function DocumentSidebar({
                       item={item}
                       isActive={item.id === derivedSelectedId}
                       fileInfo={fileInfo}
+                      isSignedAttachment={isSignedAttachment}
                       onSelect={() => {
                         if (item.type === "DOC") {
                           if (selectedBundleItemId === item.id) {
                             setSelectedBundleItemId(null);
+                            onAttachmentSelect?.(null);
                             return;
                           }
                           setSelectedBundleItemId(item.id);
+                          onAttachmentSelect?.(null);
                           onDocumentSelect(item.refId);
                         }
                       }}
@@ -270,9 +296,16 @@ export default function DocumentSidebar({
                               if (selectedBundleItemId === item.id) {
                                 setSelectedBundleItemId(null);
                                 setPreviewAttachmentId(null);
+                                onAttachmentSelect?.(null);
                                 return;
                               }
                               setSelectedBundleItemId(item.id);
+                              if (fileInfo?.type?.includes("pdf")) {
+                                setPreviewAttachmentId(null);
+                                onAttachmentSelect?.(item.refId);
+                                return;
+                              }
+                              onAttachmentSelect?.(null);
                               if (isPreviewableAttachment) {
                                 setPreviewAttachmentId(item.refId);
                               }
@@ -326,6 +359,19 @@ export default function DocumentSidebar({
                 />
               )}
             </div>
+            {isSignedPreview && (
+              <div className="mt-4 flex flex-wrap gap-2">
+                <button
+                  className="rounded-md border border-emerald-200 px-3 py-2 text-xs font-semibold text-emerald-700 hover:bg-emerald-50"
+                  type="button"
+                >
+                  Convert to DOCX (mock)
+                </button>
+                <span className="text-xs text-gray-500">
+                  Backend conversion will replace this mock action.
+                </span>
+              </div>
+            )}
           </div>
         </div>
       )}

@@ -62,7 +62,7 @@ interface DocumentEditorState {
   activeEditorRef: Editor | null;        // Runtime only, never persisted
 
   // Existing methods
-  setCurrentDocId: (docId: string) => void;
+  setCurrentDocId: (docId: string | null) => void;
   saveDocumentContent: (docId: string, content: string) => void;
   getDocumentContent: (docId: string) => string | undefined;
   setLoading: (loading: boolean) => void;
@@ -83,6 +83,10 @@ interface DocumentEditorState {
   reorderBundleItems: (items: BundleItem[]) => void;
   addDocumentToBundle: (doc: DocumentData) => void;
   addAttachmentToBundle: (attachmentId: string) => void;
+  addSignedAttachment: (
+    attachment: Omit<Attachment, "id" | "uploadedAt">,
+    insertAfterBundleItemId?: string
+  ) => string;
   removeFromBundle: (bundleItemId: string) => void;
   saveDocumentJSON: (docId: string, json: JSONContent) => void;
   getDocumentJSON: (docId: string) => JSONContent | null | undefined;
@@ -492,6 +496,50 @@ export const useDocumentEditorStore = create<DocumentEditorState>((set, get) => 
       bundleItems: [...state.bundleItems, bundleItem],
       isDirty: true,
     });
+  },
+
+  addSignedAttachment: (attachment, insertAfterBundleItemId) => {
+    const newAttachment: Attachment = {
+      ...attachment,
+      id: `att_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      uploadedAt: new Date().toISOString(),
+    };
+
+    const bundleItem: BundleItem = {
+      id: `bundle_att_${newAttachment.id}`,
+      type: 'ATTACHMENT',
+      refId: newAttachment.id,
+      title: newAttachment.name,
+      createdAt: newAttachment.uploadedAt,
+    };
+
+    set((state) => {
+      const items = [...state.bundleItems];
+      let insertIndex = items.length;
+
+      if (insertAfterBundleItemId) {
+        const currentIndex = items.findIndex(
+          (item) => item.id === insertAfterBundleItemId
+        );
+        if (currentIndex !== -1) {
+          insertIndex = currentIndex + 1;
+        }
+      }
+
+      items.splice(insertIndex, 0, bundleItem);
+
+      return {
+        attachments: [...state.attachments, newAttachment],
+        attachmentsById: {
+          ...state.attachmentsById,
+          [newAttachment.id]: newAttachment,
+        },
+        bundleItems: items,
+        isDirty: true,
+      };
+    });
+
+    return newAttachment.id;
   },
 
   removeFromBundle: (bundleItemId) => {

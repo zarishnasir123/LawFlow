@@ -11,6 +11,7 @@ import UpcomingHearings from "../../../shared/components/dashboard/UpcomingHeari
 
 import { useLoginStore } from "../../auth/store";
 import { useClientProfileStore } from "../store";
+import { useSignatureRequestsStore } from "../../lawyer/signatures/store/signatureRequests.store";
 
 import type {
   ActivityItem,
@@ -24,6 +25,8 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const email = useLoginStore((state) => state.email);
   const { profile, initializeProfile } = useClientProfileStore();
+  const { countPendingSignatures } = useSignatureRequestsStore();
+  const pendingSignatureCount = countPendingSignatures("recovery-of-money");
 
   useEffect(() => {
     initializeProfile();
@@ -47,7 +50,7 @@ export default function Dashboard() {
     { label: "Upcoming Hearings", value: "1", icon: Calendar, accentClassName: "bg-purple-500" },
     {
       label: "Pending Signatures",
-      value: "1",
+      value: String(pendingSignatureCount || 0),
       icon: FileText,
       accentClassName: "bg-yellow-500",
       onClick: () => navigate({ to: "/case-tracking", search: { view: "pending" } }),
