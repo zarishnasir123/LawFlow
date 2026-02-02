@@ -18,8 +18,8 @@ export default function SignatureRequestPanel({
   const {
     getRequestsByCaseId,
     getCompletedRequests,
+    getPendingRequests,
     sendSignatureRequestsForCase,
-    countPendingSignatures,
     updateRequest,
   } = useSignatureRequestsStore();
   const { addSignedAttachment, attachmentsById } = useDocumentEditorStore();
@@ -46,13 +46,25 @@ export default function SignatureRequestPanel({
     [pendingRequests]
   );
 
-  const pendingCount = countPendingSignatures(caseId);
+  const bundleItemIdSet = useMemo(
+    () => new Set(bundleItems.map((item) => item.id)),
+    [bundleItems]
+  );
+  const pendingCount = useMemo(() => {
+    const pending = getPendingRequests(caseId);
+    if (bundleItemIdSet.size === 0) return 0;
+    return pending.filter((req) => bundleItemIdSet.has(req.bundleItemId)).length;
+  }, [caseId, getPendingRequests, bundleItemIdSet]);
+
   const signedRequests = useMemo(
     () =>
       getCompletedRequests(caseId).filter(
-        (req) => req.clientSigned && req.sentToLawyerAt
+        (req) =>
+          req.clientSigned &&
+          req.sentToLawyerAt &&
+          bundleItemIdSet.has(req.bundleItemId)
       ),
-    [caseId, getCompletedRequests]
+    [caseId, getCompletedRequests, bundleItemIdSet]
   );
 
   const handleToggleItem = (bundleItemId: string) => {

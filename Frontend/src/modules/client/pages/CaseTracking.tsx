@@ -1,10 +1,8 @@
-import { useEffect } from "react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { CalendarClock, FileSignature } from "lucide-react";
 import ClientLayout from "../components/ClientLayout";
 import Card from "../../../shared/components/dashboard/Card";
 import { caseInfo, timeline } from "../data/casetrack.mock";
-import { signatureRequestSeeds } from "../data/signatureRequests.mock";
 import { useSignatureRequestsStore } from "../../lawyer/signatures/store/signatureRequests.store";
 
 function Badge({ text, color }: { text: string; color?: string }) {
@@ -45,35 +43,14 @@ function formatDateOnly(value?: string) {
 
 export default function CaseTracking() {
   const navigate = useNavigate();
-  const { view } = useSearch({ strict: false }) as { view?: string };
+  const { view, caseId } = useSearch({ strict: false }) as {
+    view?: string;
+    caseId?: string;
+  };
   const isPendingView = view === "pending";
-  const signatureCaseId = "recovery-of-money";
+  const signatureCaseId = caseId || "default-case";
 
-  const {
-    requests,
-    addRequest,
-    updateRequest,
-    getPendingRequests,
-    getCompletedRequests,
-  } = useSignatureRequestsStore();
-
-  useEffect(() => {
-    if (requests.length > 0) return;
-    signatureRequestSeeds.forEach((seed) => {
-      const requestId = addRequest({
-        caseId: seed.caseId,
-        bundleItemId: `seed-${seed.docTitle}`,
-        docTitle: seed.docTitle,
-        docType: seed.docType,
-        clientSigned: false,
-      });
-      updateRequest(requestId, {
-        requestedBy: seed.requestedBy,
-        dueAt: seed.dueAt,
-        requestedAt: seed.requestedAt,
-      });
-    });
-  }, [requests.length, addRequest, updateRequest]);
+  const { getPendingRequests, getCompletedRequests } = useSignatureRequestsStore();
 
   const pendingRequests = getPendingRequests(signatureCaseId);
   const completedRequests = getCompletedRequests(signatureCaseId);

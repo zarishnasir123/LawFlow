@@ -54,6 +54,8 @@ interface DocumentEditorState {
   uploadedDocuments: UploadedDocument[];
   lastSaved: string | null;
   isDirty: boolean;
+  useCustomBundle: boolean;
+  draftLoaded: boolean;
 
   // New Bundle System Fields
   bundleItems: BundleItem[];
@@ -103,6 +105,8 @@ export const useDocumentEditorStore = create<DocumentEditorState>((set, get) => 
   uploadedDocuments: [],
   lastSaved: null,
   isDirty: false,
+  useCustomBundle: false,
+  draftLoaded: false,
 
   // New Bundle System Fields (initialized)
   bundleItems: [],
@@ -222,49 +226,84 @@ export const useDocumentEditorStore = create<DocumentEditorState>((set, get) => 
       isTemplate: false,
     };
 
-    set((state) => ({
-      uploadedDocuments: [...state.uploadedDocuments, newDoc],
-      documentsById: {
-        ...state.documentsById,
-        [newDoc.id]: docData
-      },
+    set((state) => {
+      const shouldReplaceTemplates =
+        !state.useCustomBundle && state.uploadedDocuments.length === 0;
+
+      const items = [...state.bundleItems];
+      const documentsById = { ...state.documentsById };
+      const documentContents = { ...state.documentContents };
+
+      if (shouldReplaceTemplates) {
+        const templateDocIds = new Set(
+          items
+            .filter(
+              (item) =>
+                item.type === "DOC" && documentsById[item.refId]?.isTemplate
+            )
+            .map((item) => item.refId)
+        );
+
+        const filteredItems = items.filter(
+          (item) => !(item.type === "DOC" && templateDocIds.has(item.refId))
+        );
+
+        templateDocIds.forEach((docId) => {
+          delete documentsById[docId];
+          delete documentContents[docId];
+        });
+
+        items.length = 0;
+        items.push(...filteredItems);
+      }
+
+      documentsById[newDoc.id] = docData;
+
       // Insert after currently selected document or last DOC
-      bundleItems: (() => {
-        const items = [...state.bundleItems];
-        let insertIndex = -1;
+      let insertIndex = -1;
 
-        // 1. Try to insert after currently selected document
-        if (state.currentDocId) {
-          const currentIndex = items.findIndex(item => item.refId === state.currentDocId);
-          if (currentIndex !== -1) {
-            insertIndex = currentIndex + 1;
+      // 1. Try to insert after currently selected document
+      if (state.currentDocId) {
+        const currentIndex = items.findIndex(
+          (item) => item.refId === state.currentDocId
+        );
+        if (currentIndex !== -1) {
+          insertIndex = currentIndex + 1;
+        }
+      }
+
+      // 2. Fallback: Insert after last DOC
+      if (insertIndex === -1) {
+        let lastDocIndex = -1;
+        for (let i = items.length - 1; i >= 0; i--) {
+          if (items[i].type === "DOC") {
+            lastDocIndex = i;
+            break;
           }
         }
+        insertIndex = lastDocIndex >= 0 ? lastDocIndex + 1 : 0;
+      }
 
-        // 2. Fallback: Insert after last DOC
-        if (insertIndex === -1) {
-          let lastDocIndex = -1;
-          for (let i = items.length - 1; i >= 0; i--) {
-            if (items[i].type === 'DOC') {
-              lastDocIndex = i;
-              break;
-            }
-          }
-          insertIndex = lastDocIndex >= 0 ? lastDocIndex + 1 : 0;
-        }
+      items.splice(insertIndex, 0, bundleItem);
 
-        items.splice(insertIndex, 0, bundleItem);
-        return items;
-      })(),
-      isDirty: true,
-    }));
+      return {
+        uploadedDocuments: [...state.uploadedDocuments, newDoc],
+        documentsById,
+        documentContents,
+        bundleItems: items,
+        useCustomBundle: true,
+        isDirty: true,
+      };
+    });
   },
 
   initializeDefaultBundle: (
     defaultDocs: ReadonlyArray<{ id: string; title: string; url?: string }>
   ) => {
     const state = get();
-    if (state.bundleItems.length > 0) return; // Already initialized
+    if (state.bundleItems.length > 0 || state.draftLoaded || state.useCustomBundle) {
+      return;
+    }
 
     const bundleItems: BundleItem[] = defaultDocs.map(doc => ({
       id: `bundle_doc_${doc.id}`,
@@ -316,11 +355,12 @@ export const useDocumentEditorStore = create<DocumentEditorState>((set, get) => 
       attachmentsById: state.attachmentsById,
       // NOTE: activeEditorRef is NOT persisted (runtime only)
       lastSaved: new Date().toISOString(),
+      useCustomBundle: state.useCustomBundle,
     };
 
     try {
       localStorage.setItem(storageKey, JSON.stringify(draft));
-      set({ lastSaved: draft.lastSaved, isDirty: false });
+      set({ lastSaved: draft.lastSaved, isDirty: false, draftLoaded: true });
       console.log(`[Draft] Saved successfully to ${storageKey} at`, draft.lastSaved);
     } catch (error) {
       console.error(`[Draft] Failed to save to ${storageKey}:`, error);
@@ -385,21 +425,72 @@ export const useDocumentEditorStore = create<DocumentEditorState>((set, get) => 
           };
         });
 
-        set(migratedState);
+        set({
+          ...migratedState,
+          draftLoaded: true,
+          useCustomBundle: Boolean(draft.uploadedDocuments?.length),
+        });
         console.log("[Draft] Migration complete");
       } else {
+        const draftUploadedDocs = draft.uploadedDocuments || [];
+        const draftBundleItems = (draft.bundleItems || []) as BundleItem[];
+        const draftDocumentsById = (draft.documentsById || {}) as Record<string, DocumentData>;
+        const draftDocumentContents = (draft.documentContents || {}) as DocumentContent;
+
+        const isTrulyEmptyDraft =
+          draftBundleItems.length === 0 &&
+          draftUploadedDocs.length === 0 &&
+          (!draft.attachments || draft.attachments.length === 0) &&
+          !draft.useCustomBundle;
+
+        if (isTrulyEmptyDraft) {
+          set({ draftLoaded: false });
+          console.log(`[Draft] Empty draft detected for ${storageKey}; using defaults.`);
+          return;
+        }
+
+        const hasCustomUploads = draftUploadedDocs.length > 0;
+        let filteredBundleItems = draftBundleItems;
+        let filteredDocumentsById = draftDocumentsById;
+        let filteredDocumentContents = draftDocumentContents;
+
+        if (hasCustomUploads) {
+          const templateDocIds = new Set<string>(
+            draftBundleItems
+              .filter(
+                (item: BundleItem) =>
+                  item.type === "DOC" && draftDocumentsById[item.refId]?.isTemplate
+              )
+              .map((item: BundleItem) => item.refId)
+          );
+
+          filteredBundleItems = draftBundleItems.filter(
+            (item: BundleItem) =>
+              !(item.type === "DOC" && templateDocIds.has(item.refId))
+          );
+
+          filteredDocumentsById = { ...draftDocumentsById };
+          filteredDocumentContents = { ...draftDocumentContents };
+          templateDocIds.forEach((docId: string) => {
+            delete filteredDocumentsById[docId];
+            delete filteredDocumentContents[docId];
+          });
+        }
+
         // v2 draft - load directly
         set({
           currentDocId: draft.currentDocId,
-          documentContents: draft.documentContents || {},
+          documentContents: filteredDocumentContents,
           attachments: draft.attachments || [],
-          uploadedDocuments: draft.uploadedDocuments || [],
-          bundleItems: draft.bundleItems || [],
-          documentsById: draft.documentsById || {},
+          uploadedDocuments: draftUploadedDocs,
+          bundleItems: filteredBundleItems,
+          documentsById: filteredDocumentsById,
           attachmentsById: draft.attachmentsById || {},
           activeEditorRef: null,  // Never persisted
           lastSaved: draft.lastSaved,
           isDirty: false,
+          useCustomBundle: Boolean(draft.useCustomBundle ?? hasCustomUploads),
+          draftLoaded: true,
         });
         console.log(`[Draft] Loaded successfully from ${storageKey} (${draft.lastSaved})`);
       }
@@ -423,6 +514,8 @@ export const useDocumentEditorStore = create<DocumentEditorState>((set, get) => 
         activeEditorRef: null,
         lastSaved: null,
         isDirty: false,
+        useCustomBundle: false,
+        draftLoaded: false,
       });
       console.log(`[Draft] Cleared successfully (${storageKey})`);
     } catch (error) {
@@ -545,7 +638,12 @@ export const useDocumentEditorStore = create<DocumentEditorState>((set, get) => 
   removeFromBundle: (bundleItemId) => {
     const state = get();
     const bundleItems = state.bundleItems.filter(item => item.id !== bundleItemId);
-    set({ bundleItems, isDirty: true });
+    const hasTemplateDocs = bundleItems.some(
+      (item) =>
+        item.type === "DOC" && state.documentsById[item.refId]?.isTemplate
+    );
+    const useCustomBundle = state.useCustomBundle || !hasTemplateDocs;
+    set({ bundleItems, useCustomBundle, isDirty: true });
   },
 
   saveDocumentJSON: (docId, json) => {
