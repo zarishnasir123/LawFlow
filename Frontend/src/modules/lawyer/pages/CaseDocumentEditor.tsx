@@ -30,6 +30,7 @@ const resolveTemplateUrl = (path: string) => {
 
 export default function CaseDocumentEditor() {
   const { caseId } = useParams({ strict: false }) as { caseId?: string }; // Retrieve generic params
+  const effectiveCaseId = caseId || "default-case";
 
   const {
     currentDocId,
@@ -52,8 +53,8 @@ export default function CaseDocumentEditor() {
   } = useDocumentEditorStore();
 
   const {
-    countPendingSignatures,
     getCompletedRequests,
+    getPendingRequests,
     updateRequest,
   } = useSignatureRequestsStore();
 
@@ -68,8 +69,13 @@ export default function CaseDocumentEditor() {
   const attachmentInputRef = useRef<HTMLInputElement>(null);
   const pdfContainerRef = useRef<HTMLDivElement>(null);
 
-  const signatureCaseId = caseId || "recovery-of-money";
-  const signaturePendingCount = countPendingSignatures(signatureCaseId);
+  const signatureCaseId = effectiveCaseId;
+  const signaturePendingCount = (() => {
+    const pending = getPendingRequests(signatureCaseId);
+    if (bundleItems.length === 0) return 0;
+    const bundleItemIds = new Set(bundleItems.map((item) => item.id));
+    return pending.filter((req) => bundleItemIds.has(req.bundleItemId)).length;
+  })();
 
   useEffect(() => {
     const completed = getCompletedRequests(signatureCaseId);
@@ -124,24 +130,35 @@ export default function CaseDocumentEditor() {
   // Load draft on mount (or initialize defaults)
   useEffect(() => {
     // If caseId is present, load that specific draft. Otherwise generic.
-    loadDraft(caseId);
+    loadDraft(effectiveCaseId);
 
     // We only init defaults if the bundle is empty (handled inside store or here?)
     // initializeDefaultBundle checks emptiness internally.
     initializeDefaultBundle(DEFAULT_CASE_DOCS);
-  }, [loadDraft, initializeDefaultBundle, caseId]);
+  }, [loadDraft, initializeDefaultBundle, effectiveCaseId]);
 
   // Auto-save every 30 seconds
   useEffect(() => {
     const interval = setInterval(() => {
       if (currentDocId && activeEditorRef) {
         saveDocumentJSON(currentDocId, activeEditorRef.getJSON());
-        saveDraft(caseId);
+        saveDraft(effectiveCaseId);
       }
     }, 30000);
 
     return () => clearInterval(interval);
-  }, [currentDocId, activeEditorRef, saveDocumentJSON, saveDraft, caseId]);
+  }, [currentDocId, activeEditorRef, saveDocumentJSON, saveDraft, effectiveCaseId]);
+
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (currentDocId && activeEditorRef) {
+        saveDocumentJSON(currentDocId, activeEditorRef.getJSON());
+      }
+      saveDraft(effectiveCaseId);
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [currentDocId, activeEditorRef, saveDocumentJSON, saveDraft, effectiveCaseId]);
 
   const loadDocument = useCallback(
     async (docId: string) => {
@@ -219,10 +236,24 @@ export default function CaseDocumentEditor() {
 
   // Auto-open first document on mount
   useEffect(() => {
-    if (!currentDocId) {
-      loadDocument(DEFAULT_CASE_DOCS[0].id);
+    const docItems = bundleItems.filter((item) => item.type === "DOC");
+    if (docItems.length === 0) {
+      if (currentDocId) {
+        setCurrentDocId(null);
+      }
+      setEditorContent("");
+      return;
     }
-  }, [currentDocId, loadDocument]);
+
+    const validDocIds = new Set(docItems.map((item) => item.refId));
+    const nextDocId = currentDocId && validDocIds.has(currentDocId)
+      ? currentDocId
+      : docItems[0]?.refId;
+
+    if (nextDocId && nextDocId !== currentDocId) {
+      loadDocument(nextDocId);
+    }
+  }, [bundleItems, currentDocId, loadDocument, setCurrentDocId]);
 
   const handleContentChange = (newContent: JSONContent) => {
     setEditorContent(newContent);
@@ -245,7 +276,7 @@ export default function CaseDocumentEditor() {
     if (currentDocId && activeEditorRef) {
       saveDocumentJSON(currentDocId, activeEditorRef.getJSON());
     }
-    saveDraft(caseId);
+    saveDraft(effectiveCaseId);
   };
 
   const handleDownload = () => {
@@ -284,6 +315,7 @@ export default function CaseDocumentEditor() {
           type: "docx",
           content: htmlContent,
         });
+        saveDraft(effectiveCaseId);
 
         // Optionally switch to the newly uploaded document
         // You would need to handle this in the store
@@ -300,6 +332,7 @@ export default function CaseDocumentEditor() {
         size: file.size,
         url: url,
       });
+      saveDraft(effectiveCaseId);
     }
 
     // Reset input
@@ -319,6 +352,7 @@ export default function CaseDocumentEditor() {
       size: file.size,
       url: url,
     });
+    saveDraft(effectiveCaseId);
 
     // Reset input
     if (attachmentInputRef.current) attachmentInputRef.current.value = "";
@@ -374,6 +408,7 @@ export default function CaseDocumentEditor() {
                 setCurrentDocId(null);
               }
             }}
+            caseId={caseId}
           />
           {isAttachmentView && selectedAttachment ? (
             <div className="flex-1 overflow-auto bg-white p-6">
@@ -464,7 +499,7 @@ export default function CaseDocumentEditor() {
         {/* Signature Request Panel */}
         {isSignaturePanelOpen && (
           <SignatureRequestPanel
-            caseId={caseId || "recovery-of-money"}
+            caseId={effectiveCaseId}
             bundleItems={bundleItems}
             onClose={() => setIsSignaturePanelOpen(false)}
           />

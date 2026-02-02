@@ -25,12 +25,16 @@ import {
 } from "lucide-react";
 import clsx from "clsx";
 import { useState } from "react";
-import { useDocumentEditorStore, type BundleItem } from "../../store/documentEditor.store";
+import {
+  useDocumentEditorStore,
+  type BundleItem,
+} from "../../store/documentEditor.store";
 import { useSignatureRequestsStore } from "../../signatures/store/signatureRequests.store";
 
 interface DocumentSidebarProps {
   onDocumentSelect: (docId: string) => void;
   onAttachmentSelect?: (attachmentId: string | null) => void;
+  caseId?: string;
 }
 
 function formatFileSize(bytes: number): string {
@@ -50,7 +54,7 @@ function renderBundleItemIcon({
 }) {
   const className = clsx(
     "w-4 h-4 mt-0.5 flex-shrink-0",
-    isActive ? "text-blue-600" : "text-gray-400"
+    isActive ? "text-blue-600" : "text-gray-400",
   );
 
   if (isDoc) return <FileText className={className} />;
@@ -114,7 +118,7 @@ function SortableBundleItem({
         isActive
           ? "bg-blue-50 border-blue-200 shadow-sm"
           : "bg-white border-transparent hover:border-gray-200 hover:bg-gray-50",
-        isDragging && "opacity-50 z-50 shadow-lg"
+        isDragging && "opacity-50 z-50 shadow-lg",
       )}
     >
       {/* Drag Handle */}
@@ -181,6 +185,7 @@ function SortableBundleItem({
 export default function DocumentSidebar({
   onDocumentSelect,
   onAttachmentSelect,
+  caseId,
 }: DocumentSidebarProps) {
   const {
     bundleItems,
@@ -189,33 +194,44 @@ export default function DocumentSidebar({
     reorderBundleItems,
     removeFromBundle,
   } = useDocumentEditorStore();
-  const { requests } = useSignatureRequestsStore();
+  const { getRequestsByCaseId } = useSignatureRequestsStore();
+  const signatureCaseId = caseId || "recovery-of-money";
+  const requests = getRequestsByCaseId(signatureCaseId);
   const signedAttachmentIds = new Set(
     requests
       .filter((req) => req.clientSigned && req.signedAttachmentId)
-      .map((req) => req.signedAttachmentId as string)
+      .map((req) => req.signedAttachmentId as string),
   );
-  const [selectedBundleItemId, setSelectedBundleItemId] = useState<string | null>(null);
-  const [previewAttachmentId, setPreviewAttachmentId] = useState<string | null>(null);
-  const previewAttachment = previewAttachmentId ? attachmentsById[previewAttachmentId] : null;
+  const [selectedBundleItemId, setSelectedBundleItemId] = useState<
+    string | null
+  >(null);
+  const [previewAttachmentId, setPreviewAttachmentId] = useState<string | null>(
+    null,
+  );
+  const previewAttachment = previewAttachmentId
+    ? attachmentsById[previewAttachmentId]
+    : null;
   const isImagePreview = previewAttachment?.type?.includes("image");
   const isPdfPreview = previewAttachment?.type?.includes("pdf");
-  const isPreviewOpen = Boolean(previewAttachment && (isImagePreview || isPdfPreview));
+  const isPreviewOpen = Boolean(
+    previewAttachment && (isImagePreview || isPdfPreview),
+  );
   const isSignedPreview = Boolean(
-    previewAttachmentId && signedAttachmentIds.has(previewAttachmentId)
+    previewAttachmentId && signedAttachmentIds.has(previewAttachmentId),
   );
   const derivedSelectedId =
     selectedBundleItemId ||
     (currentDocId
-      ? bundleItems.find((item) => item.type === "DOC" && item.refId === currentDocId)?.id ||
-        null
+      ? bundleItems.find(
+          (item) => item.type === "DOC" && item.refId === currentDocId,
+        )?.id || null
       : null);
 
   const sensors = useSensors(
     useSensor(PointerSensor),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,
-    })
+    }),
   );
 
   const handleDragEnd = (event: DragEndEvent) => {
@@ -235,7 +251,9 @@ export default function DocumentSidebar({
     <div className="w-80 bg-white border-r border-gray-200 flex flex-col h-full">
       {/* Header */}
       <div className="p-4 border-b border-gray-200 bg-gray-50">
-        <h2 className="text-base font-semibold text-gray-900">Bundle Sequencing</h2>
+        <h2 className="text-base font-semibold text-gray-900">
+          Bundle Sequencing
+        </h2>
         <p className="text-xs text-gray-500 mt-1">
           Drag to reorder - {bundleItems.length} items
         </p>
@@ -261,11 +279,17 @@ export default function DocumentSidebar({
               <div className="space-y-1">
                 {bundleItems.map((item) => {
                   // Get extra info if attachment
-                  const att = item.type === "ATTACHMENT" ? attachmentsById[item.refId] : undefined;
-                  const fileInfo = att ? { size: att.size, type: att.type } : undefined;
+                  const att =
+                    item.type === "ATTACHMENT"
+                      ? attachmentsById[item.refId]
+                      : undefined;
+                  const fileInfo = att
+                    ? { size: att.size, type: att.type }
+                    : undefined;
                   const isPreviewableAttachment =
                     item.type === "ATTACHMENT" &&
-                    (fileInfo?.type?.includes("image") || fileInfo?.type?.includes("pdf"));
+                    (fileInfo?.type?.includes("image") ||
+                      fileInfo?.type?.includes("pdf"));
                   const isSignedAttachment =
                     item.type === "ATTACHMENT" &&
                     (signedAttachmentIds.has(item.refId) ||
@@ -333,8 +357,12 @@ export default function DocumentSidebar({
           >
             <div className="mb-3 flex items-center justify-between">
               <div>
-                <p className="text-sm font-semibold text-gray-900">{previewAttachment.name}</p>
-                <p className="text-xs text-gray-500">{previewAttachment.type}</p>
+                <p className="text-sm font-semibold text-gray-900">
+                  {previewAttachment.name}
+                </p>
+                <p className="text-xs text-gray-500">
+                  {previewAttachment.type}
+                </p>
               </div>
               <button
                 onClick={() => setPreviewAttachmentId(null)}
