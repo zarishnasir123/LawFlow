@@ -1,8 +1,15 @@
 import { useState, useMemo } from "react";
 import { X, Send, AlertCircle } from "lucide-react";
+import { generateHTML } from "@tiptap/core";
+import StarterKit from "@tiptap/starter-kit";
+import TextAlign from "@tiptap/extension-text-align";
+import { Table, TableRow, TableHeader, TableCell } from "@tiptap/extension-table";
+import type { JSONContent } from "@tiptap/react";
 import { useSignatureRequestsStore } from "../store/signatureRequests.store";
 import { useDocumentEditorStore } from "../../store/documentEditor.store";
 import type { BundleItem } from "../../store/documentEditor.store";
+import { AttachmentBlock } from "../../extensions/AttachmentBlock";
+import { ImageAttachment } from "../../extensions/ImageAttachment";
 
 interface SignatureRequestPanelProps {
   caseId: string;
@@ -22,10 +29,66 @@ export default function SignatureRequestPanel({
     sendSignatureRequestsForCase,
     updateRequest,
   } = useSignatureRequestsStore();
-  const { addSignedAttachment, attachmentsById } = useDocumentEditorStore();
+  const {
+    addSignedAttachment,
+    attachmentsById,
+    documentsById,
+    currentDocId,
+    activeEditorRef,
+  } = useDocumentEditorStore();
 
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
+  const [signerByItemId, setSignerByItemId] = useState<
+    Record<string, "client" | "lawyer" | "both">
+  >({});
   const [showSuccess, setShowSuccess] = useState(false);
+
+  const exportExtensions = useMemo(
+    () => [
+      StarterKit,
+      TextAlign.configure({
+        types: ["heading", "paragraph"],
+        alignments: ["left", "center", "right", "justify"],
+      }),
+      Table.configure({
+        resizable: true,
+        HTMLAttributes: {
+          class: "border-collapse table-auto w-full",
+        },
+      }),
+      TableRow,
+      TableHeader.configure({
+        HTMLAttributes: {
+          class: "border border-gray-300 px-4 py-2 bg-gray-100 font-bold",
+        },
+      }),
+      TableCell.configure({
+        HTMLAttributes: {
+          class: "border border-gray-300 px-4 py-2",
+        },
+      }),
+      AttachmentBlock,
+      ImageAttachment,
+    ],
+    []
+  );
+
+  const resolveDocHtml = (docId: string): string => {
+    if (activeEditorRef && currentDocId === docId) {
+      return activeEditorRef.getHTML();
+    }
+    const doc = documentsById[docId];
+    if (doc?.contentJSON) {
+      return generateHTML(doc.contentJSON as JSONContent, exportExtensions);
+    }
+    if (doc?.legacyHtml) return doc.legacyHtml;
+    return "";
+  };
+
+  const bundleItemIdSet = useMemo(
+    () => new Set(bundleItems.map((item) => item.id)),
+    [bundleItems]
+  );
 
   const existingRequests = useMemo(
     () => getRequestsByCaseId(caseId),
@@ -41,15 +104,20 @@ export default function SignatureRequestPanel({
       new Map(existingRequests.map((req) => [req.bundleItemId, req] as const)),
     [existingRequests]
   );
+  const requestBySignedAttachmentId = useMemo(
+    () =>
+      new Map(
+        existingRequests
+          .filter((req) => req.signedAttachmentId)
+          .map((req) => [req.signedAttachmentId as string, req] as const)
+      ),
+    [existingRequests]
+  );
   const requestedBundleItemIds = useMemo(
     () => new Set(pendingRequests.map((req) => req.bundleItemId)),
     [pendingRequests]
   );
 
-  const bundleItemIdSet = useMemo(
-    () => new Set(bundleItems.map((item) => item.id)),
-    [bundleItems]
-  );
   const pendingCount = useMemo(() => {
     const pending = getPendingRequests(caseId);
     if (bundleItemIdSet.size === 0) return 0;
@@ -91,6 +159,13 @@ export default function SignatureRequestPanel({
         id: item.id,
         title: item.title,
         type: item.type as "DOC" | "ATTACHMENT",
+        requiresClientSignature:
+          (signerByItemId[item.id] || "client") !== "lawyer",
+        requiresLawyerSignature:
+          (signerByItemId[item.id] || "client") !== "client",
+        // Capture HTML snapshot for documents to preserve formatting
+        docHtmlSnapshot:
+          item.type === "DOC" ? resolveDocHtml(item.refId) : undefined,
       }))
     );
 
@@ -100,6 +175,27 @@ export default function SignatureRequestPanel({
   };
 
   const canSend = selectedItems.size > 0;
+
+  const getSignerSelection = (itemId: string) => {
+    const manual = signerByItemId[itemId];
+    if (manual) return manual;
+    const existing = requestByBundleItemId.get(itemId);
+    if (existing) {
+      if (existing.requiresClientSignature && existing.requiresLawyerSignature) {
+        return "both";
+      }
+      if (existing.requiresLawyerSignature) {
+        return "lawyer";
+      }
+    }
+    return "client";
+  };
+
+  const getRequestForItem = (item: BundleItem) =>
+    requestByBundleItemId.get(item.id) ||
+    (item.type === "ATTACHMENT"
+      ? requestBySignedAttachmentId.get(item.refId)
+      : undefined);
 
   return (
     <div className="fixed right-0 top-0 h-screen w-full sm:w-[26rem] bg-slate-50 border-l border-slate-200 shadow-2xl z-40 flex flex-col overflow-hidden">
@@ -158,8 +254,11 @@ export default function SignatureRequestPanel({
             <div className="space-y-2">
               {bundleItems.map((item) => {
                 const isSelected = selectedItems.has(item.id);
-                const isRequested = requestedBundleItemIds.has(item.id);
-                const request = requestByBundleItemId.get(item.id);
+                const request = getRequestForItem(item);
+                const isRequested =
+                  requestedBundleItemIds.has(item.id) ||
+                  Boolean(request && !request.clientSigned);
+                const signerSelection = getSignerSelection(item.id);
 
                 if (request?.clientSigned) {
                   return null;
@@ -174,13 +273,12 @@ export default function SignatureRequestPanel({
                         : isRequested
                           ? "bg-amber-50/50 border-amber-200"
                           : "bg-white border-slate-200 hover:border-slate-300 hover:shadow-sm"
-                    } ${isRequested && !isSelected ? "opacity-75" : ""}`}
+                    }`}
                   >
                     <input
                       type="checkbox"
                       checked={isSelected}
                       onChange={() => handleToggleItem(item.id)}
-                      disabled={isRequested && !isSelected}
                       className="mt-1 w-4 h-4 rounded border-slate-300 accent-emerald-600 cursor-pointer"
                     />
 
@@ -197,6 +295,33 @@ export default function SignatureRequestPanel({
                             Pending
                           </span>
                         )}
+                      </div>
+                      <div className="mt-2">
+                        <label className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                          Signature required
+                        </label>
+                        <select
+                          value={signerSelection}
+                          onChange={(event) => {
+                            setSignerByItemId((prev) => ({
+                              ...prev,
+                              [item.id]: event.target.value as
+                                | "client"
+                                | "lawyer"
+                                | "both",
+                            }));
+                            setSelectedItems((prev) => {
+                              const next = new Set(prev);
+                              next.add(item.id);
+                              return next;
+                            });
+                          }}
+                          className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700"
+                        >
+                          <option value="client">Client signature</option>
+                          <option value="lawyer">Lawyer signature</option>
+                          <option value="both">Client + Lawyer</option>
+                        </select>
                       </div>
                     </div>
                   </label>
@@ -250,15 +375,19 @@ export default function SignatureRequestPanel({
                       <button
                         type="button"
                         onClick={() => {
-                          if (!req.signedPdfDataUrl || isAttached) return;
-                          const base64 = req.signedPdfDataUrl.split(",")[1] || "";
+                          const signedDataUrl =
+                            req.lawyerSignedPdfDataUrl ||
+                            req.signedPdfDataUrl ||
+                            (req.lawyerSigned ? req.pdfDataUrl : undefined);
+                          if (!signedDataUrl || isAttached) return;
+                          const base64 = signedDataUrl.split(",")[1] || "";
                           const sizeBytes = Math.floor((base64.length * 3) / 4);
                           const attachmentId = addSignedAttachment(
                             {
                               name: `${req.docTitle}-Signed.pdf`,
                               type: "application/pdf",
                               size: sizeBytes,
-                              url: req.signedPdfDataUrl,
+                              url: signedDataUrl,
                             },
                             req.bundleItemId
                           );

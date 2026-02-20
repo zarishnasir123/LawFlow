@@ -3,11 +3,18 @@ import { useNavigate, useParams } from "@tanstack/react-router";
 import { Document, Page, pdfjs } from "react-pdf";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { Rnd } from "react-rnd";
-import { ImagePlus, Type, CheckCircle2, Download, RotateCcw } from "lucide-react";
-import ClientLayout from "../components/ClientLayout";
-import { useSignatureRequestsStore } from "../../lawyer/signatures/store/signatureRequests.store";
+import {
+  CheckCircle2,
+  Download,
+  ImagePlus,
+  RotateCcw,
+  Type,
+} from "lucide-react";
+import LawyerLayout from "../components/LawyerLayout";
+import { useDocumentEditorStore } from "../store/documentEditor.store";
+import { useSignatureRequestsStore } from "../signatures/store/signatureRequests.store";
 import * as mammoth from "mammoth";
-import { DEFAULT_CASE_DOCS } from "../../lawyer/data/defaultCaseDocuments";
+import { DEFAULT_CASE_DOCS } from "../data/defaultCaseDocuments";
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL(
   "pdfjs-dist/build/pdf.worker.min.mjs",
@@ -115,94 +122,65 @@ function wrapText(
   return lines;
 }
 
-function extractTextFromHtml(html: string): string {
-  const div = document.createElement("div");
-  div.innerHTML = html;
-  return div.textContent || div.innerText || "";
-}
-
 async function generatePdfFromText(
   docTitle: string,
   bodyText: string
 ): Promise<Uint8Array> {
   const pdfDoc = await PDFDocument.create();
-  let page = pdfDoc.addPage([595, 842]);
   const font = await pdfDoc.embedFont(StandardFonts.TimesRoman);
-  const fontBold = await pdfDoc.embedFont(StandardFonts.TimesRomanBold);
+  const page = pdfDoc.addPage([612, 792]);
+  const fontSize = 12;
+  const margin = 50;
+  const maxWidth = page.getWidth() - margin * 2;
+  const lines = wrapText(bodyText, font, fontSize, maxWidth);
 
-  const marginX = 72;
-  const marginTop = 770;
-  const marginBottom = 120;
-  const maxWidth = 450;
-  const lineHeight = 16;
-
-  const headerLines = wrapText(docTitle.toUpperCase(), fontBold, 18, maxWidth);
-  let cursorY = marginTop;
-  headerLines.forEach((line) => {
-    page.drawText(line, {
-      x: marginX,
-      y: cursorY,
-      size: 18,
-      font: fontBold,
-      color: rgb(0.1, 0.1, 0.1),
-    });
-    cursorY -= 22;
+  let y = page.getHeight() - margin;
+  page.drawText(docTitle.toUpperCase(), {
+    x: margin,
+    y,
+    size: 16,
+    font,
+    color: rgb(0, 0, 0),
   });
-  cursorY -= 10;
+  y -= 24;
 
-  const lines = wrapText(bodyText, font, 12, maxWidth);
   lines.forEach((line) => {
-    if (cursorY < marginBottom) {
-      page = pdfDoc.addPage([595, 842]);
-      cursorY = marginTop;
+    if (y < margin) {
+      y = page.getHeight() - margin;
     }
     page.drawText(line, {
-      x: marginX,
-      y: cursorY,
-      size: 12,
+      x: margin,
+      y,
+      size: fontSize,
       font,
-      color: rgb(0.2, 0.2, 0.2),
+      color: rgb(0, 0, 0),
     });
-    cursorY -= lineHeight;
+    y -= 16;
   });
 
-  if (cursorY < marginBottom + 40) {
-    page = pdfDoc.addPage([595, 842]);
-    cursorY = marginTop;
-  }
-  page.drawText("Signature Required:", {
-    x: marginX,
-    y: cursorY,
-    size: 12,
-    font: fontBold,
-    color: rgb(0.12, 0.12, 0.12),
-  });
-  page.drawLine({
-    start: { x: marginX, y: cursorY - 20 },
-    end: { x: marginX + 280, y: cursorY - 20 },
-    thickness: 1,
-    color: rgb(0.2, 0.2, 0.2),
-  });
   return pdfDoc.save();
 }
 
 async function generateMockPdf(docTitle: string): Promise<Uint8Array> {
   const body =
-    "This document is provided for client review and signature. " +
+    "This document is provided for lawyer review and signature. " +
     "Please verify the details and sign in the designated area.";
   return generatePdfFromText(docTitle, body);
 }
 
-export default function ClientSignatureViewer() {
+export default function LawyerSignatureViewer() {
   const navigate = useNavigate();
   const { requestId } = useParams({ strict: false }) as {
     requestId?: string;
   };
 
+  const { requests, updateRequest } = useSignatureRequestsStore();
   const {
-    requests,
-    updateRequest,
-  } = useSignatureRequestsStore();
+    addSignedAttachment,
+    attachmentsById,
+    bundleItems,
+    removeFromBundle,
+  } = useDocumentEditorStore();
 
   const request = useMemo(
     () => requests.find((item) => item.id === requestId) || null,
@@ -219,11 +197,36 @@ export default function ClientSignatureViewer() {
   const [typedName, setTypedName] = useState("");
   const [signatureBox, setSignatureBox] = useState<SignatureBox | null>(null);
   const [signedPdfUrl, setSignedPdfUrl] = useState<string | null>(null);
+  const [signedPdfDataUrl, setSignedPdfDataUrl] = useState<string | null>(null);
   const [isLocallySigned, setIsLocallySigned] = useState(false);
-  const isSigned = isLocallySigned || Boolean(request?.clientSigned);
-  const displayPdfUrl = signedPdfUrl || request?.signedPdfDataUrl || pdfUrl;
+  const isSigned = isLocallySigned || Boolean(request?.lawyerSigned);
+  const targetAttachmentUrl =
+    signedPdfDataUrl ||
+    request?.pdfDataUrl ||
+    request?.lawyerSignedPdfDataUrl ||
+    request?.signedPdfDataUrl;
+  const attachedAttachment =
+    request?.signedAttachmentId && attachmentsById[request.signedAttachmentId]
+      ? attachmentsById[request.signedAttachmentId]
+      : null;
+  const isAttached = Boolean(
+    attachedAttachment && targetAttachmentUrl && attachedAttachment.url === targetAttachmentUrl
+  );
+  const statusLabel = request?.clientSigned && request?.lawyerSigned
+    ? "Client + Lawyer Signed"
+    : isSigned
+      ? "Signed"
+      : "Awaiting signature";
+  const displayPdfUrl =
+    signedPdfUrl ||
+    request?.pdfDataUrl ||
+    request?.lawyerSignedPdfDataUrl ||
+    request?.signedPdfDataUrl ||
+    pdfUrl;
   const isInteractingRef = useRef(false);
-  const interactionCooldownRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const interactionCooldownRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null
+  );
 
   const pageContainerRef = useRef<HTMLDivElement>(null);
   const [pageWidth, setPageWidth] = useState<number>(0);
@@ -243,19 +246,17 @@ export default function ClientSignatureViewer() {
     let url: string | null = null;
     const run = async () => {
       if (!request) return;
-    const bytes =
-      request.pdfDataUrl && request.pdfDataUrl.startsWith("data:application/pdf")
-        ? dataUrlToBytes(request.pdfDataUrl)
-        : await (async () => {
-            if (request.docHtmlSnapshot) {
-              const text = extractTextFromHtml(request.docHtmlSnapshot).trim();
-              if (text) {
-                return await generatePdfFromText(request.docTitle, text);
-              }
-            }
-            const requestTitle = request.docTitle.toLowerCase();
-            const template = DEFAULT_CASE_DOCS.find((doc) => {
-              const docTitle = doc.title.toLowerCase();
+      const baseDataUrl =
+        request.pdfDataUrl ||
+        request.lawyerSignedPdfDataUrl ||
+        request.signedPdfDataUrl;
+      const bytes =
+        baseDataUrl && baseDataUrl.startsWith("data:application/pdf")
+          ? dataUrlToBytes(baseDataUrl)
+          : await (async () => {
+              const requestTitle = request.docTitle.toLowerCase();
+              const template = DEFAULT_CASE_DOCS.find((doc) => {
+                const docTitle = doc.title.toLowerCase();
                 return (
                   docTitle === requestTitle ||
                   requestTitle.includes(docTitle) ||
@@ -270,34 +271,110 @@ export default function ClientSignatureViewer() {
                     const result = await mammoth.extractRawText({ arrayBuffer });
                     const text = result.value?.trim();
                     if (text) {
-                      return await generatePdfFromText(request.docTitle, text);
+                      return generatePdfFromText(request.docTitle, text);
                     }
                   }
                 } catch (error) {
-                  console.error("Failed to load template docx:", error);
+                  console.warn("[LawyerSignature] Template fetch failed", error);
                 }
               }
-              return await generateMockPdf(request.docTitle);
+              return generateMockPdf(request.docTitle);
             })();
 
       setPdfBytes(bytes);
-      const blob = new Blob([bytes as BlobPart], { type: "application/pdf" });
+      const safeBytes = new Uint8Array(bytes);
+      const blob = new Blob([safeBytes.buffer], { type: "application/pdf" });
       url = URL.createObjectURL(blob);
       setPdfUrl(url);
-      if (!request.pdfDataUrl) {
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          const result = typeof reader.result === "string" ? reader.result : "";
-          updateRequest(request.id, { pdfDataUrl: result });
-        };
-        reader.readAsDataURL(blob);
-      }
     };
+
     run();
     return () => {
       if (url) URL.revokeObjectURL(url);
     };
-  }, [request, updateRequest]);
+  }, [request]);
+
+  const handlePageClick = (pageNumber: number, event: React.MouseEvent) => {
+    if (!signatureImage || isSigned || isInteractingRef.current) return;
+    const metrics = pageMetrics[pageNumber];
+    if (!metrics) return;
+    const rect = (event.currentTarget as HTMLDivElement).getBoundingClientRect();
+    const clickX = event.clientX - rect.left;
+    const clickY = event.clientY - rect.top;
+    const defaultWidth = Math.min(220, metrics.renderWidth * 0.4);
+    const defaultHeight = Math.max(60, defaultWidth * 0.35);
+    const clampedX = Math.max(
+      0,
+      Math.min(clickX - defaultWidth / 2, metrics.renderWidth - defaultWidth)
+    );
+    const clampedY = Math.max(
+      0,
+      Math.min(clickY - defaultHeight / 2, metrics.renderHeight - defaultHeight)
+    );
+
+    setSignatureBox({
+      page: pageNumber,
+      x: clampedX,
+      y: clampedY,
+      width: defaultWidth,
+      height: defaultHeight,
+    });
+  };
+
+  const handleConfirmSignature = async () => {
+    if (!signatureBox || !pdfBytes || !signatureImage || !request) return;
+    const pdfDoc = await PDFDocument.load(pdfBytes);
+    const imageBytes = dataUrlToBytes(signatureImage);
+    const image = await pdfDoc.embedPng(imageBytes);
+
+    const page = pdfDoc.getPages()[signatureBox.page - 1];
+    const metrics = pageMetrics[signatureBox.page];
+    if (!metrics) return;
+
+    const scaleX = metrics.pdfWidth / metrics.renderWidth;
+    const scaleY = metrics.pdfHeight / metrics.renderHeight;
+
+    const targetWidth = signatureBox.width * scaleX;
+    const targetHeight = signatureBox.height * scaleY;
+    const pdfX = signatureBox.x * scaleX;
+    const pdfY =
+      metrics.pdfHeight - signatureBox.y * scaleY - targetHeight;
+
+    page.drawImage(image, {
+      x: pdfX,
+      y: pdfY,
+      width: targetWidth,
+      height: targetHeight,
+    });
+
+    const signedBytes = await pdfDoc.save();
+    const signedArray = new Uint8Array(signedBytes);
+    const signedBlob = new Blob([signedArray.buffer], {
+      type: "application/pdf",
+    });
+    const signedUrl = URL.createObjectURL(signedBlob);
+    setSignedPdfUrl(signedUrl);
+    setIsLocallySigned(true);
+    setSignatureBox(null);
+
+    const signedDataUrl = await new Promise<string>((resolve) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(String(reader.result));
+      reader.readAsDataURL(signedBlob);
+    });
+    setSignedPdfDataUrl(signedDataUrl);
+
+    const updates: Record<string, unknown> = {
+      lawyerSigned: true,
+      lawyerSignedAt: new Date().toISOString(),
+      lawyerSignatureName: typedName || "Lawyer",
+      // Persist merged PDF as canonical latest version.
+      pdfDataUrl: signedDataUrl,
+      lawyerSignedPdfDataUrl: signedDataUrl,
+    };
+
+    updateRequest(request.id, updates);
+  };
 
   const handleFileUpload = (file?: File) => {
     if (!file) return;
@@ -319,136 +396,101 @@ export default function ClientSignatureViewer() {
     setIsLocallySigned(false);
   };
 
-  const handlePageClick = (pageNumber: number, event: React.MouseEvent) => {
-    if (!signatureImage || isSigned || isInteractingRef.current) return;
-    const metrics = pageMetrics[pageNumber];
-    if (!metrics) return;
-    const rect = (event.currentTarget as HTMLDivElement).getBoundingClientRect();
-    const clickX = event.clientX - rect.left;
-    const clickY = event.clientY - rect.top;
-    const defaultWidth = Math.min(220, metrics.renderWidth * 0.4);
-    const defaultHeight = Math.max(60, defaultWidth * 0.35);
-    const clampedX = Math.max(0, Math.min(clickX - defaultWidth / 2, metrics.renderWidth - defaultWidth));
-    const clampedY = Math.max(0, Math.min(clickY - defaultHeight / 2, metrics.renderHeight - defaultHeight));
-
-    setSignatureBox({
-      page: pageNumber,
-      x: clampedX,
-      y: clampedY,
-      width: defaultWidth,
-      height: defaultHeight,
-    });
-  };
-
-  const handleConfirmSignature = async () => {
-    if (!request || !pdfBytes || !signatureImage || !signatureBox) return;
-    const metrics = pageMetrics[signatureBox.page];
-    if (!metrics) return;
-
-    const pdfDoc = await PDFDocument.load(pdfBytes);
-    const page = pdfDoc.getPage(signatureBox.page - 1);
-    const imageBytes = dataUrlToBytes(signatureImage);
-    const embed =
-      signatureImage.startsWith("data:image/png")
-        ? await pdfDoc.embedPng(imageBytes)
-        : await pdfDoc.embedJpg(imageBytes);
-
-    const scaleX = metrics.pdfWidth / metrics.renderWidth;
-    const scaleY = metrics.pdfHeight / metrics.renderHeight;
-    const pdfX = signatureBox.x * scaleX;
-    const pdfY =
-      metrics.pdfHeight - (signatureBox.y + signatureBox.height) * scaleY;
-    const pdfWidth = signatureBox.width * scaleX;
-    const pdfHeight = signatureBox.height * scaleY;
-
-    page.drawImage(embed, {
-      x: pdfX,
-      y: pdfY,
-      width: pdfWidth,
-      height: pdfHeight,
-    });
-
-    const signedBytes = await pdfDoc.save();
-    const signedBlob = new Blob([signedBytes as BlobPart], {
-      type: "application/pdf",
-    });
-    const signedUrl = URL.createObjectURL(signedBlob);
-    setSignedPdfUrl(signedUrl);
-    setIsLocallySigned(true);
+  const handleClearPlacement = () => {
     setSignatureBox(null);
-    const signedDataUrl = await new Promise<string>((resolve) => {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        resolve(typeof reader.result === "string" ? reader.result : "");
-      };
-      reader.readAsDataURL(signedBlob);
-    });
-    updateRequest(request.id, {
-      clientSigned: true,
-      clientSignedAt: new Date().toISOString(),
-      clientSignatureName: typedName.trim() || request.clientSignatureName,
-      // Keep canonical PDF data in sync so the next signer always sees
-      // the latest signed version, even if a secondary field is missing.
-      pdfDataUrl: signedDataUrl,
-      signedPdfDataUrl: signedDataUrl,
-    });
+    setIsLocallySigned(false);
+    setSignedPdfUrl(null);
+    setSignedPdfDataUrl(null);
   };
 
-  if (!request) {
-    return (
-      <ClientLayout brandSubtitle="Pending Signatures">
-        <div className="mx-auto max-w-2xl rounded-xl border bg-white p-8 text-center">
-          <h2 className="text-lg font-semibold text-gray-900">
-            Signature request not found
-          </h2>
-          <p className="mt-2 text-sm text-gray-500">
-            The document you are trying to access is unavailable.
-          </p>
-          <button
-            onClick={() => navigate({ to: "/case-tracking", search: { view: "pending" } })}
-            className="mt-5 rounded-lg bg-[#01411C] px-4 py-2 text-sm font-medium text-white hover:bg-[#024a23]"
-          >
-            Back to Pending Signatures
-          </button>
-        </div>
-      </ClientLayout>
+  const handleDownload = () => {
+    if (!displayPdfUrl) return;
+    const link = document.createElement("a");
+    link.href = displayPdfUrl;
+    link.download = `${request?.docTitle || "document"}-lawyer-signed.pdf`;
+    link.click();
+  };
+
+  const handleAttachToCase = async () => {
+    if (!request || !request.lawyerSigned) return;
+    const dataUrl =
+      signedPdfDataUrl ||
+      request.pdfDataUrl ||
+      request.lawyerSignedPdfDataUrl ||
+      request.signedPdfDataUrl;
+    if (!dataUrl) return;
+    const expectedName = `${request.docTitle}-Signed.pdf`;
+    const base64 = dataUrl.split(",")[1] || "";
+    const sizeBytes = Math.floor((base64.length * 3) / 4);
+    const existingAttachment =
+      request.signedAttachmentId && attachmentsById[request.signedAttachmentId]
+        ? attachmentsById[request.signedAttachmentId]
+        : undefined;
+    if (
+      existingAttachment &&
+      existingAttachment.url === dataUrl &&
+      existingAttachment.name === expectedName &&
+      existingAttachment.size === sizeBytes
+    ) {
+      return;
+    }
+
+    const oldBundleItem = existingAttachment
+      ? bundleItems.find(
+          (item) =>
+            item.type === "ATTACHMENT" && item.refId === existingAttachment.id
+        )
+      : undefined;
+    const insertAfterId = oldBundleItem?.id || request.bundleItemId;
+
+    const attachmentId = addSignedAttachment(
+      {
+        name: expectedName,
+        type: "application/pdf",
+        size: sizeBytes,
+        url: dataUrl,
+      },
+      insertAfterId
     );
-  }
+    updateRequest(request.id, { signedAttachmentId: attachmentId });
+
+    if (existingAttachment) {
+      if (oldBundleItem) {
+        removeFromBundle(oldBundleItem.id);
+      }
+    }
+  };
 
   return (
-    <ClientLayout brandSubtitle="Review & Sign">
+    <LawyerLayout brandTitle="LawFlow" brandSubtitle="Sign Documents">
       <div className="grid gap-6 px-4 py-6 lg:grid-cols-[1.4fr_0.9fr] lg:px-6">
         <div className="space-y-4">
           <div className="rounded-2xl border border-emerald-100 bg-white p-4 shadow-sm">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-emerald-700">
-                  Document for signature
+                  Document for lawyer signature
                 </p>
                 <h2 className="mt-1 text-lg font-semibold text-gray-900">
-                  {request.docTitle}
+                  {request?.docTitle || "Document"}
                 </h2>
                 <p className="mt-1 text-xs text-gray-500">
-                  Sent by {request.requestedBy || "Lawyer"} • Requested{" "}
-                  {formatDateTime(request.requestedAt)}
+                  Requested on {formatDateTime(request?.requestedAt)}
                 </p>
               </div>
-              <div className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
-                {isSigned ? "Signed" : "Awaiting signature"}
-              </div>
+              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
+                <CheckCircle2 className="h-3.5 w-3.5" />
+                {statusLabel}
+              </span>
             </div>
           </div>
 
           <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
-            <div
-              ref={pageContainerRef}
-              className="space-y-6"
-            >
+            <div ref={pageContainerRef} className="space-y-6">
               {displayPdfUrl ? (
                 <Document
                   file={displayPdfUrl}
                   onLoadSuccess={(doc) => setNumPages(doc.numPages)}
-                  loading={<p className="text-sm text-gray-500">Loading PDF...</p>}
                 >
                   {Array.from({ length: numPages }, (_, index) => {
                     const pageNumber = index + 1;
@@ -461,55 +503,46 @@ export default function ClientSignatureViewer() {
                         <Page
                           pageNumber={pageNumber}
                           width={pageWidth ? pageWidth - 32 : undefined}
-                          renderAnnotationLayer={false}
                           renderTextLayer={false}
-                          onLoadSuccess={(page) => {
-                            const viewport = page.getViewport({ scale: 1 });
-                            const renderWidth = pageWidth ? pageWidth - 32 : viewport.width;
-                            const scale = renderWidth / viewport.width;
+                          renderAnnotationLayer={false}
+                          onRenderSuccess={(pageInfo) =>
                             setPageMetrics((prev) => ({
                               ...prev,
                               [pageNumber]: {
-                                pdfWidth: viewport.width,
-                                pdfHeight: viewport.height,
-                                renderWidth,
-                                renderHeight: viewport.height * scale,
+                                pdfWidth: pageInfo.originalWidth,
+                                pdfHeight: pageInfo.originalHeight,
+                                renderWidth: pageInfo.width,
+                                renderHeight: pageInfo.height,
                               },
-                            }));
-                          }}
+                            }))
+                          }
                         />
 
-                        {!isSigned && signatureBox && signatureBox.page === pageNumber && (
+                        {!isSigned &&
+                          signatureBox?.page === pageNumber &&
+                          signatureImage && (
                           <Rnd
-                            bounds="parent"
-                            size={{ width: signatureBox.width, height: signatureBox.height }}
+                            size={{
+                              width: signatureBox.width,
+                              height: signatureBox.height,
+                            }}
                             position={{ x: signatureBox.x, y: signatureBox.y }}
                             lockAspectRatio
-                            onMouseDown={(event: MouseEvent) =>
-                              event.stopPropagation()
-                            }
-                            onTouchStart={(event: TouchEvent) =>
-                              event.stopPropagation()
-                            }
-                            onClick={(event: MouseEvent) =>
-                              event.stopPropagation()
-                            }
                             onDragStart={() => {
                               isInteractingRef.current = true;
                             }}
                             onDragStop={(_, data) => {
-                              isInteractingRef.current = false;
+                              setSignatureBox((prev) =>
+                                prev
+                                  ? { ...prev, x: data.x, y: data.y }
+                                  : prev
+                              );
                               if (interactionCooldownRef.current) {
                                 clearTimeout(interactionCooldownRef.current);
                               }
                               interactionCooldownRef.current = setTimeout(() => {
                                 isInteractingRef.current = false;
                               }, 150);
-                              setSignatureBox((prev) =>
-                                prev
-                                  ? { ...prev, x: data.x, y: data.y }
-                                  : prev
-                              );
                             }}
                             onResizeStart={() => {
                               isInteractingRef.current = true;
@@ -536,19 +569,31 @@ export default function ClientSignatureViewer() {
                                 isInteractingRef.current = false;
                               }, 150);
                             }}
+                            bounds="parent"
+                            onMouseDown={(event: MouseEvent) =>
+                              event.stopPropagation()
+                            }
+                            onTouchStart={(event: TouchEvent) =>
+                              event.stopPropagation()
+                            }
+                            onClick={(event: MouseEvent) =>
+                              event.stopPropagation()
+                            }
                           >
                             <div className="h-full w-full border-2 border-emerald-500 bg-white/80 shadow-sm">
-                              {signatureImage && (
-                                <img
-                                  src={signatureImage}
-                                  alt="Signature"
-                                  className="h-full w-full object-contain"
-                                />
-                              )}
+                              <img
+                                src={signatureImage}
+                                alt="Signature"
+                                className="h-full w-full object-contain"
+                              />
                             </div>
                           </Rnd>
                         )}
-
+                        {!signatureImage && !isSigned && (
+                          <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-xs font-medium text-gray-400">
+                            Upload or type a signature, then click to place it.
+                          </div>
+                        )}
                       </div>
                     );
                   })}
@@ -614,6 +659,7 @@ export default function ClientSignatureViewer() {
                   <button
                     onClick={handleCreateTypedSignature}
                     className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-3 py-2 text-xs font-semibold text-white shadow-sm hover:bg-emerald-700"
+                    disabled={!typedName.trim()}
                   >
                     <Type className="h-4 w-4" />
                     Create
@@ -673,54 +719,47 @@ export default function ClientSignatureViewer() {
                 {isSigned ? "Signed" : "Confirm & Embed Signature"}
               </button>
 
-              {isSigned && (
-                <button
-                  onClick={() => {
-                    if (!request) return;
-                    updateRequest(request.id, {
-                      sentToLawyerAt: new Date().toISOString(),
-                    });
-                  }}
-                  disabled={Boolean(request?.sentToLawyerAt)}
-                  className={`flex w-full items-center justify-center gap-2 rounded-2xl px-4 py-2 text-sm font-semibold transition-all ${
-                    request?.sentToLawyerAt
-                      ? "bg-emerald-50 text-emerald-600"
-                      : "border border-emerald-200 bg-white text-emerald-800 shadow-[0_12px_26px_-20px_rgba(16,185,129,0.6)] hover:bg-emerald-50"
-                  }`}
-                >
-                  <CheckCircle2 className="h-4 w-4" />
-                  {request?.sentToLawyerAt
-                    ? "Sent to Lawyer"
-                    : "Send Signed PDF to Lawyer"}
-                </button>
-              )}
-
               <button
-                onClick={() => setSignatureBox(null)}
+                onClick={handleClearPlacement}
                 className="flex w-full items-center justify-center gap-2 rounded-2xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 transition-all hover:bg-gray-50"
               >
                 <RotateCcw className="h-4 w-4" />
                 Clear placement
               </button>
 
-              {signedPdfUrl && (
+              {isSigned && (
                 <button
-                  onClick={() => {
-                    const link = document.createElement("a");
-                    link.href = signedPdfUrl;
-                    link.download = `${request.docTitle}-signed.pdf`;
-                    link.click();
-                  }}
-                  className="flex w-full items-center justify-center gap-2 rounded-2xl border border-emerald-200 bg-white px-4 py-2 text-sm font-semibold text-emerald-800 shadow-[0_12px_26px_-20px_rgba(16,185,129,0.6)] transition-all hover:bg-emerald-50"
+                  onClick={handleAttachToCase}
+                  disabled={isAttached}
+                  className={`flex w-full items-center justify-center gap-2 rounded-2xl px-4 py-2 text-sm font-semibold transition-all ${
+                    isAttached
+                      ? "bg-emerald-50 text-emerald-600"
+                      : "border border-emerald-200 bg-white text-emerald-800 shadow-[0_12px_26px_-20px_rgba(16,185,129,0.6)] hover:bg-emerald-50"
+                  }`}
                 >
-                  <Download className="h-4 w-4" />
-                  Download Signed PDF
+                  {isAttached ? "Sent to Case File" : "Send Signed PDF to Case File"}
                 </button>
               )}
+
+              <button
+                onClick={handleDownload}
+                className="flex w-full items-center justify-center gap-2 rounded-2xl border border-emerald-200 bg-white px-4 py-2 text-sm font-semibold text-emerald-800 shadow-[0_12px_26px_-20px_rgba(16,185,129,0.6)] transition-all hover:bg-emerald-50"
+              >
+                <Download className="h-4 w-4" />
+                Download Signed PDF
+              </button>
+
+              <button
+                type="button"
+                onClick={() => navigate({ to: "/lawyer-signatures" })}
+                className="w-full rounded-lg text-xs text-gray-500 hover:text-gray-700"
+              >
+                Back to signatures
+              </button>
             </div>
           </div>
         </div>
       </div>
-    </ClientLayout>
+    </LawyerLayout>
   );
 }

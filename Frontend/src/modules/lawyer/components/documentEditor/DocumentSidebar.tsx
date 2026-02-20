@@ -72,7 +72,7 @@ interface SortableBundleItemProps {
   onRemove: () => void;
   onPreview?: () => void;
   fileInfo?: { size: number; type: string }; // Extra info for attachments
-  isSignedAttachment?: boolean;
+  signedLabel?: string | null;
 }
 
 function SortableBundleItem({
@@ -82,7 +82,7 @@ function SortableBundleItem({
   onRemove,
   onPreview,
   fileInfo,
-  isSignedAttachment,
+  signedLabel,
 }: SortableBundleItemProps) {
   const {
     attributes,
@@ -152,9 +152,9 @@ function SortableBundleItem({
                 Prepared Document
               </p>
             )}
-            {isSignedAttachment && (
+            {signedLabel && (
               <span className="mt-1 inline-flex w-fit items-center rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
-                Client Signed
+                {signedLabel}
               </span>
             )}
           </div>
@@ -195,8 +195,16 @@ export default function DocumentSidebar({
     removeFromBundle,
   } = useDocumentEditorStore();
   const { getRequestsByCaseId } = useSignatureRequestsStore();
-  const signatureCaseId = caseId || "recovery-of-money";
+  const signatureCaseId = caseId || "default-case";
   const requests = getRequestsByCaseId(signatureCaseId);
+  const requestByBundleItemId = new Map(
+    requests.map((req) => [req.bundleItemId, req] as const)
+  );
+  const requestBySignedAttachmentId = new Map(
+    requests
+      .filter((req) => req.signedAttachmentId)
+      .map((req) => [req.signedAttachmentId as string, req] as const)
+  );
   const signedAttachmentIds = new Set(
     requests
       .filter((req) => req.clientSigned && req.signedAttachmentId)
@@ -290,10 +298,23 @@ export default function DocumentSidebar({
                     item.type === "ATTACHMENT" &&
                     (fileInfo?.type?.includes("image") ||
                       fileInfo?.type?.includes("pdf"));
-                  const isSignedAttachment =
-                    item.type === "ATTACHMENT" &&
-                    (signedAttachmentIds.has(item.refId) ||
-                      att?.name?.toLowerCase().includes("signed"));
+                  const request =
+                    requestByBundleItemId.get(item.id) ||
+                    (item.type === "ATTACHMENT"
+                      ? requestBySignedAttachmentId.get(item.refId)
+                      : undefined);
+                  const signedLabel =
+                    request && request.clientSigned && request.lawyerSigned
+                      ? "Client + Lawyer Signed"
+                      : request?.clientSigned
+                        ? "Client Signed"
+                        : request?.lawyerSigned
+                          ? "Lawyer Signed"
+                          : item.type === "ATTACHMENT" &&
+                              (signedAttachmentIds.has(item.refId) ||
+                                att?.name?.toLowerCase().includes("signed"))
+                            ? "Client Signed"
+                            : null;
 
                   return (
                     <SortableBundleItem
@@ -301,7 +322,7 @@ export default function DocumentSidebar({
                       item={item}
                       isActive={item.id === derivedSelectedId}
                       fileInfo={fileInfo}
-                      isSignedAttachment={isSignedAttachment}
+                      signedLabel={signedLabel}
                       onSelect={() => {
                         if (item.type === "DOC") {
                           if (selectedBundleItemId === item.id) {
