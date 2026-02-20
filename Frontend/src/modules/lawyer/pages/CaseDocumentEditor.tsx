@@ -53,7 +53,7 @@ export default function CaseDocumentEditor() {
   } = useDocumentEditorStore();
 
   const {
-    getCompletedRequests,
+    getRequestsByCaseId,
     getPendingRequests,
     updateRequest,
   } = useSignatureRequestsStore();
@@ -78,48 +78,100 @@ export default function CaseDocumentEditor() {
   })();
 
   useEffect(() => {
-    const completed = getCompletedRequests(signatureCaseId);
-    completed.forEach((request) => {
-      if (!request.signedPdfDataUrl || !request.sentToLawyerAt) return;
-      const hasSignedAttachment =
-        request.signedAttachmentId && attachmentsById[request.signedAttachmentId];
+    const requests = getRequestsByCaseId(signatureCaseId);
+    const linkedSignedAttachmentIds = new Set(
+      requests
+        .map((req) => req.signedAttachmentId)
+        .filter((id): id is string => Boolean(id))
+    );
+
+    requests.forEach((request) => {
+      const existingAttachment = request.signedAttachmentId
+        ? attachmentsById[request.signedAttachmentId]
+        : undefined;
       const stillHasOriginal = bundleItems.some(
         (item) => item.id === request.bundleItemId
       );
 
-      if (hasSignedAttachment) {
-        if (stillHasOriginal) {
-          removeFromBundle(request.bundleItemId);
-        }
-        return;
-      }
+      const latestSignedDataUrl =
+        (request.clientSigned || request.lawyerSigned
+          ? request.pdfDataUrl
+          : undefined) ||
+        request.lawyerSignedPdfDataUrl ||
+        request.signedPdfDataUrl;
 
-      if (!stillHasOriginal) return;
+      // For client-required docs, wait until client actually sends to lawyer.
+      const waitingForClientSend =
+        request.requiresClientSignature !== false &&
+        request.clientSigned &&
+        !request.sentToLawyerAt;
 
-      if (request.signedAttachmentId && attachmentsById[request.signedAttachmentId]) {
-        return;
-      }
+      if (!latestSignedDataUrl || waitingForClientSend) return;
 
-      const dataUrl = request.signedPdfDataUrl;
-      const base64 = dataUrl.split(",")[1] || "";
+      const signedName = `${request.docTitle}-Signed.pdf`;
+      const base64 = latestSignedDataUrl.split(",")[1] || "";
       const sizeBytes = Math.floor((base64.length * 3) / 4);
 
-      const attachmentId = addSignedAttachment(
-        {
-          name: `${request.docTitle}-Signed.pdf`,
-          type: "application/pdf",
-          size: sizeBytes,
-          url: dataUrl,
-        },
-        request.bundleItemId
-      );
+      // Keep only the latest signed artifact for this request in the bundle.
+      // Older signed attachments (same file name) become stale after re-signing.
+      bundleItems
+        .filter((item) => {
+          if (item.type !== "ATTACHMENT") return false;
+          if (request.signedAttachmentId && item.refId === request.signedAttachmentId) {
+            return false;
+          }
+          const attachment = attachmentsById[item.refId];
+          if (!attachment) return false;
+          if (attachment.name !== signedName) return false;
+          return !linkedSignedAttachmentIds.has(item.refId);
+        })
+        .forEach((staleItem) => removeFromBundle(staleItem.id));
 
-      updateRequest(request.id, { signedAttachmentId: attachmentId });
-      removeFromBundle(request.bundleItemId);
+      if (existingAttachment) {
+        const needsRefresh =
+          existingAttachment.url !== latestSignedDataUrl ||
+          existingAttachment.name !== signedName ||
+          existingAttachment.size !== sizeBytes;
+
+        if (needsRefresh) {
+          const oldBundleItem = bundleItems.find(
+            (item) =>
+              item.type === "ATTACHMENT" && item.refId === existingAttachment.id
+          );
+          const insertAfterId = oldBundleItem?.id || request.bundleItemId;
+          const updatedAttachmentId = addSignedAttachment(
+            {
+              name: signedName,
+              type: "application/pdf",
+              size: sizeBytes,
+              url: latestSignedDataUrl,
+            },
+            insertAfterId
+          );
+          updateRequest(request.id, { signedAttachmentId: updatedAttachmentId });
+          if (oldBundleItem) {
+            removeFromBundle(oldBundleItem.id);
+          }
+        }
+      } else {
+        const attachmentId = addSignedAttachment(
+          {
+            name: signedName,
+            type: "application/pdf",
+            size: sizeBytes,
+            url: latestSignedDataUrl,
+          },
+          request.bundleItemId
+        );
+        updateRequest(request.id, { signedAttachmentId: attachmentId });
+      }
+      if (stillHasOriginal) {
+        removeFromBundle(request.bundleItemId);
+      }
     });
   }, [
     signatureCaseId,
-    getCompletedRequests,
+    getRequestsByCaseId,
     addSignedAttachment,
     updateRequest,
     attachmentsById,
@@ -150,7 +202,16 @@ export default function CaseDocumentEditor() {
   }, [currentDocId, activeEditorRef, saveDocumentJSON, saveDraft, effectiveCaseId]);
 
   useEffect(() => {
+    const storageKey = effectiveCaseId
+      ? `lawyer_case_draft_${effectiveCaseId}`
+      : "lawyer_case_draft";
+
     const handleBeforeUnload = () => {
+      // If the draft key was manually removed (e.g. via DevTools),
+      // do not recreate it on refresh.
+      if (!localStorage.getItem(storageKey)) {
+        return;
+      }
       if (currentDocId && activeEditorRef) {
         saveDocumentJSON(currentDocId, activeEditorRef.getJSON());
       }

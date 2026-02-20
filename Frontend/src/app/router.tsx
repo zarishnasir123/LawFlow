@@ -45,6 +45,7 @@ import AiLegalGuidance from "../modules/lawyer/pages/AiLegalGuidance";
 import ServiceCharges from "../modules/lawyer/pages/ServiceCharges";
 import CaseDocumentEditor from "../modules/lawyer/pages/CaseDocumentEditor";
 import Signatures from "../modules/lawyer/pages/Signatures";
+import LawyerSignatureViewer from "../modules/lawyer/pages/LawyerSignatureViewer";
 
 /* =====================================================
    REGISTRAR MODULE IMPORTS
@@ -250,6 +251,12 @@ const lawyerSignaturesRoute = createRoute({
   component: Signatures,
 });
 
+const lawyerSignatureViewerRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "lawyer-signatures/$requestId",
+  component: LawyerSignatureViewer,
+});
+
 const lawyerAiGuidanceRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "lawyer-ai-guidance",
@@ -438,6 +445,7 @@ const routeTree = rootRoute.addChildren([
   lawyerMessagesRoute,
   lawyerChatDetailRoute,
   lawyerSignaturesRoute,
+  lawyerSignatureViewerRoute,
   lawyerAiGuidanceRoute,
   serviceChargesRoute,
 
