@@ -11,6 +11,7 @@ import {
   DollarSign,
   Pause,
   AlertCircle,
+  UploadCloud,
 } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
 import LawyerLayout from "../components/LawyerLayout";
@@ -409,6 +410,13 @@ export default function LawyerCases() {
                   <button className="px-4 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors text-sm flex items-center gap-2">
                     <Users className="w-4 h-4" />
                     View Details
+                  </button>
+                  <button
+                    onClick={() => navigate({ to: `/lawyer-submit-case/${caseItem.id}` })}
+                    className="px-4 py-2 bg-[#01411C] text-white rounded-lg font-medium hover:bg-[#024a23] transition-colors text-sm flex items-center gap-2"
+                  >
+                    <UploadCloud className="w-4 h-4" />
+                    Submit to Registrar
                   </button>
                 </div>
               </div>

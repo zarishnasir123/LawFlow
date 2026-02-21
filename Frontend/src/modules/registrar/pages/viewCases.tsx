@@ -1,10 +1,12 @@
 import { ArrowLeft, Eye } from 'lucide-react';
-import { mockCases } from '../data/viewcase.mock';
-import type { Case } from '../types/case';
 import { useNavigate } from "@tanstack/react-router";
+import { useCaseFilingStore } from "../../lawyer/store/caseFiling.store";
 
 export function ViewCases() {
   const navigate = useNavigate(); 
+  const submittedCases = useCaseFilingStore((state) =>
+    state.getSubmittedCasesForRegistrar()
+  );
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -31,26 +33,28 @@ export function ViewCases() {
             <table className="w-full border border-gray-200 text-xs sm:text-sm">
               <thead className="bg-gray-100">
                 <tr>
-                  <th className="p-2 sm:p-3 text-left">Case No</th>
+                  <th className="p-2 sm:p-3 text-left">Case ID</th>
                   <th className="hidden sm:table-cell p-3 text-left">Title</th>
+                  <th className="hidden sm:table-cell p-3 text-left">Client</th>
                   <th className="p-2 sm:p-3 text-left">Status</th>
                   <th className="p-2 sm:p-3 text-center">Action</th>
                 </tr>
               </thead>
 
               <tbody>
-                {mockCases.map((caseItem: Case) => (
-                  <tr key={caseItem.id} className="border-t hover:bg-gray-50">
-                    <td className="p-2 sm:p-3 text-xs sm:text-sm">{caseItem.caseNumber}</td>
+                {submittedCases.map((caseItem) => (
+                  <tr key={caseItem.caseId} className="border-t hover:bg-gray-50">
+                    <td className="p-2 sm:p-3 text-xs sm:text-sm">{caseItem.displayCaseId}</td>
                     <td className="hidden sm:table-cell p-3">{caseItem.title}</td>
+                    <td className="hidden sm:table-cell p-3">{caseItem.clientName}</td>
                     <td className="p-2 sm:p-3">
                       <span className="px-2 sm:px-3 py-1 rounded-full text-xs bg-yellow-100 text-yellow-700 inline-block">
-                        {caseItem.status}
+                        Pending Review
                       </span>
                     </td>
                     <td className="p-2 sm:p-3 text-center">
                       <button
-                        onClick={() => navigate({ to: '/review-cases/$caseId', params: { caseId: caseItem.id } })}
+                        onClick={() => navigate({ to: '/review-cases/$caseId', params: { caseId: caseItem.caseId } })}
                         className="inline-flex items-center gap-1 px-2 sm:px-3 py-1 border rounded hover:bg-gray-100 text-xs sm:text-sm transition-colors"
                       >
                         <Eye className="h-3 sm:h-4 w-3 sm:w-4" />
@@ -62,9 +66,9 @@ export function ViewCases() {
               </tbody>
             </table>
 
-            {mockCases.length === 0 && (
+            {submittedCases.length === 0 && (
               <p className="text-center text-gray-500 py-6 text-sm">
-                No cases found
+                No submitted cases available yet.
               </p>
             )}
           </div>

@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import * as mammoth from "mammoth";
 import { type JSONContent } from "@tiptap/react";
-import { useParams } from "@tanstack/react-router";
+import { useNavigate, useParams } from "@tanstack/react-router";
 import { Document, Page, pdfjs } from "react-pdf";
 import LawyerLayout from "../components/LawyerLayout";
 import DocumentSidebar from "../components/documentEditor/DocumentSidebar";
@@ -30,6 +30,7 @@ const resolveTemplateUrl = (path: string) => {
 
 export default function CaseDocumentEditor() {
   const { caseId } = useParams({ strict: false }) as { caseId?: string }; // Retrieve generic params
+  const navigate = useNavigate();
   const effectiveCaseId = caseId || "default-case";
 
   const {
@@ -456,6 +457,9 @@ export default function CaseDocumentEditor() {
           onDownload={handleDownload}
           onRequestSignatures={() => setIsSignaturePanelOpen(true)}
           signaturePendingCount={signaturePendingCount}
+          onSubmitCase={() =>
+            navigate({ to: `/lawyer-submit-case/${effectiveCaseId}` })
+          }
           onAddAttachment={handleAddAttachment}
           onAddDocument={handleAddDocument}
         />
