@@ -2,8 +2,9 @@ import {
   FileText, Clock, CheckCircle, Calendar, Bell, 
   LogOut, Search, Eye, AlertCircle 
 } from 'lucide-react';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate } from "@tanstack/react-router";
+import { useCaseFilingStore } from "../../lawyer/store/caseFiling.store";
 
 interface CaseItem {
   id: string;
@@ -27,20 +28,58 @@ export function RegistrarDashboard({ logout }: RegistrarDashboardProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
   const [filterType, setFilterType] = useState('all'); 
-    const routerNavigate = useNavigate();
-  
-  const stats = [
-    { title: 'Pending Review', value: '28', icon: Clock, color: 'bg-amber-500', change: '+5 today' },
-    { title: 'Processed Today', value: '15', icon: CheckCircle, color: 'bg-emerald-600', change: '60% approved' },
-    { title: 'Total Cases', value: '342', icon: FileText, color: 'bg-blue-600', change: 'This month' },
-    { title: 'Hearings This Week', value: '12', icon: Calendar, color: 'bg-purple-600', change: '3 tomorrow' },
-  ];
+  const routerNavigate = useNavigate();
+  const submittedCases = useCaseFilingStore((state) =>
+    state.getSubmittedCasesForRegistrar()
+  );
 
-  const pendingCases: CaseItem[] = [
-    { id: 'LC-2024-0245', title: 'Residential Property Dispute', type: 'Civil', subtype: 'Property Dispute', lawyer: 'Adv. Fatima Ali', client: 'Ahmed Khan', submittedDate: '2025-01-12', submittedTime: '09:30 AM', status: 'pending', documents: 12, urgent: false },
-    { id: 'LC-2024-0246', title: 'Family Rights and Inheritance Case', type: 'Family', subtype: 'Inheritance', lawyer: 'Adv. Muhammad Asif', client: 'Sara Ahmed', submittedDate: '2025-01-12', submittedTime: '10:15 AM', status: 'pending', documents: 8, urgent: true },
-    { id: 'LC-2024-0247', title: 'Contract Breach and Violation', type: 'Civil', subtype: 'Contract Dispute', lawyer: 'Adv. Ali Hassan', client: 'Usman Malik', submittedDate: '2025-01-11', submittedTime: '02:45 PM', status: 'pending', documents: 15, urgent: false },
-    { id: 'LC-2024-0248', title: 'Divorce Petition Filing', type: 'Family', subtype: 'Divorce', lawyer: 'Adv. Ayesha Khan', client: 'Bilal Ahmed', submittedDate: '2025-01-11', submittedTime: '04:20 PM', status: 'under-review', documents: 10, urgent: false },
+  const pendingCases: CaseItem[] = useMemo(
+    () =>
+      submittedCases.map((item) => ({
+        id: item.displayCaseId,
+        title: item.title,
+        type: item.caseType === "civil" ? "Civil" : "Family",
+        subtype: item.caseType === "civil" ? "Civil Filing" : "Family Filing",
+        lawyer: item.submittedBy,
+        client: item.clientName,
+        submittedDate: new Date(item.submittedAt).toLocaleDateString(),
+        submittedTime: new Date(item.submittedAt).toLocaleTimeString(),
+        status: "pending",
+        documents: item.bundle.orderedDocuments.length,
+        urgent: false,
+      })),
+    [submittedCases]
+  );
+
+  const stats = [
+    {
+      title: "Pending Review",
+      value: String(pendingCases.length),
+      icon: Clock,
+      color: "bg-amber-500",
+      change: "Submitted cases",
+    },
+    {
+      title: "Processed Today",
+      value: "0",
+      icon: CheckCircle,
+      color: "bg-emerald-600",
+      change: "Review actions",
+    },
+    {
+      title: "Total Cases",
+      value: String(pendingCases.length),
+      icon: FileText,
+      color: "bg-blue-600",
+      change: "Registrar queue",
+    },
+    {
+      title: "Hearings This Week",
+      value: "0",
+      icon: Calendar,
+      color: "bg-purple-600",
+      change: "To be scheduled",
+    },
   ];
 
   const filteredCases = pendingCases.filter((item) => {
@@ -201,6 +240,13 @@ export function RegistrarDashboard({ logout }: RegistrarDashboardProps) {
                     </td>
                   </tr>
                 ))}
+                {filteredCases.length === 0 && (
+                  <tr>
+                    <td colSpan={4} className="px-6 py-8 text-center text-sm text-slate-500">
+                      No submitted cases available for review.
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>

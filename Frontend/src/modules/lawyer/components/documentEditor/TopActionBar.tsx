@@ -1,4 +1,4 @@
-import { Save, Download, Paperclip, FilePlus, Check, FileSignature } from "lucide-react";
+import { Save, Download, Paperclip, FilePlus, Check, FileSignature, UploadCloud } from "lucide-react";
 import { useDocumentEditorStore } from "../../store/documentEditor.store";
 
 function formatTimeAgo(dateString: string): string {
@@ -20,6 +20,7 @@ interface TopActionBarProps {
     onDownload: () => void;
     onAddAttachment: () => void;
     onAddDocument: () => void;
+    onSubmitCase?: () => void;
     onRequestSignatures?: () => void;
     signaturePendingCount?: number;
     onToggleSidebar?: () => void;
@@ -30,6 +31,7 @@ export default function TopActionBar({
     onDownload,
     onAddAttachment,
     onAddDocument,
+    onSubmitCase,
     onRequestSignatures,
     signaturePendingCount,
     onToggleSidebar,
@@ -117,6 +119,17 @@ export default function TopActionBar({
                                     {signaturePendingCount}
                                 </span>
                             )}
+                        </button>
+                    )}
+
+                    {onSubmitCase && (
+                        <button
+                            onClick={onSubmitCase}
+                            className="flex items-center gap-2 px-3 md:px-4 py-2 bg-[#01411C] text-white rounded-lg hover:bg-[#024a23] transition-colors duration-200 font-medium text-sm"
+                            title="Submit Case to Registrar"
+                        >
+                            <UploadCloud className="w-4 h-4" />
+                            <span className="hidden md:inline">Submit Case</span>
                         </button>
                     )}
 

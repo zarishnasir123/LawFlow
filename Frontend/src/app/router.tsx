@@ -48,6 +48,7 @@ import CaseDocumentEditor from "../modules/lawyer/pages/CaseDocumentEditor";
 import Signatures from "../modules/lawyer/pages/Signatures";
 import LawyerSignatureViewer from "../modules/lawyer/pages/LawyerSignatureViewer";
 import CasePaymentPlan from "../modules/lawyer/pages/CasePaymentPlan";
+import SubmitCase from "../modules/lawyer/pages/SubmitCase";
 
 /* =====================================================
    REGISTRAR MODULE IMPORTS
@@ -319,6 +320,18 @@ const lawyerCasePaymentsDetailRoute = createRoute({
   component: CasePaymentPlan,
 });
 
+const lawyerSubmitCaseRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "lawyer-submit-case",
+  component: SubmitCase,
+});
+
+const lawyerSubmitCaseDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "lawyer-submit-case/$caseId",
+  component: SubmitCase,
+});
+
 /* =====================================================
    REGISTRAR ROUTES
    1. Dashboard - Main registrar hub
@@ -471,6 +484,8 @@ const routeTree = rootRoute.addChildren([
   caseDocumentEditorDetailRoute,
   lawyerCasePaymentsRoute,
   lawyerCasePaymentsDetailRoute,
+  lawyerSubmitCaseRoute,
+  lawyerSubmitCaseDetailRoute,
   lawyerHearingsRoute,
   lawyerMessagesRoute,
   lawyerChatDetailRoute,
