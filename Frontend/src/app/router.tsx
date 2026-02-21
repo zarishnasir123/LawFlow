@@ -350,14 +350,7 @@ const viewCasesRoute = createRoute({
 const registrarDashboardRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "registrar-dashboard",
-  component: () => (
-    <RegistrarDashboard
-      logout={() => {
-        localStorage.clear();
-        window.location.href = "/login";
-      }}
-    />
-  ),
+  component: RegistrarDashboard,
 });
 
 const reviewCasesRoute = createRoute({
