@@ -13,10 +13,14 @@ import Card from "../../../shared/components/dashboard/Card";
 import QuickActions from "../../../shared/components/dashboard/QuickActions";
 import StatCard from "../../../shared/components/dashboard/StatCard";
 import type { DashboardStat, QuickActionItem } from "../../../shared/types/dashboard";
+import { getCaseDisplayTitle } from "../../../shared/utils/caseDisplay";
 import RegistrarLayout from "../components/RegistrarLayout";
 import { useCaseFilingStore } from "../../lawyer/store/caseFiling.store";
 import { useLoginStore } from "../../auth/store";
-import { getFcfsSubmissionQueue } from "../utils/submissionQueue";
+import {
+  getFcfsSubmissionQueue,
+  getProcessedCaseIdsForLatestSubmission,
+} from "../utils/submissionQueue";
 import { useRegistrarReviewDecisionStore } from "../store/reviewDecisions.store";
 
 type QueueCase = {
@@ -57,26 +61,25 @@ export function RegistrarDashboard() {
       .join(" ");
   })();
 
+  const queue = useMemo(
+    () => getFcfsSubmissionQueue(liveSubmittedCases),
+    [liveSubmittedCases]
+  );
   const excludedCaseIds = useMemo(
-    () =>
-      new Set(
-        Object.entries(decisionsByCaseId)
-          .filter(([, decision]) => decision.status === "approved" || decision.status === "returned")
-          .map(([caseId]) => caseId)
-      ),
-    [decisionsByCaseId]
+    () => getProcessedCaseIdsForLatestSubmission(queue, decisionsByCaseId),
+    [queue, decisionsByCaseId]
   );
 
   const submittedCases = useMemo(
-    () => getFcfsSubmissionQueue(liveSubmittedCases, excludedCaseIds),
-    [liveSubmittedCases, excludedCaseIds]
+    () => queue.filter((item) => !excludedCaseIds.has(item.caseId)),
+    [queue, excludedCaseIds]
   );
 
   const queueCases: QueueCase[] = useMemo(
     () =>
       submittedCases.map((item) => ({
         caseId: item.caseId,
-        title: item.title,
+        title: getCaseDisplayTitle(item.title, item.caseId),
         caseType: item.caseType === "civil" ? "Civil" : "Family",
         lawyer: item.submittedBy,
         client: item.clientName,

@@ -67,6 +67,25 @@ export interface CompiledCaseBundle {
   signatureSnapshot: SignatureCompletionSnapshot;
 }
 
+export interface SubmittedCaseFilePreviewItem {
+  id: string;
+  title: string;
+  type: "DOC" | "ATTACHMENT";
+  source: "prepared_document" | "evidence" | "system";
+  signedRequired: boolean;
+  signedCompleted: boolean;
+  signedByClient?: boolean;
+  signedByLawyer?: boolean;
+  mimeType?: string;
+  htmlContent?: string;
+  dataUrl?: string;
+}
+
+export interface SubmittedCaseFilePreview {
+  generatedAt: string;
+  items: SubmittedCaseFilePreviewItem[];
+}
+
 export interface FilingValidationChecklist {
   requiredDocumentsPresent: boolean;
   requiredSignaturesCompleted: boolean;
@@ -88,4 +107,5 @@ export interface CaseSubmissionRecord {
   submittedAt: string;
   status: "submitted";
   bundle: CompiledCaseBundle;
+  submittedPreview?: SubmittedCaseFilePreview;
 }

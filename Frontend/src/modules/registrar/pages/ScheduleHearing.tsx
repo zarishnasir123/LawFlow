@@ -5,6 +5,7 @@ import RegistrarLayout from "../components/RegistrarLayout";
 import Card from "../../../shared/components/dashboard/Card";
 import { useCaseFilingStore } from "../../lawyer/store/caseFiling.store";
 import { getFcfsSubmissionQueue } from "../utils/submissionQueue";
+import { getCaseDisplayTitle } from "../../../shared/utils/caseDisplay";
 
 export default function ScheduleHearing() {
   const navigate = useNavigate();
@@ -16,7 +17,7 @@ export default function ScheduleHearing() {
   );
   const submittedCases = getFcfsSubmissionQueue(liveSubmittedCases);
   const caseData = submittedCases.find((item) => item.caseId === caseId);
-  const caseTitle = caseData?.title || "Selected Case";
+  const caseTitle = getCaseDisplayTitle(caseData?.title, caseData?.caseId);
 
   if (scheduled) {
     return (

@@ -33,7 +33,7 @@ export default function Dashboard() {
   const email = useLoginStore((state) => state.email);
   const { profile, initializeProfile } = useClientProfileStore();
   const { countPendingSignatures } = useSignatureRequestsStore();
-  const pendingSignatureCount = countPendingSignatures("recovery-of-money");
+  const pendingSignatureCount = countPendingSignatures();
 
   useEffect(() => {
     initializeProfile();

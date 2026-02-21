@@ -1,9 +1,12 @@
+﻿import { useMemo } from "react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { CalendarClock, FileSignature } from "lucide-react";
 import ClientLayout from "../components/ClientLayout";
 import Card from "../../../shared/components/dashboard/Card";
 import { caseInfo, timeline } from "../data/casetrack.mock";
 import { useSignatureRequestsStore } from "../../lawyer/signatures/store/signatureRequests.store";
+import { useCaseFilingStore } from "../../lawyer/store/caseFiling.store";
+import { getCaseDisplayTitle } from "../../../shared/utils/caseDisplay";
 
 function Badge({ text, color }: { text: string; color?: string }) {
   return (
@@ -51,9 +54,25 @@ export default function CaseTracking() {
   const signatureCaseId = caseId || "default-case";
 
   const { getPendingRequests, getCompletedRequests } = useSignatureRequestsStore();
+  const filingCases = useCaseFilingStore((state) => state.cases);
 
-  const pendingRequests = getPendingRequests(signatureCaseId);
-  const completedRequests = getCompletedRequests(signatureCaseId);
+  const pendingRequests = useMemo(
+    () => (caseId ? getPendingRequests(signatureCaseId) : getPendingRequests()),
+    [caseId, getPendingRequests, signatureCaseId]
+  );
+  const completedRequests = useMemo(
+    () => (caseId ? getCompletedRequests(signatureCaseId) : getCompletedRequests()),
+    [caseId, getCompletedRequests, signatureCaseId]
+  );
+  const caseTitleById = useMemo(
+    () =>
+      new Map(
+        filingCases.map(
+          (item) => [item.id, getCaseDisplayTitle(item.title, item.id)] as const
+        )
+      ),
+    [filingCases]
+  );
 
   const statusColors: Record<string, string> = {
     Completed: "border-green-500 text-green-700 bg-green-50",
@@ -140,7 +159,7 @@ export default function CaseTracking() {
                         {doc.docTitle}
                       </p>
                       <p className="text-xs text-gray-500">
-                        {caseInfo.caseNumber} • Sent by {doc.requestedBy || "Lawyer"}
+                        {caseTitleById.get(doc.caseId) || "Case File"} • Sent by {doc.requestedBy || "Lawyer"}
                       </p>
                       <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-gray-500">
                         <span className="inline-flex items-center gap-1">
@@ -275,3 +294,5 @@ export default function CaseTracking() {
     </ClientLayout>
   );
 }
+
+

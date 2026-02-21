@@ -10,6 +10,7 @@ import type {
   CaseSubmissionRecord,
   CompiledCaseBundle,
   FilingCaseRecord,
+  SubmittedCaseFilePreview,
 } from "../types/caseFiling";
 import {
   buildSignatureSnapshot,
@@ -18,7 +19,8 @@ import {
 } from "../utils/caseFiling.utils";
 
 type EditorBundleItemInput = {
-  id: string;
+  bundleItemId: string;
+  sourceRefId: string;
   title: string;
   type: "DOC" | "ATTACHMENT";
   attachmentType?: string;
@@ -37,8 +39,17 @@ type SignatureRequestInput = {
 type SubmitCaseInput = {
   caseId: string;
   submittedBy: string;
+  submittedPreview?: SubmittedCaseFilePreview;
   forceFailure?: boolean;
   skipReadinessCheck?: boolean;
+};
+
+type IntakeCaseInput = {
+  title: string;
+  clientName: string;
+  caseType: FilingCaseRecord["caseType"];
+  assignedTehsil?: string;
+  assignedRegistrar?: string;
 };
 
 interface CaseFilingState {
@@ -46,6 +57,7 @@ interface CaseFilingState {
   bundlesByCaseId: Record<string, CompiledCaseBundle>;
   submittedCases: CaseSubmissionRecord[];
 
+  createCaseFromIntake: (input: IntakeCaseInput) => string;
   ensureCaseContext: (caseId: string, title?: string) => void;
   getCaseById: (caseId: string) => FilingCaseRecord | null;
   getBundleByCaseId: (caseId: string) => CompiledCaseBundle | null;
@@ -68,6 +80,10 @@ interface CaseFilingState {
 
 function nowIso(): string {
   return new Date().toISOString();
+}
+
+function generateCaseId(): string {
+  return `case-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
 function toDisplayCaseId(caseId: string): string {
@@ -113,15 +129,25 @@ function classifyFileType(item: EditorBundleItemInput): BundleDocument["fileType
 }
 
 function deriveSignedStatus(
-  itemId: string,
+  bundleItemId: string,
+  sourceRefId: string,
   title: string,
   signatureRequests: SignatureRequestInput[]
 ): { required: boolean; completed: boolean } {
+  const normalizeTitle = (value: string) =>
+    value
+      .toLowerCase()
+      .replace(/-signed\b/g, "")
+      .replace(/\.(pdf|docx|doc|jpg|jpeg|png)$/g, "")
+      .replace(/[^a-z0-9]+/g, " ")
+      .trim();
+
+  const normalizedTitle = normalizeTitle(title);
   const request = signatureRequests.find(
     (item) =>
-      item.bundleItemId === itemId ||
-      item.signedAttachmentId === itemId ||
-      item.docTitle === title
+      item.bundleItemId === bundleItemId ||
+      item.signedAttachmentId === sourceRefId ||
+      normalizeTitle(item.docTitle) === normalizedTitle
   );
   if (!request) {
     return { required: false, completed: false };
@@ -142,6 +168,56 @@ export const useCaseFilingStore = create<CaseFilingState>()(
       cases: filingCasesMock,
       bundlesByCaseId: compiledBundlesMock,
       submittedCases: submittedCasesMock,
+
+      createCaseFromIntake: ({
+        title,
+        clientName,
+        caseType,
+        assignedTehsil,
+        assignedRegistrar,
+      }) => {
+        const caseId = generateCaseId();
+        const timestamp = nowIso();
+
+        const newCase: FilingCaseRecord = {
+          id: caseId,
+          displayCaseId: toDisplayCaseId(caseId),
+          title: title.trim(),
+          caseType,
+          clientName: clientName.trim(),
+          assignedTehsil: assignedTehsil?.trim() || "Model Town Tehsil",
+          assignedRegistrar: assignedRegistrar?.trim() || "Registrar Ayesha Malik",
+          casePrepared: true,
+          requiredDocumentKeywords: [],
+          status: "prepared",
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        };
+
+        const emptyBundle: CompiledCaseBundle = {
+          caseId,
+          generatedAt: timestamp,
+          orderedDocuments: [],
+          evidenceFiles: [],
+          signatureSnapshot: {
+            totalRequired: 0,
+            completed: 0,
+            pending: 0,
+            allCompleted: true,
+            items: [],
+          },
+        };
+
+        set((state) => ({
+          cases: [newCase, ...state.cases],
+          bundlesByCaseId: {
+            ...state.bundlesByCaseId,
+            [caseId]: emptyBundle,
+          },
+        }));
+
+        return caseId;
+      },
 
       ensureCaseContext: (caseId, title) => {
         if (!caseId) return;
@@ -208,12 +284,13 @@ export const useCaseFilingStore = create<CaseFilingState>()(
 
         const mappedDocuments: BundleDocument[] = editorItems.map((item) => {
           const signedStatus = deriveSignedStatus(
-            item.id,
+            item.bundleItemId,
+            item.sourceRefId,
             item.title,
             signatureRequests
           );
           return {
-            id: item.id,
+            id: item.bundleItemId,
             title: item.title,
             category: classifyDocumentCategory(item.title),
             fileType: classifyFileType(item),
@@ -229,7 +306,7 @@ export const useCaseFilingStore = create<CaseFilingState>()(
         const evidenceFiles = editorItems
           .filter((item) => item.type === "ATTACHMENT")
           .map((item) => ({
-            id: `ev-${item.id}`,
+            id: `ev-${item.bundleItemId}`,
             title: item.title,
             fileType: classifyFileType(item),
             sizeLabel: "Uploaded",
@@ -264,6 +341,7 @@ export const useCaseFilingStore = create<CaseFilingState>()(
       submitCaseToRegistrar: ({
         caseId,
         submittedBy,
+        submittedPreview,
         forceFailure,
         skipReadinessCheck,
       }) => {
@@ -315,6 +393,7 @@ export const useCaseFilingStore = create<CaseFilingState>()(
             ...bundle,
             generatedAt: submittedAt,
           },
+          submittedPreview,
         };
 
         set((state) => ({
