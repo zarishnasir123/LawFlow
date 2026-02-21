@@ -4,7 +4,11 @@ import { useNavigate } from "@tanstack/react-router";
 import RegistrarLayout from "../components/RegistrarLayout";
 import Card from "../../../shared/components/dashboard/Card";
 import { useCaseFilingStore } from "../../lawyer/store/caseFiling.store";
-import { getFcfsSubmissionQueue } from "../utils/submissionQueue";
+import { getCaseDisplayTitle } from "../../../shared/utils/caseDisplay";
+import {
+  getFcfsSubmissionQueue,
+  getProcessedCaseIdsForLatestSubmission,
+} from "../utils/submissionQueue";
 import { useRegistrarReviewDecisionStore } from "../store/reviewDecisions.store";
 
 export function ViewCases() {
@@ -15,18 +19,17 @@ export function ViewCases() {
   const decisionsByCaseId = useRegistrarReviewDecisionStore(
     (state) => state.decisionsByCaseId
   );
+  const queue = useMemo(
+    () => getFcfsSubmissionQueue(liveSubmittedCases),
+    [liveSubmittedCases]
+  );
   const excludedCaseIds = useMemo(
-    () =>
-      new Set(
-        Object.entries(decisionsByCaseId)
-          .filter(([, decision]) => decision.status === "approved" || decision.status === "returned")
-          .map(([caseId]) => caseId)
-      ),
-    [decisionsByCaseId]
+    () => getProcessedCaseIdsForLatestSubmission(queue, decisionsByCaseId),
+    [queue, decisionsByCaseId]
   );
   const submittedCases = useMemo(
-    () => getFcfsSubmissionQueue(liveSubmittedCases, excludedCaseIds),
-    [liveSubmittedCases, excludedCaseIds]
+    () => queue.filter((item) => !excludedCaseIds.has(item.caseId)),
+    [queue, excludedCaseIds]
   );
 
   return (
@@ -75,7 +78,9 @@ export function ViewCases() {
                     </span>
                   </td>
                   <td className="px-5 py-4">
-                    <p className="font-semibold text-gray-900">{caseItem.title}</p>
+                    <p className="font-semibold text-gray-900">
+                      {getCaseDisplayTitle(caseItem.title, caseItem.caseId)}
+                    </p>
                     <p className="text-xs capitalize text-gray-500">{caseItem.caseType} case</p>
                   </td>
                   <td className="px-5 py-4 text-sm text-gray-700">{caseItem.clientName}</td>

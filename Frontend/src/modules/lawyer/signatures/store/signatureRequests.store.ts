@@ -33,12 +33,12 @@ interface SignatureRequestsState {
   updateRequest: (id: string, updates: Partial<SignatureRequest>) => void;
   deleteRequest: (id: string) => void;
 
-  getRequestsByCaseId: (caseId: string) => SignatureRequest[];
-  getPendingRequests: (caseId: string) => SignatureRequest[];
-  getPendingLawyerRequests: (caseId: string) => SignatureRequest[];
-  getCompletedRequests: (caseId: string) => SignatureRequest[];
-  countPendingSignatures: (caseId: string) => number;
-  countCompletedSignatures: (caseId: string) => number;
+  getRequestsByCaseId: (caseId?: string) => SignatureRequest[];
+  getPendingRequests: (caseId?: string) => SignatureRequest[];
+  getPendingLawyerRequests: (caseId?: string) => SignatureRequest[];
+  getCompletedRequests: (caseId?: string) => SignatureRequest[];
+  countPendingSignatures: (caseId?: string) => number;
+  countCompletedSignatures: (caseId?: string) => number;
 
   sendSignatureRequestsForCase: (
     caseId: string,
@@ -96,14 +96,14 @@ export const useSignatureRequestsStore = create<SignatureRequestsState>()(
     },
 
     getRequestsByCaseId: (caseId) => {
-      return get().requests.filter((req) => req.caseId === caseId);
+      return get().requests.filter((req) => !caseId || req.caseId === caseId);
     },
 
     getPendingRequests: (caseId) => {
       return get().requests.filter(
         (req) => {
           const requiresClient = req.requiresClientSignature !== false;
-          return req.caseId === caseId && requiresClient && !req.clientSigned;
+          return (!caseId || req.caseId === caseId) && requiresClient && !req.clientSigned;
         }
       );
     },
@@ -112,7 +112,7 @@ export const useSignatureRequestsStore = create<SignatureRequestsState>()(
       return get().requests.filter(
         (req) => {
           const requiresLawyer = req.requiresLawyerSignature === true;
-          return req.caseId === caseId && requiresLawyer && !req.lawyerSigned;
+          return (!caseId || req.caseId === caseId) && requiresLawyer && !req.lawyerSigned;
         }
       );
     },
@@ -127,7 +127,10 @@ export const useSignatureRequestsStore = create<SignatureRequestsState>()(
         return !requiresLawyer || req.lawyerSigned;
       };
       return get().requests.filter(
-        (req) => req.caseId === caseId && isClientComplete(req) && isLawyerComplete(req)
+        (req) =>
+          (!caseId || req.caseId === caseId) &&
+          isClientComplete(req) &&
+          isLawyerComplete(req)
       );
     },
 
@@ -136,7 +139,7 @@ export const useSignatureRequestsStore = create<SignatureRequestsState>()(
         .requests.filter(
           (req) => {
             const requiresClient = req.requiresClientSignature !== false;
-            return req.caseId === caseId && requiresClient && !req.clientSigned;
+            return (!caseId || req.caseId === caseId) && requiresClient && !req.clientSigned;
           }
         )
         .length;
@@ -153,7 +156,10 @@ export const useSignatureRequestsStore = create<SignatureRequestsState>()(
       };
       return get()
         .requests.filter(
-          (req) => req.caseId === caseId && isClientComplete(req) && isLawyerComplete(req)
+          (req) =>
+            (!caseId || req.caseId === caseId) &&
+            isClientComplete(req) &&
+            isLawyerComplete(req)
         )
         .length;
     },

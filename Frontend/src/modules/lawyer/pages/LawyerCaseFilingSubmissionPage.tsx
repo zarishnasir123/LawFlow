@@ -24,6 +24,14 @@ import { useSignatureRequestsStore } from "../signatures/store/signatureRequests
 import SubmitConfirmationModal from "../components/caseFiling/SubmitConfirmationModal";
 import { useCaseFilingStore } from "../store/caseFiling.store";
 import { formatFilingDateTime } from "../utils/caseFiling.utils";
+import { useLoginStore } from "../../auth/store";
+import { useLawyerProfileStore } from "../store/lawyerProfile.store";
+import { getCaseDisplayTitle } from "../../../shared/utils/caseDisplay";
+import type {
+  CompiledCaseBundle,
+  SubmittedCaseFilePreview,
+  SubmittedCaseFilePreviewItem,
+} from "../types/caseFiling";
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL(
   "pdfjs-dist/build/pdf.worker.min.mjs",
@@ -57,18 +65,183 @@ const exportExtensions = [
   ImageAttachment,
 ];
 
-function toCaseTitle(caseId: string): string {
-  return caseId
-    .replace(/[-_]+/g, " ")
+function getDisplayNameFromEmail(email: string): string {
+  const handle = email.split("@")[0] ?? "";
+  if (!handle) return "";
+  return handle
+    .replace(/[._-]+/g, " ")
     .trim()
     .split(" ")
     .filter(Boolean)
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ") || "Case File";
+    .join(" ");
+}
+
+function normalizeTitle(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/\.(pdf|docx|doc|jpg|jpeg|png)$/g, "")
+    .replace(/-signed\b/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function resolveTemplateUrl(path: string) {
+  if (path.startsWith("http://") || path.startsWith("https://")) return path;
+  const base = import.meta.env.BASE_URL || "/";
+  const normalizedBase = base.endsWith("/") ? base : `${base}/`;
+  const normalizedPath = path.startsWith("/") ? path.slice(1) : path;
+  return `${normalizedBase}${normalizedPath}`;
+}
+
+async function buildSubmittedPreviewFromWorkspace(
+  caseId: string,
+  bundle: CompiledCaseBundle
+): Promise<SubmittedCaseFilePreview> {
+  useDocumentEditorStore.getState().loadDraft(caseId);
+  const signatureRequests = useSignatureRequestsStore
+    .getState()
+    .getRequestsByCaseId(caseId);
+  const editorState = useDocumentEditorStore.getState();
+
+  const {
+    bundleItems,
+    documentsById,
+    attachmentsById,
+    attachments,
+    documentContents,
+    currentDocId,
+    activeEditorRef,
+  } = editorState;
+
+  const docByBundleId = new Map(bundle.orderedDocuments.map((doc) => [doc.id, doc]));
+  const docByTitle = new Map(
+    bundle.orderedDocuments.map((doc) => [normalizeTitle(doc.title), doc])
+  );
+  const signatureRequestByBundleItemId = new Map(
+    signatureRequests.map((req) => [req.bundleItemId, req] as const)
+  );
+  const signatureRequestBySignedAttachmentId = new Map(
+    signatureRequests
+      .filter((req) => req.signedAttachmentId)
+      .map((req) => [req.signedAttachmentId as string, req] as const)
+  );
+  const signatureRequestByDocTitle = new Map(
+    signatureRequests.map((req) => [normalizeTitle(req.docTitle), req] as const)
+  );
+
+  const resolveDocHtmlAsync = async (docId: string) => {
+    if (docId === currentDocId && activeEditorRef) {
+      return activeEditorRef.getHTML();
+    }
+    const doc = documentsById[docId];
+    if (doc?.contentJSON) {
+      return generateHTML(doc.contentJSON as JSONContent, exportExtensions);
+    }
+    if (doc?.legacyHtml) return doc.legacyHtml;
+    if (documentContents[docId]) return documentContents[docId];
+    if (!doc?.url) return "<p></p>";
+
+    try {
+      const response = await fetch(resolveTemplateUrl(doc.url));
+      if (!response.ok) return "<p></p>";
+      const arrayBuffer = await response.arrayBuffer();
+      const converted = await mammoth.convertToHtml({ arrayBuffer });
+      return converted.value || "<p></p>";
+    } catch {
+      return "<p></p>";
+    }
+  };
+
+  const previewItems: SubmittedCaseFilePreviewItem[] = [];
+
+  for (const item of bundleItems) {
+    const bundleDoc =
+      docByBundleId.get(item.id) || docByTitle.get(normalizeTitle(item.title));
+    const linkedRequest =
+      signatureRequestByBundleItemId.get(item.id) ||
+      signatureRequestBySignedAttachmentId.get(item.refId) ||
+      signatureRequestByDocTitle.get(normalizeTitle(item.title));
+
+    const signedRequired =
+      linkedRequest != null
+        ? linkedRequest.requiresClientSignature || linkedRequest.requiresLawyerSignature
+        : bundleDoc?.signedRequired || false;
+    const signedByClient = linkedRequest?.clientSigned || false;
+    const signedByLawyer = linkedRequest?.lawyerSigned || false;
+    const signedCompleted =
+      linkedRequest != null
+        ? (!linkedRequest.requiresClientSignature || linkedRequest.clientSigned) &&
+          (!linkedRequest.requiresLawyerSignature || linkedRequest.lawyerSigned)
+        : bundleDoc?.signedCompleted || false;
+    const signedDataUrl =
+      linkedRequest?.lawyerSignedPdfDataUrl ||
+      linkedRequest?.pdfDataUrl ||
+      linkedRequest?.signedPdfDataUrl;
+
+    if (signedDataUrl) {
+      previewItems.push({
+        id: item.id,
+        title: item.title.toLowerCase().endsWith(".pdf")
+          ? item.title
+          : `${linkedRequest?.docTitle || item.title}-Signed.pdf`,
+        type: "ATTACHMENT",
+        source: bundleDoc?.source || "evidence",
+        signedRequired,
+        signedCompleted,
+        signedByClient,
+        signedByLawyer,
+        mimeType: "application/pdf",
+        dataUrl: signedDataUrl,
+      });
+      continue;
+    }
+
+    if (item.type === "DOC") {
+      const htmlContent = await resolveDocHtmlAsync(item.refId);
+      previewItems.push({
+        id: item.id,
+        title: item.title,
+        type: "DOC",
+        source: bundleDoc?.source || "prepared_document",
+        signedRequired,
+        signedCompleted,
+        signedByClient,
+        signedByLawyer,
+        mimeType: "text/html",
+        htmlContent,
+      });
+      continue;
+    }
+
+    const attachment =
+      attachmentsById[item.refId] ||
+      attachments.find((attachmentItem) => attachmentItem.id === item.refId);
+
+    previewItems.push({
+      id: item.id,
+      title: item.title,
+      type: "ATTACHMENT",
+      source: bundleDoc?.source || "evidence",
+      signedRequired,
+      signedCompleted,
+      signedByClient,
+      signedByLawyer,
+      mimeType: attachment?.type,
+      dataUrl: attachment?.url,
+    });
+  }
+
+  return {
+    generatedAt: new Date().toISOString(),
+    items: previewItems,
+  };
 }
 
 export default function LawyerCaseFilingSubmissionPage() {
   const params = useParams({ strict: false }) as { caseId?: string };
+  const loginEmail = useLoginStore((state) => state.email);
+  const lawyerFullName = useLawyerProfileStore((state) => state.profile.fullName);
   const {
     submittedCases,
     ensureCaseContext,
@@ -94,6 +267,12 @@ export default function LawyerCaseFilingSubmissionPage() {
   const [submitting, setSubmitting] = useState(false);
   const [technicalError, setTechnicalError] = useState<string | undefined>();
 
+  const submittedByName =
+    getDisplayNameFromEmail(loginEmail).trim() ||
+    lawyerFullName.trim() ||
+    "Lawyer";
+  const displayCaseTitle = getCaseDisplayTitle(filingCase?.title, selectedCaseId);
+
   const latestSubmission = submittedCases.find(
     (item) => item.caseId === selectedCaseId
   );
@@ -116,14 +295,15 @@ export default function LawyerCaseFilingSubmissionPage() {
     const editorItems = editorState.bundleItems.map((item) => {
       const attachment = editorState.attachmentsById[item.refId];
       return {
-        id: item.id,
+        bundleItemId: item.id,
+        sourceRefId: item.refId,
         title: item.title,
         type: item.type,
         attachmentType: attachment?.type,
       };
     });
 
-    const derivedTitle = filingCase?.title || toCaseTitle(selectedCaseId);
+    const derivedTitle = getCaseDisplayTitle(filingCase?.title, selectedCaseId);
 
     ensureCaseContext(selectedCaseId, derivedTitle);
     refreshBundleFromWorkspace(selectedCaseId, editorItems, signatureRequests);
@@ -168,14 +348,6 @@ export default function LawyerCaseFilingSubmissionPage() {
       });
       return;
     }
-
-    const resolveTemplateUrl = (path: string) => {
-      if (path.startsWith("http://") || path.startsWith("https://")) return path;
-      const base = import.meta.env.BASE_URL || "/";
-      const normalizedBase = base.endsWith("/") ? base : `${base}/`;
-      const normalizedPath = path.startsWith("/") ? path.slice(1) : path;
-      return `${normalizedBase}${normalizedPath}`;
-    };
 
     const getAttachment = (attachmentId: string) =>
       attachmentsById[attachmentId] ||
@@ -388,9 +560,27 @@ export default function LawyerCaseFilingSubmissionPage() {
 
     await new Promise((resolve) => setTimeout(resolve, 700));
 
+    syncWorkspaceBundle();
+    const refreshedBundle = useCaseFilingStore.getState().getBundleByCaseId(selectedCaseId);
+    if (!refreshedBundle) {
+      setSubmitting(false);
+      setConfirmOpen(false);
+      setFeedback({
+        tone: "error",
+        message: "Unable to prepare latest case bundle for submission.",
+      });
+      return;
+    }
+    useDocumentEditorStore.getState().saveDraft(selectedCaseId);
+    const submittedPreview = await buildSubmittedPreviewFromWorkspace(
+      selectedCaseId,
+      refreshedBundle
+    );
+
     const result = submitCaseToRegistrar({
       caseId: selectedCaseId,
-      submittedBy: "Lawyer",
+      submittedBy: submittedByName,
+      submittedPreview,
       skipReadinessCheck: true,
     });
 
@@ -435,7 +625,7 @@ export default function LawyerCaseFilingSubmissionPage() {
                 Review included documents in the final PDF bundle, then submit to registrar.
               </p>
               <p className="mt-1 text-xs text-gray-500">
-                Case: {filingCase?.title || toCaseTitle(selectedCaseId)}
+                Case: {displayCaseTitle}
               </p>
             </div>
           </div>
@@ -572,7 +762,7 @@ export default function LawyerCaseFilingSubmissionPage() {
       {filingCase && (
         <SubmitConfirmationModal
           open={confirmOpen}
-          caseTitle={filingCase.title}
+          caseTitle={displayCaseTitle}
           registrarName={filingCase.assignedRegistrar}
           submitting={submitting}
           technicalError={technicalError}

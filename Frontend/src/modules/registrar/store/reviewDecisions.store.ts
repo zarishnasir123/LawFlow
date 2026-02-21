@@ -7,6 +7,7 @@ type ReviewStatus = "returned" | "approved";
 type ReviewDecision = {
   status: ReviewStatus;
   decidedAt: string;
+  reviewedSubmissionAt?: string;
   remarks?: string;
 };
 
@@ -49,6 +50,7 @@ export const useRegistrarReviewDecisionStore = create<ReviewDecisionState>()(
             [caseData.caseId]: {
               status: "returned",
               decidedAt,
+              reviewedSubmissionAt: caseData.submittedAt,
               remarks: trimmedRemarks,
             },
           },
@@ -78,6 +80,7 @@ export const useRegistrarReviewDecisionStore = create<ReviewDecisionState>()(
             [caseData.caseId]: {
               status: "approved",
               decidedAt,
+              reviewedSubmissionAt: caseData.submittedAt,
             },
           },
           returnedCases: state.returnedCases.filter(

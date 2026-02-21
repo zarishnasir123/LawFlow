@@ -3,9 +3,11 @@ import { useNavigate } from "@tanstack/react-router";
 import { Briefcase } from "lucide-react";
 import LawyerLayout from "../components/LawyerLayout";
 import { useNewCaseStore } from "../store/newCase.store";
+import { useCaseFilingStore } from "../store/caseFiling.store";
 
 export default function CreateCase() {
   const { category, selectedCaseType } = useNewCaseStore();
+  const createCaseFromIntake = useCaseFilingStore((state) => state.createCaseFromIntake);
   const navigate = useNavigate();
 
   const [formData, setFormData] = useState({
@@ -46,8 +48,14 @@ export default function CreateCase() {
 
       console.log("Creating case:", newCase);
 
-      // Navigate to document editor
-      navigate({ to: "/lawyer-case-editor" });
+      const createdCaseId = createCaseFromIntake({
+        title: formData.caseTitle,
+        clientName: formData.clientName,
+        caseType: category || "civil",
+      });
+
+      // Navigate to case-specific document editor (avoid default-case collisions)
+      navigate({ to: "/lawyer-case-editor/$caseId", params: { caseId: createdCaseId } });
     }
   };
 
