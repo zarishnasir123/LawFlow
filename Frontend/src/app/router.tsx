@@ -26,6 +26,7 @@ import FindLawyer from "../modules/client/pages/FindLawyer";
 import CaseTracking from "../modules/client/pages/CaseTracking";
 import LawyerProfileView from "../modules/client/pages/LawyerProfileView";
 import ClientSignatureViewer from "../modules/client/pages/ClientSignatureViewer";
+import ClientCasePayments from "../modules/client/pages/CasePayments";
 
 /* =====================================================
    LAWYER MODULE IMPORTS
@@ -46,6 +47,7 @@ import ServiceCharges from "../modules/lawyer/pages/ServiceCharges";
 import CaseDocumentEditor from "../modules/lawyer/pages/CaseDocumentEditor";
 import Signatures from "../modules/lawyer/pages/Signatures";
 import LawyerSignatureViewer from "../modules/lawyer/pages/LawyerSignatureViewer";
+import CasePaymentPlan from "../modules/lawyer/pages/CasePaymentPlan";
 
 /* =====================================================
    REGISTRAR MODULE IMPORTS
@@ -180,6 +182,18 @@ const clientSignatureViewerRoute = createRoute({
   component: ClientSignatureViewer,
 });
 
+const clientPaymentsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "client-payments",
+  component: ClientCasePayments,
+});
+
+const clientPaymentsDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "client-payments/$caseId",
+  component: ClientCasePayments,
+});
+
 /* =====================================================
    LAWYER ROUTES
    1. Dashboard - Main lawyer hub
@@ -291,6 +305,18 @@ const caseDocumentEditorDetailRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "lawyer-case-editor/$caseId",
   component: CaseDocumentEditor,
+});
+
+const lawyerCasePaymentsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "lawyer-case-payments",
+  component: CasePaymentPlan,
+});
+
+const lawyerCasePaymentsDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "lawyer-case-payments/$caseId",
+  component: CasePaymentPlan,
 });
 
 /* =====================================================
@@ -426,6 +452,8 @@ const routeTree = rootRoute.addChildren([
   clientChatDetailRoute,
   clientHearingsRoute,
   clientSignatureViewerRoute,
+  clientPaymentsRoute,
+  clientPaymentsDetailRoute,
   findLawyerRoute,
   clientLawyerProfileRoute,
   casetrackingRoute,
@@ -441,6 +469,8 @@ const routeTree = rootRoute.addChildren([
   lawyerProfileEditRoute,
   caseDocumentEditorRoute,
   caseDocumentEditorDetailRoute,
+  lawyerCasePaymentsRoute,
+  lawyerCasePaymentsDetailRoute,
   lawyerHearingsRoute,
   lawyerMessagesRoute,
   lawyerChatDetailRoute,

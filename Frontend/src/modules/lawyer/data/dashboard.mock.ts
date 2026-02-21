@@ -87,6 +87,12 @@ export const lawyerDashboardQuickActions: QuickActionItem[] = [
     className: "bg-[#01411C] hover:bg-[#024a23]",
     to: "/lawyer-service-charges",
   },
+  {
+    label: "Case Payments",
+    icon: DollarSign,
+    className: "bg-[#01411C] hover:bg-[#024a23]",
+    to: "/lawyer-case-payments",
+  },
 ];
 
 export const lawyerDashboardCases: CaseItem[] = [
