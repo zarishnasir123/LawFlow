@@ -1,6 +1,13 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
-import { Calendar, FileText, Gavel, MessageCircle, PenTool } from "lucide-react";
+import {
+  Calendar,
+  DollarSign,
+  FileText,
+  Gavel,
+  MessageCircle,
+  PenTool,
+} from "lucide-react";
 
 import ClientLayout from "../components/ClientLayout";
 import QuickActions from "../../../shared/components/dashboard/QuickActions";
@@ -61,6 +68,7 @@ export default function Dashboard() {
   const quickActions: QuickActionItem[] = [
     { label: "Find a Lawyer", icon: Gavel, className: "bg-[#01411C] hover:bg-[#024a23]", to: "/FindLawyer" },
     { label: "Pending Signatures", icon: PenTool, className: "bg-yellow-600 hover:bg-yellow-700", to: "/case-tracking?view=pending" },
+    { label: "Payments", icon: DollarSign, className: "bg-[#01411C] hover:bg-[#024a23]", to: "/client-payments" },
     { label: "Messages", icon: MessageCircle, className: "bg-[#01411C] hover:bg-[#024a23]", to: "/client-messages" },
     { label: "Hearings", icon: Calendar, className: "bg-[#01411C] hover:bg-[#024a23]", to: "/client-hearings" },
   ];
