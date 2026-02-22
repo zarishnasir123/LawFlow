@@ -1,6 +1,7 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
 import {
+  BriefcaseBusiness,
   Calendar,
   DollarSign,
   FileText,
@@ -34,15 +35,26 @@ export default function Dashboard() {
   const { profile, initializeProfile } = useClientProfileStore();
   const { countPendingSignatures } = useSignatureRequestsStore();
   const pendingSignatureCount = countPendingSignatures();
+  const storedLoginEmail = (() => {
+    try {
+      const raw = localStorage.getItem("user");
+      if (!raw) return "";
+      const parsed = JSON.parse(raw) as { email?: string; role?: string };
+      if (parsed.role !== "client") return "";
+      return parsed.email || "";
+    } catch {
+      return "";
+    }
+  })();
 
   useEffect(() => {
     initializeProfile();
   }, [initializeProfile]);
 
   const displayName = (() => {
-    if (profile?.fullName) return profile.fullName;
-    if (!email) return "Client";
-    const handle = email.split("@")[0] ?? "";
+    const activeEmail = email || storedLoginEmail || profile?.email || "";
+    if (!activeEmail) return profile?.fullName || "Client";
+    const handle = activeEmail.split("@")[0] ?? "";
     return handle
       .replace(/[._-]+/g, " ")
       .trim()
@@ -51,6 +63,7 @@ export default function Dashboard() {
       .map((p) => p.charAt(0).toUpperCase() + p.slice(1))
       .join(" ");
   })();
+  const signedInEmail = email || storedLoginEmail || profile?.email || "N/A";
 
   const stats: DashboardStat[] = [
     { label: "Active Cases", value: "2", icon: FileText, accentClassName: "bg-blue-500" },
@@ -66,6 +79,7 @@ export default function Dashboard() {
   ];
 
   const quickActions: QuickActionItem[] = [
+    { label: "My Cases", icon: BriefcaseBusiness, className: "bg-[#01411C] hover:bg-[#024a23]", to: "/client-my-cases" },
     { label: "Find a Lawyer", icon: Gavel, className: "bg-[#01411C] hover:bg-[#024a23]", to: "/FindLawyer" },
     { label: "Pending Signatures", icon: PenTool, className: "bg-yellow-600 hover:bg-yellow-700", to: "/case-tracking?view=pending" },
     { label: "Payments", icon: DollarSign, className: "bg-[#01411C] hover:bg-[#024a23]", to: "/client-payments" },
@@ -113,6 +127,7 @@ export default function Dashboard() {
           <p className="text-sm text-gray-600">
             Track your cases, connect with lawyers, and manage documents in one place.
           </p>
+          <p className="mt-1 text-xs text-gray-500">Signed in as {signedInEmail}</p>
         </div>
 
         <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -129,8 +144,8 @@ export default function Dashboard() {
           <div className="lg:col-span-2">
             <RecentCases
               cases={recentCases}
-              onViewAll={() => navigate({ to: "/" })}
-              onSelectCase={() => navigate({ to: "/case-tracking" })}
+              onViewAll={() => navigate({ to: "/client-my-cases" })}
+              onSelectCase={() => navigate({ to: "/client-my-cases" })}
             />
           </div>
 

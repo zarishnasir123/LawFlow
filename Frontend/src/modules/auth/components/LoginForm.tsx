@@ -33,43 +33,55 @@ export default function LoginForm({ onForgotPassword, onAdminLogin }: LoginFormP
   const disabled = isSubmitting;
 
   const submit = (values: LoginPayload) => {
-    // ✅ if parent handler exists and matched, stop
     if (onAdminLogin?.(values.email, values.password)) return;
 
     setEmail(values.email);
 
     switch (role) {
       case "client":
+        localStorage.setItem(
+          "user",
+          JSON.stringify({
+            email: values.email,
+            role: "client",
+          })
+        );
         navigate({ to: "/client-dashboard" });
         break;
 
       case "lawyer":
-        navigate({ to: "/Lawyer-dashboard" }); // ✅ keep exactly same as router path
+        localStorage.setItem(
+          "user",
+          JSON.stringify({
+            email: values.email,
+            role: "lawyer",
+          })
+        );
+        navigate({ to: "/Lawyer-dashboard" });
         break;
 
-      case "registrar":
-        {
-          const registrar = useRegistrarAccountsStore
-            .getState()
-            .authenticateRegistrar(values.email, values.password);
+      case "registrar": {
+        const registrar = useRegistrarAccountsStore
+          .getState()
+          .authenticateRegistrar(values.email, values.password);
 
-          if (!registrar) {
-            alert("Invalid registrar credentials. Contact admin for account access.");
-            return;
-          }
+        if (!registrar) {
+          alert("Invalid registrar credentials. Contact admin for account access.");
+          return;
+        }
 
-          localStorage.setItem(
-            "user",
-            JSON.stringify({
-              email: registrar.email,
-              role: "registrar",
-              name: registrar.name,
-            }),
-          );
+        localStorage.setItem(
+          "user",
+          JSON.stringify({
+            email: registrar.email,
+            role: "registrar",
+            name: registrar.name,
+          })
+        );
 
         navigate({ to: "/registrar-dashboard" });
         break;
-        }
+      }
 
       case "admin": {
         const ok =

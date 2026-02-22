@@ -27,6 +27,7 @@ import CaseTracking from "../modules/client/pages/CaseTracking";
 import LawyerProfileView from "../modules/client/pages/LawyerProfileView";
 import ClientSignatureViewer from "../modules/client/pages/ClientSignatureViewer";
 import ClientCasePayments from "../modules/client/pages/CasePayments";
+import ClientMyCases from "../modules/client/pages/MyCases";
 
 /* =====================================================
    LAWYER MODULE IMPORTS
@@ -194,6 +195,12 @@ const clientPaymentsDetailRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "client-payments/$caseId",
   component: ClientCasePayments,
+});
+
+const clientMyCasesRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "client-my-cases",
+  component: ClientMyCases,
 });
 
 /* =====================================================
@@ -467,6 +474,7 @@ const routeTree = rootRoute.addChildren([
   clientSignatureViewerRoute,
   clientPaymentsRoute,
   clientPaymentsDetailRoute,
+  clientMyCasesRoute,
   findLawyerRoute,
   clientLawyerProfileRoute,
   casetrackingRoute,
