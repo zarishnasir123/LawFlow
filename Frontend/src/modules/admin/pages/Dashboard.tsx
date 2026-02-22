@@ -14,10 +14,14 @@ import {
 } from "../dashboard.mock";
 
 import LogoutConfirmationModal from "../../admin/components/modals/LogoutConfirmationModal";
+import { useAdminNotificationsStore } from "../store/notifications.store";
 
 export default function AdminDashboardPage() {
   const navigate = useNavigate();
   const [logoutModalOpen, setLogoutModalOpen] = useState(false);
+  const addSystemStatisticsNotification = useAdminNotificationsStore(
+    (state) => state.addSystemStatisticsNotification,
+  );
   const lawyerVerificationItems = adminPendingVerifications.filter(
     (request) => request.type === "Lawyer",
   );
@@ -40,9 +44,7 @@ export default function AdminDashboardPage() {
         <AdminHeader
           title="Admin Dashboard"
           subtitle="LawFlow Management Portal"
-          notificationCount={3}
           onOpenNotifications={() => navigate({ to: "/admin-notifications" })}
-          onOpenProfile={() => navigate({ to: "/admin-profile" })}
           onLogout={() => setLogoutModalOpen(true)}
         />
 
@@ -121,7 +123,15 @@ export default function AdminDashboardPage() {
                 iconBgClass="bg-indigo-100"
                 iconTextClass="text-indigo-700"
                 badgeClassName="bg-indigo-100 text-indigo-700"
-                onClick={() => navigate({ to: "/admin-statistics" })}
+                onClick={() => {
+                  addSystemStatisticsNotification({
+                    title: "System statistics viewed",
+                    message:
+                      "Admin opened the system statistics dashboard for latest metrics.",
+                    severity: "info",
+                  });
+                  navigate({ to: "/admin-statistics" });
+                }}
               />
 
               <ActionCard

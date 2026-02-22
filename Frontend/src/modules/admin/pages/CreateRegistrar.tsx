@@ -81,9 +81,7 @@ export default function CreateRegistrar() {
         <AdminHeader
           title="Registrar Accounts"
           subtitle="Admin-Provisioned Registrar Credentials"
-          notificationCount={3}
           onOpenNotifications={() => navigate({ to: "/admin-notifications" })}
-          onOpenProfile={() => navigate({ to: "/admin-profile" })}
           onLogout={() => setLogoutModalOpen(true)}
         />
 

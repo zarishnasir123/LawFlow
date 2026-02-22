@@ -1,22 +1,26 @@
-import { Bell, LogOut, Shield, User } from "lucide-react";
+import { Bell, LogOut, Shield } from "lucide-react";
+import { useAdminNotificationsStore } from "../store/notifications.store";
 
 type Props = {
   notificationCount?: number;
   onOpenNotifications: () => void;
-  onOpenProfile: () => void;
   onLogout: () => void;
   title?: string;
   subtitle?: string;
 };
 
 export function AdminHeader({
-  notificationCount = 0,
+  notificationCount,
   onOpenNotifications,
-  onOpenProfile,
   onLogout,
   title = "Admin Dashboard",
   subtitle = "LawFlow Management Portal",
 }: Props) {
+  const unreadCount = useAdminNotificationsStore(
+    (state) => state.notifications.filter((item) => !item.isRead).length,
+  );
+  const resolvedNotificationCount = notificationCount ?? unreadCount;
+
   return (
     <header className="bg-[#01411C] text-white shadow-md">
       <div className="w-full px-6 lg:px-8 xl:px-10 py-4">
@@ -36,19 +40,11 @@ export function AdminHeader({
               type="button"
             >
               <Bell className="h-5 w-5" />
-              {notificationCount > 0 && (
+              {resolvedNotificationCount > 0 && (
                 <span className="absolute top-0 right-0 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
-                  {notificationCount}
+                  {resolvedNotificationCount}
                 </span>
               )}
-            </button>
-
-            <button
-              onClick={onOpenProfile}
-              className="text-white hover:bg-white/10 rounded-lg p-2"
-              type="button"
-            >
-              <User className="h-5 w-5" />
             </button>
 
             <button
