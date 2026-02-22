@@ -12,6 +12,7 @@ import {
 import { AdminHeader } from "../components/AdminHeader";
 import LogoutConfirmationModal from "../components/modals/LogoutConfirmationModal";
 import { adminPendingVerifications } from "../dashboard.mock";
+import { useAdminNotificationsStore } from "../store/notifications.store";
 
 type VerificationStage = "pending" | "approved" | "returned";
 type VerificationMethod = "sjp" | "license";
@@ -49,6 +50,9 @@ export default function Verifications() {
       return acc;
     }, {}),
   );
+  const addLawyerVerificationNotification = useAdminNotificationsStore(
+    (state) => state.addLawyerVerificationNotification,
+  );
 
   const filteredLawyers = useMemo(() => {
     const keyword = search.trim().toLowerCase();
@@ -83,6 +87,28 @@ export default function Verifications() {
     }));
   };
 
+  const handleApproveLawyer = (lawyerId: number, lawyerName: string) => {
+    const currentState = verificationMap[lawyerId];
+    if (currentState?.stage !== "approved") {
+      addLawyerVerificationNotification({
+        lawyerName,
+        decision: "approved",
+      });
+    }
+    updateLawyerState(lawyerId, { stage: "approved" });
+  };
+
+  const handleReturnLawyer = (lawyerId: number, lawyerName: string) => {
+    const currentState = verificationMap[lawyerId];
+    if (currentState?.stage !== "returned") {
+      addLawyerVerificationNotification({
+        lawyerName,
+        decision: "returned",
+      });
+    }
+    updateLawyerState(lawyerId, { stage: "returned" });
+  };
+
   const canApprove = (
     state: LawyerVerificationState,
     selectedMethod: VerificationMethod,
@@ -106,9 +132,7 @@ export default function Verifications() {
         <AdminHeader
           title="Verify Lawyers"
           subtitle="Lawyer Verification"
-          notificationCount={3}
           onOpenNotifications={() => navigate({ to: "/admin-notifications" })}
-          onOpenProfile={() => navigate({ to: "/admin-profile" })}
           onLogout={() => setLogoutModalOpen(true)}
         />
 
@@ -362,9 +386,7 @@ export default function Verifications() {
                       <button
                         type="button"
                         disabled={!canApprove(state, method)}
-                        onClick={() =>
-                          updateLawyerState(lawyer.id, { stage: "approved" })
-                        }
+                        onClick={() => handleApproveLawyer(lawyer.id, lawyer.name)}
                         className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold ${
                           canApprove(state, method)
                             ? "bg-[#01411C] text-white hover:bg-[#025227]"
@@ -377,9 +399,7 @@ export default function Verifications() {
 
                       <button
                         type="button"
-                        onClick={() =>
-                          updateLawyerState(lawyer.id, { stage: "returned" })
-                        }
+                        onClick={() => handleReturnLawyer(lawyer.id, lawyer.name)}
                         className="inline-flex items-center gap-2 rounded-lg border border-rose-300 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-100"
                       >
                         Return for Correction
