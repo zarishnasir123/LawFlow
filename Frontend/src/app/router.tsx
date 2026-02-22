@@ -72,6 +72,7 @@ import AdminProfilePage from "../modules/admin/pages/Profile";
 import AdminNotificationsPage from "../modules/admin/pages/Notifications";
 import CreateRegistrar from "../modules/admin/pages/CreateRegistrar";
 import EditRegistrar from "../modules/admin/pages/EditRegistrar";
+import AdminTemplatesPage from "../modules/admin/pages/Templates";
 
 /* =====================================================
    ROOT ROUTE - Base layout wrapper for all routes
@@ -421,6 +422,12 @@ const adminStatisticsRoute = createRoute({
   component: AdminStatisticPage,
 });
 
+const adminTemplatesRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "admin-templates",
+  component: AdminTemplatesPage,
+});
+
 const adminVerificationsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "admin-verifications",
@@ -501,6 +508,7 @@ const routeTree = rootRoute.addChildren([
   adminCreateRegistrarRoute,
   adminEditRegistrarRoute,
   adminStatisticsRoute,
+  adminTemplatesRoute,
   adminVerificationsRoute,
   adminProfileRoute,
   adminNotificationsRoute,
