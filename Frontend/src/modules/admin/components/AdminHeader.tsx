@@ -5,6 +5,8 @@ type Props = {
   onOpenNotifications: () => void;
   onOpenProfile: () => void;
   onLogout: () => void;
+  title?: string;
+  subtitle?: string;
 };
 
 export function AdminHeader({
@@ -12,16 +14,18 @@ export function AdminHeader({
   onOpenNotifications,
   onOpenProfile,
   onLogout,
+  title = "Admin Dashboard",
+  subtitle = "LawFlow Management Portal",
 }: Props) {
   return (
     <header className="bg-[#01411C] text-white shadow-md">
-      <div className="container mx-auto px-6 py-4">
+      <div className="w-full px-6 lg:px-8 xl:px-10 py-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Shield className="h-8 w-8" />
             <div>
-              <h1 className="text-xl font-semibold">Admin Dashboard</h1>
-              <p className="text-sm text-green-100">LawFlow Management Portal</p>
+              <h1 className="text-xl font-semibold">{title}</h1>
+              <p className="text-sm text-green-100">{subtitle}</p>
             </div>
           </div>
 

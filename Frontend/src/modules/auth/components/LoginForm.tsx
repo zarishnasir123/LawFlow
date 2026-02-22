@@ -6,6 +6,7 @@ import PasswordField from "./PasswordField";
 import RoleSelector from "./RoleSelector";
 import TextField from "./TextField";
 import { DEFAULT_ADMIN } from "../mock/admin.default";
+import { useRegistrarAccountsStore } from "../../admin/store/registrars.store";
 
 type LoginFormProps = {
   onForgotPassword?: () => void;
@@ -47,8 +48,28 @@ export default function LoginForm({ onForgotPassword, onAdminLogin }: LoginFormP
         break;
 
       case "registrar":
+        {
+          const registrar = useRegistrarAccountsStore
+            .getState()
+            .authenticateRegistrar(values.email, values.password);
+
+          if (!registrar) {
+            alert("Invalid registrar credentials. Contact admin for account access.");
+            return;
+          }
+
+          localStorage.setItem(
+            "user",
+            JSON.stringify({
+              email: registrar.email,
+              role: "registrar",
+              name: registrar.name,
+            }),
+          );
+
         navigate({ to: "/registrar-dashboard" });
         break;
+        }
 
       case "admin": {
         const ok =

@@ -24,4 +24,6 @@ export type PendingVerification = {
   email: string;
   submitted: string;
   documents: string[];
+  barCouncilLicenseNumber?: string;
+  licenseIssuingAuthority?: string;
 };

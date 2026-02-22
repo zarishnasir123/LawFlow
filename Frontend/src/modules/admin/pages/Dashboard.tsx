@@ -1,6 +1,6 @@
-import { useState } from "react"; // ✅ added
+import { useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { UserCheck, Clock, Activity, Shield } from "lucide-react";
+import { BadgeCheck, BarChart3, FileText, Shield, UserCheck } from "lucide-react";
 
 import { AdminHeader } from "../components/AdminHeader";
 import { ActionCard } from "../components/ActionCard";
@@ -13,16 +13,15 @@ import {
   adminRecentActivity,
 } from "../dashboard.mock";
 
-// ✅ Logout modal import (same modal used everywhere)
 import LogoutConfirmationModal from "../../admin/components/modals/LogoutConfirmationModal";
 
 export default function AdminDashboardPage() {
   const navigate = useNavigate();
-
-  // ✅ modal state
   const [logoutModalOpen, setLogoutModalOpen] = useState(false);
+  const lawyerVerificationItems = adminPendingVerifications.filter(
+    (request) => request.type === "Lawyer",
+  );
 
-  // ✅ confirm logout handler
   const handleLogout = () => {
     localStorage.clear();
     setLogoutModalOpen(false);
@@ -31,24 +30,23 @@ export default function AdminDashboardPage() {
 
   return (
     <>
-      {/* Logout Confirmation Modal */}
       <LogoutConfirmationModal
         open={logoutModalOpen}
         onCancel={() => setLogoutModalOpen(false)}
         onConfirm={handleLogout}
       />
 
-     
       <div className="min-h-screen bg-gray-50">
         <AdminHeader
+          title="Admin Dashboard"
+          subtitle="LawFlow Management Portal"
           notificationCount={3}
           onOpenNotifications={() => navigate({ to: "/admin-notifications" })}
           onOpenProfile={() => navigate({ to: "/admin-profile" })}
-          onLogout={() => setLogoutModalOpen(true)} // ✅ changed only this
+          onLogout={() => setLogoutModalOpen(true)}
         />
 
-        <div className="container mx-auto px-6 py-8">
-          {/* Welcome */}
+        <div className="w-full px-6 lg:px-8 xl:px-10 py-8">
           <div className="bg-white rounded-xl shadow-sm p-6 mb-8 border border-green-100">
             <div className="flex items-center justify-between">
               <div>
@@ -56,19 +54,21 @@ export default function AdminDashboardPage() {
                   Welcome back, Admin
                 </h2>
                 <p className="text-gray-600">
-                  Here's what's happening with LawFlow today.
+                  Monitor operations and manage core system controls.
                 </p>
               </div>
               <Shield className="h-16 w-16 text-[#01411C] opacity-20" />
             </div>
           </div>
 
-          {/* Stats */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
             {adminDashboardStats.map((s, idx) => {
               const Icon = s.icon;
               return (
-                <div key={idx} className="bg-white rounded-xl shadow-sm p-6">
+                <div
+                  key={idx}
+                  className="bg-white rounded-xl shadow-sm p-6 border border-gray-100"
+                >
                   <div className={`${s.colorClass} w-fit p-3 rounded-lg mb-4`}>
                     <Icon className="h-6 w-6 text-white" />
                   </div>
@@ -82,51 +82,67 @@ export default function AdminDashboardPage() {
             })}
           </div>
 
-          {/* Main Actions */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-            <ActionCard
-              title="Pending Verifications"
-              description="Review and approve user registrations"
-              badgeText="12 Pending"
-              icon={Clock}
-              iconBgClass="bg-yellow-100"
-              iconTextClass="text-yellow-600"
-              badgeClassName="bg-yellow-100 text-yellow-700"
-              onClick={() => navigate({ to: "/admin-verifications" })}
-            />
+          <div className="bg-white rounded-2xl shadow-sm border border-green-100 p-6 mb-8">
+            <div className="mb-5">
+              <h3 className="text-lg font-semibold text-gray-900">Quick Actions</h3>
+              <p className="text-sm text-gray-600">
+                Manage registrars, templates, statistics, and lawyer verification.
+              </p>
+            </div>
 
-            <ActionCard
-              title="Manage Registrars"
-              description="Create and manage registrar accounts"
-              badgeText="8 Active"
-              icon={UserCheck}
-              iconBgClass="bg-blue-100"
-              iconTextClass="text-blue-600"
-              badgeClassName="bg-blue-100 text-blue-700"
-              onClick={() => navigate({ to: "/admin-registrars" })}
-            />
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
+              <ActionCard
+                title="Manage Registrars"
+                description="Create, assign, activate, and manage registrar accounts."
+                badgeText="Open Registrar Management"
+                icon={UserCheck}
+                iconBgClass="bg-emerald-100"
+                iconTextClass="text-emerald-700"
+                badgeClassName="bg-emerald-100 text-emerald-700"
+                onClick={() => navigate({ to: "/admin-registrars" })}
+              />
 
-            <ActionCard
-              title="System Reports"
-              description="View system activity and analytics"
-              badgeText="View Reports"
-              icon={Activity}
-              iconBgClass="bg-purple-100"
-              iconTextClass="text-purple-600"
-              badgeClassName="bg-purple-100 text-purple-700"
-              onClick={() => navigate({ to: "/admin-statistics" })}
-            />
+              <ActionCard
+                title="Manage Template Documents"
+                description="Upload, update, and maintain official legal templates."
+                badgeText="Open Template Management"
+                icon={FileText}
+                iconBgClass="bg-cyan-100"
+                iconTextClass="text-cyan-700"
+                badgeClassName="bg-cyan-100 text-cyan-700"
+                onClick={() => navigate({ to: "/admin-templates" })}
+              />
+
+              <ActionCard
+                title="Manage System Statistics"
+                description="View filing trends, approval rates, and usage metrics."
+                badgeText="Open Statistics"
+                icon={BarChart3}
+                iconBgClass="bg-indigo-100"
+                iconTextClass="text-indigo-700"
+                badgeClassName="bg-indigo-100 text-indigo-700"
+                onClick={() => navigate({ to: "/admin-statistics" })}
+              />
+
+              <ActionCard
+                title="Verify Lawyer"
+                description="Verify lawyer registration by SJP listing or Bar Council license details."
+                badgeText="Open Verification Console"
+                icon={BadgeCheck}
+                iconBgClass="bg-amber-100"
+                iconTextClass="text-amber-700"
+                badgeClassName="bg-amber-100 text-amber-700"
+                onClick={() => navigate({ to: "/admin-verifications" })}
+              />
+            </div>
           </div>
 
-          {/* Lists */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <PendingVerificationList
-              items={adminPendingVerifications}
+              title="Recent Lawyer Verification Requests"
+              items={lawyerVerificationItems}
               onViewAll={() => navigate({ to: "/admin-verifications" })}
-              onReview={(item) => {
-                console.log("Review user:", item);
-                navigate({ to: "/admin-verifications" });
-              }}
+              onReview={() => navigate({ to: "/admin-verifications" })}
             />
 
             <RecentActivityList items={adminRecentActivity} />

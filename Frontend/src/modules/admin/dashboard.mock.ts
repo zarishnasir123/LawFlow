@@ -77,6 +77,8 @@ export const adminPendingVerifications: PendingVerification[] = [
     email: "ayesha.khan@gmail.com",
     submitted: "2 hours ago",
     documents: ["CNIC", "Bar License", "Law Degree"],
+    barCouncilLicenseNumber: "PBC-LHR-2018-44291",
+    licenseIssuingAuthority: "Punjab Bar Council",
   },
   {
     id: 2,
@@ -93,5 +95,7 @@ export const adminPendingVerifications: PendingVerification[] = [
     email: "sara.ahmed@gmail.com",
     submitted: "6 hours ago",
     documents: ["CNIC", "Bar License", "Law Degree"],
+    barCouncilLicenseNumber: "PBC-GRW-2020-11873",
+    licenseIssuingAuthority: "Punjab Bar Council",
   },
 ];

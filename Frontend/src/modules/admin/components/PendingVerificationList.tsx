@@ -4,13 +4,19 @@ type Props = {
   items: PendingVerification[];
   onViewAll: () => void;
   onReview: (item: PendingVerification) => void;
+  title?: string;
 };
 
-export function PendingVerificationList({ items, onViewAll, onReview }: Props) {
+export function PendingVerificationList({
+  items,
+  onViewAll,
+  onReview,
+  title = "Recent Verification Requests",
+}: Props) {
   return (
     <div className="bg-white rounded-xl shadow-sm p-6">
       <div className="flex items-center justify-between mb-6">
-        <h3 className="font-semibold text-gray-900">Recent Verification Requests</h3>
+        <h3 className="font-semibold text-gray-900">{title}</h3>
 
         <button
           onClick={onViewAll}
