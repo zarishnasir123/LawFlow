@@ -11,6 +11,10 @@ export default function ScheduleHearing() {
   const navigate = useNavigate();
   const { caseId } = useParams({ from: "/schedule-hearing/$caseId" });
   const [scheduled, setScheduled] = useState(false);
+  const [hearingType, setHearingType] = useState<"first" | "final" | "custom">(
+    "first"
+  );
+  const [customHearingName, setCustomHearingName] = useState("");
 
   const liveSubmittedCases = useCaseFilingStore((state) =>
     state.getSubmittedCasesForRegistrar()
@@ -18,6 +22,14 @@ export default function ScheduleHearing() {
   const submittedCases = getFcfsSubmissionQueue(liveSubmittedCases);
   const caseData = submittedCases.find((item) => item.caseId === caseId);
   const caseTitle = getCaseDisplayTitle(caseData?.title, caseData?.caseId);
+  const hearingTypeLabel =
+    hearingType === "custom"
+      ? customHearingName.trim() || "Custom Hearing"
+      : hearingType === "final"
+      ? "Final Hearing"
+      : "First Hearing";
+  const canSchedule =
+    hearingType !== "custom" || customHearingName.trim().length > 0;
 
   if (scheduled) {
     return (
@@ -29,7 +41,8 @@ export default function ScheduleHearing() {
             </div>
             <h2 className="mb-4 text-2xl font-bold text-[#01411C]">Hearing Scheduled</h2>
             <p className="mb-6 text-gray-600">
-              The hearing for <b>{caseTitle}</b> has been scheduled successfully.
+              The <b>{hearingTypeLabel}</b> for <b>{caseTitle}</b> has been
+              scheduled successfully.
             </p>
             <button
               onClick={() => navigate({ to: "/registrar-dashboard" })}
@@ -45,6 +58,18 @@ export default function ScheduleHearing() {
 
   return (
     <RegistrarLayout pageSubtitle="Schedule Hearing" notificationBadge={submittedCases.length}>
+      <style>{`
+        .hearing-green-select option {
+          background-color: #f0fdf4;
+          color: #065f46;
+        }
+        .hearing-green-select option:checked,
+        .hearing-green-select option:hover,
+        .hearing-green-select option:focus {
+          background: linear-gradient(0deg, #dcfce7, #dcfce7);
+          color: #065f46;
+        }
+      `}</style>
       <div className="mx-auto max-w-2xl">
         <Card className="p-8">
           <h3 className="mb-2 text-xl font-bold text-[#01411C]">Hearing Details</h3>
@@ -70,7 +95,7 @@ export default function ScheduleHearing() {
 
             <div className="space-y-2">
               <label className="block text-sm font-medium text-gray-700">Court Room</label>
-              <select className="w-full rounded-md border border-gray-300 bg-white p-2 outline-none focus:ring-1 focus:ring-[#01411C]">
+              <select className="hearing-green-select w-full rounded-md border border-gray-300 bg-white p-2 outline-none focus:ring-1 focus:ring-[#01411C]">
                 <option value="">Select court room</option>
                 <option value="room1">Court Room 1</option>
                 <option value="room2">Court Room 2</option>
@@ -80,7 +105,7 @@ export default function ScheduleHearing() {
 
             <div className="space-y-2">
               <label className="block text-sm font-medium text-gray-700">Presiding Judge</label>
-              <select className="w-full rounded-md border border-gray-300 bg-white p-2 outline-none focus:ring-1 focus:ring-[#01411C]">
+              <select className="hearing-green-select w-full rounded-md border border-gray-300 bg-white p-2 outline-none focus:ring-1 focus:ring-[#01411C]">
                 <option value="">Select judge</option>
                 <option value="judge1">Hon. Justice Muhammad Iqbal</option>
                 <option value="judge2">Hon. Justice Ayesha Malik</option>
@@ -89,15 +114,38 @@ export default function ScheduleHearing() {
 
             <div className="space-y-2 pb-2">
               <label className="block text-sm font-medium text-gray-700">Hearing Type</label>
-              <select className="w-full rounded-md border border-gray-300 bg-white p-2 outline-none focus:ring-1 focus:ring-[#01411C]">
+              <select
+                value={hearingType}
+                onChange={(event) =>
+                  setHearingType(event.target.value as "first" | "final" | "custom")
+                }
+                className="hearing-green-select w-full rounded-md border border-gray-300 bg-white p-2 outline-none focus:ring-1 focus:ring-[#01411C]"
+              >
                 <option value="first">First Hearing</option>
                 <option value="final">Final Hearing</option>
+                <option value="custom">Custom Hearing Name</option>
               </select>
             </div>
 
+            {hearingType === "custom" && (
+              <div className="space-y-2 pb-2">
+                <label className="block text-sm font-medium text-gray-700">
+                  Custom Hearing Name
+                </label>
+                <input
+                  type="text"
+                  value={customHearingName}
+                  onChange={(event) => setCustomHearingName(event.target.value)}
+                  placeholder="Enter custom hearing name"
+                  className="w-full rounded-md border border-gray-300 p-2 outline-none focus:ring-1 focus:ring-[#01411C]"
+                />
+              </div>
+            )}
+
             <button
               onClick={() => setScheduled(true)}
-              className="flex w-full items-center justify-center gap-2 rounded-lg bg-[#01411C] py-4 font-bold text-white shadow-md transition-all hover:bg-[#024a23]"
+              disabled={!canSchedule}
+              className="flex w-full items-center justify-center gap-2 rounded-lg bg-[#01411C] py-4 font-bold text-white shadow-md transition-all hover:bg-[#024a23] disabled:cursor-not-allowed disabled:bg-gray-300"
             >
               <Calendar className="h-5 w-5" />
               Confirm & Schedule Hearing
