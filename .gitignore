@@ -1,0 +1,57 @@
+# Root gitignore for LawFlow monorepo
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Build outputs
+dist/
+build/
+/.next/
+/.turbo/
+
+# Env files
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+*.cert
+
+# Logs
+logs/
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# VS Code
+.vscode/
+
+# Dev logs and temp
+.dev-logs/
+/.idea/
+
+# Database
+*.sqlite
+*.sqlite3
+
+# Private user/project documents and generated uploads
+*.pdf
+*.doc
+*.docx
+uploads/
+storage/
+tmp/
+temp/
+Backend/uploads/
+Backend/storage/
+Backend/tmp/
+Frontend/.dev-logs/
+
+# Mac stuff
+Icon

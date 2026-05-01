@@ -12,6 +12,7 @@ import Landing from "../modules/marketing/pages/Landing";
 import Register from "../modules/auth/pages/Register";
 import Login from "../modules/auth/pages/Login";
 import ForgotPassword from "../modules/auth/pages/ForgotPassword";
+import VerifyEmail from "../modules/auth/pages/VerifyEmail";
 
 /* =====================================================
    CLIENT MODULE IMPORTS
@@ -112,6 +113,12 @@ const forgotPasswordRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "forgot-password",
   component: ForgotPassword,
+});
+
+const verifyEmailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "verify-email",
+  component: VerifyEmail,
 });
 
 /* =====================================================
@@ -463,6 +470,7 @@ const routeTree = rootRoute.addChildren([
   registerRoute,
   loginRoute,
   forgotPasswordRoute,
+  verifyEmailRoute,
 
   // Client Routes
   clientDashboardRoute,
