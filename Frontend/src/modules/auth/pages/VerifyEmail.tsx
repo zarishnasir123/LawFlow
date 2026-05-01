@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { MailCheck, RefreshCw } from "lucide-react";
 import AuthForm from "../components/AuthForm";
@@ -57,6 +57,7 @@ function getInitialOtpExpiresAt() {
 
 export default function VerifyEmail() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [email, setEmail] = useState(getStoredEmail);
   const [otpExpiresAt, setOtpExpiresAt] = useState(getInitialOtpExpiresAt);
   const [secondsRemaining, setSecondsRemaining] = useState(() => (
@@ -69,6 +70,7 @@ export default function VerifyEmail() {
   const otpExpired = Boolean(otpExpiresAt) && secondsRemaining === 0;
 
   const verifyMutation = useMutation({
+    mutationKey: ["verify-client-email"],
     mutationFn: verifyClientEmail,
     onSuccess: () => {
       sessionStorage.removeItem(pendingEmailStorageKey);
@@ -78,11 +80,14 @@ export default function VerifyEmail() {
   });
 
   const resendMutation = useMutation({
-    mutationFn: sendClientEmailVerification,
-    onSuccess: (data) => {
-      const nextExpiresAt = normalizeOtpExpiresAt(data.verification?.expiresAt ?? "");
+  mutationKey: ["resend-client-email-verification"],
+  mutationFn: sendClientEmailVerification,
+  onSuccess: (data) => {
+    queryClient.resetQueries({ queryKey: ["verify-client-email"] });
 
-      setOtpDigits(Array(otpLength).fill(""));
+    const nextExpiresAt = normalizeOtpExpiresAt(data.verification?.expiresAt ?? "");
+
+    setOtpDigits(Array(otpLength).fill(""));
       setOtpExpiresAt(nextExpiresAt);
       sessionStorage.setItem(pendingEmailStorageKey, email);
 
@@ -156,8 +161,11 @@ export default function VerifyEmail() {
   };
 
   const resendOtp = () => {
-    resendMutation.mutate({ email });
-  };
+  queryClient.resetQueries({ queryKey: ["verify-client-email"] });
+  resendMutation.reset();
+  verifyMutation.reset();
+  resendMutation.mutate({ email });
+};
 
   return (
     <AuthForm
