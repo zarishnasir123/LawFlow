@@ -18,6 +18,45 @@ import {
 const maxFailedLoginAttempts = 5;
 const lockDurationMinutes = 15;
 
+const pendingClientRegistrations = new Map();
+
+function getPendingClientRegistration(email, { allowExpired = false } = {}) {
+  const normalizedEmail = email.trim().toLowerCase();
+  const pendingRegistration = pendingClientRegistrations.get(normalizedEmail);
+
+  if (!pendingRegistration) {
+    return null;
+  }
+
+  const isExpired = new Date(pendingRegistration.expiresAt).getTime() < Date.now();
+
+  if (isExpired && !allowExpired) {
+    return null;
+  }
+
+  return pendingRegistration;
+}
+
+function removeExpiredPendingClientRegistrations() {
+  for (const [email, pendingRegistration] of pendingClientRegistrations.entries()) {
+    if (new Date(pendingRegistration.expiresAt).getTime() < Date.now()) {
+      pendingClientRegistrations.delete(email);
+    }
+  }
+}
+
+function findPendingClientRegistrationByCnic(cnic) {
+  removeExpiredPendingClientRegistrations();
+
+  for (const pendingRegistration of pendingClientRegistrations.values()) {
+    if (pendingRegistration.cnic === cnic) {
+      return pendingRegistration;
+    }
+  }
+
+  return null;
+}
+
 async function getRoleId(client, roleName) {
   const result = await client.query(
     "SELECT id FROM roles WHERE name = $1",
@@ -228,20 +267,116 @@ async function revokeAuthSession(sessionId) {
 }
 
 export async function registerClientAccount(payload) {
+  const email = payload.email.trim().toLowerCase();
+  const cnic = normalizeCnic(payload.cnic);
+
   const client = await pool.connect();
-  let verificationOtp = null;
-  let createdUser = null;
+
+  try {
+    await ensureUniqueUserIdentity(client, { email, cnic });
+  } finally {
+    client.release();
+  }
+
+  const pendingRegistrationWithSameCnic = findPendingClientRegistrationByCnic(cnic);
+
+  if (pendingRegistrationWithSameCnic && pendingRegistrationWithSameCnic.email !== email) {
+    throw new ApiError(409, "CNIC is already being registered. Please verify the pending email first.");
+  }
+
+  const otp = generateNumericOtp();
+  const otpHash = await hashValue(otp);
+  const expiresAt = getEmailOtpExpiryDate();
+  const passwordHash = await hashValue(payload.password);
+
+  const pendingRegistration = {
+    firstName: payload.firstName.trim(),
+    lastName: payload.lastName.trim(),
+    email,
+    phone: payload.phone.trim(),
+    cnic,
+    passwordHash,
+    address: payload.address?.trim() || null,
+    city: payload.city?.trim() || null,
+    tehsil: payload.tehsil?.trim() || null,
+    otpHash,
+    expiresAt,
+    createdAt: new Date()
+  };
+
+  pendingClientRegistrations.set(email, pendingRegistration);
+
+  const emailDelivery = queueVerificationOtpEmail({
+    email,
+    otp,
+    firstName: pendingRegistration.firstName
+  });
+
+  return {
+    user: {
+      id: null,
+      firstName: pendingRegistration.firstName,
+      lastName: pendingRegistration.lastName,
+      email: pendingRegistration.email,
+      phone: pendingRegistration.phone,
+      cnic: pendingRegistration.cnic,
+      role: "client",
+      emailVerified: false,
+      accountStatus: "pending_verification",
+      createdAt: pendingRegistration.createdAt
+    },
+    verification: {
+      emailSent: emailDelivery.mode === "smtp",
+      emailQueued: emailDelivery.queued,
+      deliveryMode: emailDelivery.mode,
+      deliveryReason: emailDelivery.reason,
+      expiresAt
+    }
+  };
+}
+
+export async function verifyEmailOtp({ email, otp }) {
+  const normalizedEmail = email.trim().toLowerCase();
+  const pendingRegistration = getPendingClientRegistration(normalizedEmail);
+
+  if (!pendingRegistration) {
+    const client = await pool.connect();
+
+    try {
+      const existingUser = await findUserByEmail(client, normalizedEmail);
+
+      if (existingUser?.email_verified) {
+        return {
+          email: existingUser.email,
+          emailVerified: true,
+          accountStatus: existingUser.account_status
+        };
+      }
+    } finally {
+      client.release();
+    }
+
+    throw new ApiError(400, "OTP expired. Please register again.");
+  }
+
+  const otpMatches = await compareHash(otp, pendingRegistration.otpHash);
+
+  if (!otpMatches) {
+    throw new ApiError(400, "Invalid verification OTP");
+  }
+
+  const client = await pool.connect();
+  let verifiedUser = null;
 
   try {
     await client.query("BEGIN");
 
-    const email = payload.email.trim().toLowerCase();
-    const cnic = normalizeCnic(payload.cnic);
-
-    await ensureUniqueUserIdentity(client, { email, cnic });
+    await ensureUniqueUserIdentity(client, {
+      email: pendingRegistration.email,
+      cnic: pendingRegistration.cnic
+    });
 
     const clientRoleId = await getRoleId(client, "client");
-    const passwordHash = await hashValue(payload.password);
 
     const userResult = await client.query(
       `INSERT INTO users (
@@ -256,49 +391,36 @@ export async function registerClientAccount(payload) {
         email_verified,
         account_status
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, 'local', false, 'pending_verification')
-      RETURNING id, first_name, last_name, email, phone, cnic, account_status, created_at`,
+      VALUES ($1, $2, $3, $4, $5, $6, $7, 'local', true, 'active')
+      RETURNING id, first_name, last_name, email, phone, cnic, email_verified, account_status, created_at`,
       [
         clientRoleId,
-        payload.firstName.trim(),
-        payload.lastName.trim(),
-        email,
-        payload.phone.trim(),
-        cnic,
-        passwordHash
+        pendingRegistration.firstName,
+        pendingRegistration.lastName,
+        pendingRegistration.email,
+        pendingRegistration.phone,
+        pendingRegistration.cnic,
+        pendingRegistration.passwordHash
       ]
     );
 
     const user = userResult.rows[0];
 
-    // Keep client-only details outside users so auth identity stays role-neutral.
     await client.query(
       `INSERT INTO client_profiles (user_id, address, city, tehsil)
       VALUES ($1, $2, $3, $4)`,
       [
         user.id,
-        payload.address?.trim() || null,
-        payload.city?.trim() || null,
-        payload.tehsil?.trim() || null
+        pendingRegistration.address,
+        pendingRegistration.city,
+        pendingRegistration.tehsil
       ]
     );
 
-    verificationOtp = await createEmailVerificationOtp(client, user.id);
-
     await client.query("COMMIT");
 
-    createdUser = {
-      id: user.id,
-      firstName: user.first_name,
-      lastName: user.last_name,
-      email: user.email,
-      phone: user.phone,
-      cnic: user.cnic,
-      role: "client",
-      emailVerified: false,
-      accountStatus: user.account_status,
-      createdAt: user.created_at
-    };
+    verifiedUser = user;
+    pendingClientRegistrations.delete(normalizedEmail);
   } catch (error) {
     await client.query("ROLLBACK");
 
@@ -311,154 +433,57 @@ export async function registerClientAccount(payload) {
     client.release();
   }
 
-  const emailDelivery = queueVerificationOtpEmail({
-    email: createdUser.email,
-    otp: verificationOtp.otp,
-    firstName: createdUser.firstName
+  queueWelcomeEmail({
+    email: verifiedUser.email,
+    firstName: verifiedUser.first_name
   });
 
   return {
-    user: createdUser,
-    verification: {
-      emailSent: emailDelivery.mode === "smtp",
-      emailQueued: emailDelivery.queued,
-      deliveryMode: emailDelivery.mode,
-      deliveryReason: emailDelivery.reason,
-      expiresAt: verificationOtp.expiresAt
-    }
-  };
-}
-
-export async function verifyEmailOtp({ email, otp }) {
-  const normalizedEmail = email.trim().toLowerCase();
-  const client = await pool.connect();
-  let verifiedUser = null;
-  let shouldSendWelcomeEmail = false;
-
-  try {
-    await client.query("BEGIN");
-
-    const user = await findUserByEmail(client, normalizedEmail);
-
-    if (!user) {
-      throw new ApiError(404, "User not found");
-    }
-
-    if (user.email_verified) {
-      await client.query("COMMIT");
-      return {
-        email: user.email,
-        emailVerified: true,
-        accountStatus: user.account_status
-      };
-    }
-
-    const otpResult = await client.query(
-      `SELECT id, otp_hash, expires_at
-      FROM email_verification_otps
-      WHERE user_id = $1 AND used_at IS NULL
-      ORDER BY created_at DESC
-      LIMIT 1`,
-      [user.id]
-    );
-
-    if (otpResult.rowCount === 0) {
-      throw new ApiError(400, "No active verification OTP found");
-    }
-
-    const otpRecord = otpResult.rows[0];
-
-    if (new Date(otpRecord.expires_at).getTime() < Date.now()) {
-      throw new ApiError(400, "Verification OTP has expired");
-    }
-
-    const otpMatches = await compareHash(otp, otpRecord.otp_hash);
-
-    if (!otpMatches) {
-      throw new ApiError(400, "Invalid verification OTP");
-    }
-
-    await client.query(
-      "UPDATE email_verification_otps SET used_at = NOW() WHERE id = $1",
-      [otpRecord.id]
-    );
-
-    await client.query(
-      `UPDATE users
-      SET email_verified = true,
-          account_status = 'active',
-          updated_at = NOW()
-      WHERE id = $1`,
-      [user.id]
-    );
-
-    await client.query("COMMIT");
-
-    verifiedUser = user;
-    shouldSendWelcomeEmail = true;
-  } catch (error) {
-    await client.query("ROLLBACK");
-    throw error;
-  } finally {
-    client.release();
-  }
-
-  if (shouldSendWelcomeEmail) {
-    queueWelcomeEmail({
-      email: verifiedUser.email,
-      firstName: verifiedUser.first_name
-    });
-  }
-
-  return {
+    id: verifiedUser.id,
+    firstName: verifiedUser.first_name,
+    lastName: verifiedUser.last_name,
     email: verifiedUser.email,
-    emailVerified: true,
-    accountStatus: "active"
+    phone: verifiedUser.phone,
+    cnic: verifiedUser.cnic,
+    role: "client",
+    emailVerified: verifiedUser.email_verified,
+    accountStatus: verifiedUser.account_status,
+    createdAt: verifiedUser.created_at
   };
 }
 
 export async function resendEmailVerificationOtp({ email }) {
   const normalizedEmail = email.trim().toLowerCase();
-  const client = await pool.connect();
-  let user = null;
-  let verificationOtp = null;
+  const pendingRegistration = getPendingClientRegistration(normalizedEmail, {
+    allowExpired: true
+  });
 
-  try {
-    await client.query("BEGIN");
-
-    user = await findUserByEmail(client, normalizedEmail);
-
-    if (!user) {
-      throw new ApiError(404, "User not found");
-    }
-
-    if (user.email_verified) {
-      throw new ApiError(400, "Email is already verified");
-    }
-
-    verificationOtp = await createEmailVerificationOtp(client, user.id);
-
-    await client.query("COMMIT");
-  } catch (error) {
-    await client.query("ROLLBACK");
-    throw error;
-  } finally {
-    client.release();
+  if (!pendingRegistration) {
+    throw new ApiError(400, "Registration session expired. Please register again.");
   }
 
+  const otp = generateNumericOtp();
+  const otpHash = await hashValue(otp);
+  const expiresAt = getEmailOtpExpiryDate();
+
+  pendingRegistration.otpHash = otpHash;
+  pendingRegistration.expiresAt = expiresAt;
+
+  pendingClientRegistrations.set(normalizedEmail, pendingRegistration);
+
   const emailDelivery = queueVerificationOtpEmail({
-    email: user.email,
-    otp: verificationOtp.otp,
-    firstName: user.first_name
+    email: pendingRegistration.email,
+    otp,
+    firstName: pendingRegistration.firstName
   });
 
   return {
-    email: user.email,
+    email: pendingRegistration.email,
     emailSent: emailDelivery.mode === "smtp",
     emailQueued: emailDelivery.queued,
     deliveryMode: emailDelivery.mode,
     deliveryReason: emailDelivery.reason,
-    expiresAt: verificationOtp.expiresAt
+    expiresAt
   };
 }
 
