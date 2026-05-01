@@ -1,4 +1,5 @@
 import { useMutation } from "@tanstack/react-query";
+import { useNavigate } from "@tanstack/react-router";
 import { useForm } from "react-hook-form";
 import PasswordField from "./PasswordField";
 import TextField from "./TextField";
@@ -7,12 +8,16 @@ import { getAuthErrorMessage } from "../api";
 import type { ClientRegisterFormValues } from "../types";
 
 export default function ClientRegisterForm() {
+  const navigate = useNavigate();
   const {
     register,
     handleSubmit,
     getValues,
+    clearErrors,
     formState: { errors, isSubmitting: isFormSubmitting },
   } = useForm<ClientRegisterFormValues>({
+    mode: "onChange",
+    reValidateMode: "onChange",
     defaultValues: {
       firstName: "",
       lastName: "",
@@ -27,19 +32,32 @@ export default function ClientRegisterForm() {
 
   const registerMutation = useMutation({
     mutationFn: registerClient,
+    onSuccess: (data) => {
+      sessionStorage.setItem("lawflow_pending_verification_email", data.user.email);
+      if (data.verification?.expiresAt) {
+        sessionStorage.setItem(
+          "lawflow_pending_verification_expires_at",
+          data.verification.expiresAt
+        );
+      }
+      navigate({ to: "/verify-email" });
+    },
   });
 
   const disabled = registerMutation.isPending || isFormSubmitting;
+  const agreeField = register("agree", {
+    validate: (value) => value === true || "You must accept the terms to continue.",
+  });
 
   const submit = (values: ClientRegisterFormValues) => {
     registerMutation.mutate({
-      role: "client",
       firstName: values.firstName,
       lastName: values.lastName,
       email: values.email,
       phone: values.phone,
       cnic: values.cnic,
       password: values.password,
+      confirmPassword: values.confirmPassword,
     });
   };
 
@@ -68,7 +86,7 @@ export default function ClientRegisterForm() {
       <div className="grid gap-2 sm:grid-cols-2">
         <TextField
           label="Email Address"
-          placeholder="your.email@example.com"
+          placeholder="your.email@gmail.com"
           type="email"
           autoComplete="email"
           disabled={disabled}
@@ -149,12 +167,17 @@ export default function ClientRegisterForm() {
 
       <label className="flex items-start gap-2 text-xs text-gray-600">
         <input
-          {...register("agree", {
-            required: "You must accept the terms to continue.",
-          })}
+          {...agreeField}
           type="checkbox"
           className="mt-1 h-4 w-4 rounded border-gray-300"
           disabled={disabled}
+          onChange={(event) => {
+            agreeField.onChange(event);
+
+            if (event.target.checked) {
+              clearErrors("agree");
+            }
+          }}
         />
         I agree to the Terms of Service and Privacy Policy
       </label>
@@ -176,7 +199,12 @@ export default function ClientRegisterForm() {
 
       {registerMutation.isSuccess ? (
         <div className="rounded-2xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
-          Account created. Please check your email to verify your account.
+          {registerMutation.data.message}
+          {registerMutation.data.verification?.deliveryMode === "console" ? (
+            <span className="mt-1 block text-xs text-green-800">
+              Development mode: copy the OTP from the backend terminal.
+            </span>
+          ) : null}
         </div>
       ) : null}
 

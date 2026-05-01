@@ -1,12 +1,16 @@
 import { useNavigate } from "@tanstack/react-router";
+import { useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { useLoginStore } from "../store";
 import type { LoginPayload, LoginRole } from "../types";
+import { getAuthErrorMessage } from "../api";
+import { saveStoredAuthUser } from "../utils/authStorage";
 import PasswordField from "./PasswordField";
 import RoleSelector from "./RoleSelector";
 import TextField from "./TextField";
 import { DEFAULT_ADMIN } from "../mock/admin.default";
 import { useRegistrarAccountsStore } from "../../admin/store/registrars.store";
+import { loginClient } from "../../client/api";
 
 type LoginFormProps = {
   onForgotPassword?: () => void;
@@ -27,10 +31,31 @@ export default function LoginForm({ onForgotPassword, onAdminLogin }: LoginFormP
     defaultValues: {
       email: "",
       password: "",
+      rememberMe: false,
     },
   });
 
-  const disabled = isSubmitting;
+  const clientLoginMutation = useMutation({
+    mutationFn: loginClient,
+    onSuccess: (data, variables) => {
+      const fullName = [data.user.firstName, data.user.lastName].filter(Boolean).join(" ");
+
+      setEmail(data.user.email);
+      saveStoredAuthUser(
+        {
+          id: data.user.id,
+          email: data.user.email,
+          role: data.user.role,
+          name: fullName || data.user.email,
+          refreshTokenExpiresAt: data.refreshTokenExpiresAt,
+        },
+        Boolean(variables.rememberMe)
+      );
+      navigate({ to: "/client-dashboard" });
+    },
+  });
+
+  const disabled = isSubmitting || clientLoginMutation.isPending;
 
   const submit = (values: LoginPayload) => {
     if (onAdminLogin?.(values.email, values.password)) return;
@@ -39,14 +64,11 @@ export default function LoginForm({ onForgotPassword, onAdminLogin }: LoginFormP
 
     switch (role) {
       case "client":
-        localStorage.setItem(
-          "user",
-          JSON.stringify({
-            email: values.email,
-            role: "client",
-          })
-        );
-        navigate({ to: "/client-dashboard" });
+        clientLoginMutation.mutate({
+          email: values.email,
+          password: values.password,
+          rememberMe: Boolean(values.rememberMe),
+        });
         break;
 
       case "lawyer":
@@ -157,7 +179,12 @@ export default function LoginForm({ onForgotPassword, onAdminLogin }: LoginFormP
 
       <div className="flex items-center justify-between text-sm">
         <label className="flex items-center gap-2 text-gray-600">
-          <input type="checkbox" className="rounded border-gray-300" />
+          <input
+            type="checkbox"
+            className="rounded border-gray-300"
+            disabled={disabled}
+            {...register("rememberMe")}
+          />
           Remember me
         </label>
 
@@ -179,6 +206,12 @@ export default function LoginForm({ onForgotPassword, onAdminLogin }: LoginFormP
       >
         {disabled ? "Logging in..." : "Login"}
       </button>
+
+      {clientLoginMutation.isError ? (
+        <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {getAuthErrorMessage(clientLoginMutation.error)}
+        </div>
+      ) : null}
     </form>
   );
 }

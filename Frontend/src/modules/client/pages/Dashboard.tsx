@@ -18,6 +18,7 @@ import StatCard from "../../../shared/components/dashboard/StatCard";
 import UpcomingHearings from "../../../shared/components/dashboard/UpcomingHearings";
 
 import { useLoginStore } from "../../auth/store";
+import { getStoredAuthUser } from "../../auth/utils/authStorage";
 import { useClientProfileStore } from "../store";
 import { useSignatureRequestsStore } from "../../lawyer/signatures/store/signatureRequests.store";
 
@@ -36,15 +37,8 @@ export default function Dashboard() {
   const { countPendingSignatures } = useSignatureRequestsStore();
   const pendingSignatureCount = countPendingSignatures();
   const storedLoginEmail = (() => {
-    try {
-      const raw = localStorage.getItem("user");
-      if (!raw) return "";
-      const parsed = JSON.parse(raw) as { email?: string; role?: string };
-      if (parsed.role !== "client") return "";
-      return parsed.email || "";
-    } catch {
-      return "";
-    }
+    const storedUser = getStoredAuthUser();
+    return storedUser?.role === "client" ? storedUser.email : "";
   })();
 
   useEffect(() => {

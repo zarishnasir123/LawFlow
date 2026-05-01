@@ -18,7 +18,7 @@ export async function registerClient(
 }
 
 export async function loginClient(payload: ClientLoginPayload): Promise<AuthResponse> {
-  const { data } = await apiClient.post<AuthResponse>("/auth/login/client", payload);
+  const { data } = await apiClient.post<AuthResponse>("/auth/login", payload);
   return data;
 }
 
@@ -26,7 +26,7 @@ export async function sendClientEmailVerification(
   payload: ClientEmailVerificationRequest
 ): Promise<VerificationResponse> {
   const { data } = await apiClient.post<VerificationResponse>(
-    "/auth/client/email/send",
+    "/auth/resend-verification-otp",
     payload
   );
   return data;
@@ -36,7 +36,7 @@ export async function verifyClientEmail(
   payload: ClientEmailVerificationPayload
 ): Promise<VerificationResponse> {
   const { data } = await apiClient.post<VerificationResponse>(
-    "/auth/client/email/verify",
+    "/auth/verify-email",
     payload
   );
   return data;

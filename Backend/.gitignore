@@ -1,0 +1,13 @@
+node_modules/
+.env
+dist/
+coverage/
+npm-debug.log*
+logs/
+*.log
+uploads/
+storage/
+tmp/
+*.pem
+*.key
+*.cert

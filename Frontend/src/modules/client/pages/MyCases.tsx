@@ -10,6 +10,7 @@ import {
 
 import ClientLayout from "../components/ClientLayout";
 import { useLoginStore } from "../../auth/store";
+import { getStoredAuthUser } from "../../auth/utils/authStorage";
 import { getClientCasesForEmail, type ClientCaseStatus } from "../data/myCases.mock";
 
 function getStatusBadgeClass(status: ClientCaseStatus) {
@@ -33,15 +34,8 @@ export default function ClientMyCases() {
   const [statusFilter, setStatusFilter] = useState<"all" | ClientCaseStatus>("all");
 
   const storedLoginEmail = (() => {
-    try {
-      const raw = localStorage.getItem("user");
-      if (!raw) return "";
-      const parsed = JSON.parse(raw) as { email?: string; role?: string };
-      if (parsed.role !== "client") return "";
-      return parsed.email || "";
-    } catch {
-      return "";
-    }
+    const storedUser = getStoredAuthUser();
+    return storedUser?.role === "client" ? storedUser.email : "";
   })();
 
   const activeEmail = email || storedLoginEmail || "";

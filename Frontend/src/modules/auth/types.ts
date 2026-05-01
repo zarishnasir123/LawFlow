@@ -2,14 +2,43 @@ export type RegisterRole = "client" | "lawyer";
 export type LoginRole = "client" | "lawyer" | "registrar" | "admin";
 
 export type AuthResponse = {
-  token: string;
+  message: string;
+  user: AuthUser;
+  accessToken: string;
+  refreshTokenExpiresAt: string;
+  session?: {
+    rememberMe: boolean;
+    expiresAt: string;
+  };
+};
+
+export type AuthUser = {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone?: string;
+  cnic?: string;
   role: LoginRole;
-  expiresAt?: string;
+  emailVerified?: boolean;
+  accountStatus?: string;
+  createdAt?: string;
 };
 
 export type VerificationResponse = {
-  status: "pending" | "verified";
-  message?: string;
+  message: string;
+  user?: {
+    email: string;
+    emailVerified: boolean;
+  };
+  verification?: {
+    email: string;
+    emailSent: boolean;
+    emailQueued?: boolean;
+    deliveryMode: "smtp" | "console";
+    deliveryReason?: string;
+    expiresAt: string;
+  };
 };
 
 export type ClientRegisterFormValues = {
@@ -26,12 +55,13 @@ export type ClientRegisterFormValues = {
 export type ClientRegisterSubmit = Omit<ClientRegisterFormValues, "confirmPassword" | "agree">;
 
 export type ClientRegisterPayload = ClientRegisterSubmit & {
-  role: "client";
+  confirmPassword: string;
 };
 
 export type LoginPayload = {
   email: string;
   password: string;
+  rememberMe?: boolean;
 };
 
 export type ClientLoginPayload = LoginPayload;
@@ -41,7 +71,8 @@ export type ClientEmailVerificationRequest = {
 };
 
 export type ClientEmailVerificationPayload = {
-  token: string;
+  email: string;
+  otp: string;
 };
 
 export type ClientCnicVerificationPayload = {
@@ -94,9 +125,13 @@ export type LawyerBarLicenseUploadPayload = {
 };
 
 export type RegisterResponse = {
-  id: string;
-  role: RegisterRole;
-  email: string;
-  requiresEmailVerification?: boolean;
-  requiresCnicVerification?: boolean;
+  message: string;
+  user: AuthUser;
+  verification?: {
+    emailSent: boolean;
+    emailQueued?: boolean;
+    deliveryMode: "smtp" | "console";
+    deliveryReason?: string;
+    expiresAt: string;
+  };
 };
