@@ -28,8 +28,17 @@ export type AuthUser = {
 export type VerificationResponse = {
   message: string;
   user?: {
+    id?: string;
+    firstName?: string;
+    lastName?: string;
     email: string;
+    phone?: string;
+    role?: LoginRole;
     emailVerified: boolean;
+    accountStatus?: string;
+    verificationStatus?: "pending" | "approved" | "rejected";
+    cnicMatch?: boolean;
+    createdAt?: string;
   };
   verification?: {
     email: string;

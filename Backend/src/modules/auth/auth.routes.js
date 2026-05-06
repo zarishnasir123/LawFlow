@@ -1,6 +1,7 @@
 import { Router } from "express";
 
 import {
+  listPendingLawyers,
   login,
   logout,
   me,
@@ -14,8 +15,10 @@ import {
 import { asyncHandler } from "../../middleware/asyncHandler.js";
 import { authenticate } from "../../middleware/authenticate.js";
 import { authorizeRoles } from "../../middleware/authorizeRoles.js";
+import { uploadLawyerDocs } from "../../middleware/uploadLawyerDocs.js";
 import { validateRequest } from "../../middleware/validateRequest.js";
 import {
+  listPendingLawyersValidator,
   loginValidator,
   registerClientValidator,
   registerLawyerValidator,
@@ -35,9 +38,19 @@ router.post(
 
 router.post(
   "/register/lawyer",
+  uploadLawyerDocs,
   registerLawyerValidator,
   validateRequest,
   asyncHandler(registerLawyer)
+);
+
+router.get(
+  "/lawyers/pending",
+  authenticate,
+  authorizeRoles("admin"),
+  listPendingLawyersValidator,
+  validateRequest,
+  asyncHandler(listPendingLawyers)
 );
 
 router.patch(

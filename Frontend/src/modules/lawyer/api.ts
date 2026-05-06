@@ -52,7 +52,7 @@ export async function registerLawyer(
 }
 
 export async function loginLawyer(payload: LawyerLoginPayload): Promise<AuthResponse> {
-  const { data } = await apiClient.post<AuthResponse>("/auth/login/lawyer", payload);
+  const { data } = await apiClient.post<AuthResponse>("/auth/login", payload);
   return data;
 }
 

@@ -1,4 +1,4 @@
-import { body } from "express-validator";
+import { body, query } from "express-validator";
 
 import { isAllowedDistrictCnic, isValidPakistanCnic } from "../../utils/cnic.js";
 import {
@@ -105,6 +105,27 @@ function validatePasswordConfirmation(_, { req }) {
   }
 
   return true;
+}
+
+function requireUploadedFile({ field, label, allowedMimeTypes }) {
+  return body().custom((_, { req }) => {
+    const file = req.files?.[field]?.[0];
+
+    if (!file) {
+      throw new Error(`${label} is required`);
+    }
+
+    if (Array.isArray(allowedMimeTypes) && allowedMimeTypes.length > 0) {
+      if (!allowedMimeTypes.includes(file.mimetype)) {
+        const expected = allowedMimeTypes
+          .map((value) => value.replace(/^.*\//, "").toUpperCase())
+          .join(" or ");
+        throw new Error(`${label} must be ${expected}`);
+      }
+    }
+
+    return true;
+  });
 }
 
 function requireDocumentReference({ objectName, urlNames, label }) {
@@ -244,43 +265,22 @@ export const registerLawyerValidator = [
     .withMessage("Consultation fee must be a valid amount")
     .toFloat(),
 
-  requireDocumentReference({
-    objectName: "degreeDocument",
-    urlNames: ["lawDegreeDocUrl", "law_degree_doc_url"],
-    label: "Law degree document"
-  }),
-  validateDocumentMimeType({
-    objectName: "degreeDocument",
-    urlNames: ["lawDegreeDocUrl", "law_degree_doc_url"],
-    allowedMimeTypes: ["application/pdf"],
-    allowedExtensions: [".pdf"],
-    label: "Law degree document"
+  requireUploadedFile({
+    field: "degreeDocument",
+    label: "Law degree document",
+    allowedMimeTypes: ["application/pdf"]
   }),
 
-  requireDocumentReference({
-    objectName: "licenseCardFrontImage",
-    urlNames: ["barLicenseCardFrontUrl", "bar_license_card_front_url"],
-    label: "Bar license card front picture"
-  }),
-  validateDocumentMimeType({
-    objectName: "licenseCardFrontImage",
-    urlNames: ["barLicenseCardFrontUrl", "bar_license_card_front_url"],
-    allowedMimeTypes: ["image/jpeg", "image/png"],
-    allowedExtensions: [".jpg", ".jpeg", ".png"],
-    label: "Bar license card front picture"
+  requireUploadedFile({
+    field: "licenseCardFrontImage",
+    label: "Bar license card front picture",
+    allowedMimeTypes: ["image/jpeg", "image/png"]
   }),
 
-  requireDocumentReference({
-    objectName: "licenseCardBackImage",
-    urlNames: ["barLicenseCardBackUrl", "bar_license_card_back_url"],
-    label: "Bar license card back picture"
-  }),
-  validateDocumentMimeType({
-    objectName: "licenseCardBackImage",
-    urlNames: ["barLicenseCardBackUrl", "bar_license_card_back_url"],
-    allowedMimeTypes: ["image/jpeg", "image/png"],
-    allowedExtensions: [".jpg", ".jpeg", ".png"],
-    label: "Bar license card back picture"
+  requireUploadedFile({
+    field: "licenseCardBackImage",
+    label: "Bar license card back picture",
+    allowedMimeTypes: ["image/jpeg", "image/png"]
   }),
 
   body("extractedCnic")
@@ -344,6 +344,20 @@ export const loginValidator = [
     .isBoolean()
     .withMessage("Remember me must be true or false")
     .toBoolean()
+];
+
+export const listPendingLawyersValidator = [
+  query("limit")
+    .optional()
+    .isInt({ min: 1, max: 100 })
+    .withMessage("Limit must be between 1 and 100")
+    .toInt(),
+
+  query("offset")
+    .optional()
+    .isInt({ min: 0 })
+    .withMessage("Offset must be zero or a positive integer")
+    .toInt()
 ];
 
 export const reviewLawyerValidator = [

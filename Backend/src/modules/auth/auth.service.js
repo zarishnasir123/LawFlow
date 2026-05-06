@@ -1,5 +1,6 @@
 import { pool } from "../../config/db.js";
 import { queueLawyerRegistrationDecisionEmail } from "../../services/email.service.js";
+import { getLawyerDocumentSignedUrl } from "../../services/storage.service.js";
 import { ApiError } from "../../utils/apiError.js";
 import { compareHash, hashValue } from "../../utils/hash.js";
 import {
@@ -25,6 +26,55 @@ function mapAuthUser(row) {
     emailVerified: row.email_verified,
     accountStatus: row.account_status,
     lawyerVerificationStatus: row.lawyer_verification_status || null
+  };
+}
+
+async function mapPendingLawyerDocument(document) {
+  const storagePath = document.storage_path;
+  const previewUrl = storagePath
+    ? await getLawyerDocumentSignedUrl({ storagePath })
+    : null;
+
+  return {
+    documentType: document.document_type,
+    storageBucket: document.storage_bucket,
+    storagePath,
+    fileName: document.file_name,
+    mimeType: document.mime_type,
+    fileSize: document.file_size !== null && document.file_size !== undefined
+      ? Number(document.file_size)
+      : null,
+    uploadedAt: document.uploaded_at,
+    previewUrl
+  };
+}
+
+async function mapPendingLawyer(row) {
+  const documents = Array.isArray(row.documents) ? row.documents : [];
+  const mappedDocuments = await Promise.all(documents.map(mapPendingLawyerDocument));
+
+  return {
+    lawyerProfileId: row.lawyer_profile_id,
+    userId: row.user_id,
+    firstName: row.first_name,
+    lastName: row.last_name,
+    email: row.email,
+    phone: row.phone,
+    cnic: row.cnic,
+    accountStatus: row.account_status,
+    emailVerified: row.email_verified,
+    specialization: row.specialization,
+    districtBar: row.district_bar,
+    barLicenseNumber: row.bar_license_number,
+    experienceYears: row.experience_years,
+    consultationFee: row.consultation_fee !== null && row.consultation_fee !== undefined
+      ? Number(row.consultation_fee)
+      : null,
+    cnicMatch: row.cnic_match,
+    cnicMatchRemarks: row.cnic_match_remarks,
+    verificationStatus: row.verification_status,
+    submittedAt: row.submitted_at,
+    documents: mappedDocuments
   };
 }
 
@@ -313,6 +363,71 @@ export async function getCurrentUser(userId) {
   }
 
   return mapAuthUser(user);
+}
+
+export async function listPendingLawyerVerifications({ limit = 20, offset = 0 } = {}) {
+  const safeLimit = Math.min(Math.max(Number.parseInt(limit, 10) || 20, 1), 100);
+  const safeOffset = Math.max(Number.parseInt(offset, 10) || 0, 0);
+
+  const result = await pool.query(
+    `SELECT
+      lawyer_profiles.id AS lawyer_profile_id,
+      users.id AS user_id,
+      users.first_name,
+      users.last_name,
+      users.email,
+      users.phone,
+      users.cnic,
+      users.account_status,
+      users.email_verified,
+      lawyer_profiles.specialization,
+      lawyer_profiles.district_bar,
+      lawyer_profiles.bar_license_number,
+      lawyer_profiles.experience_years,
+      lawyer_profiles.consultation_fee,
+      lawyer_profiles.cnic_match,
+      lawyer_profiles.cnic_match_remarks,
+      lawyer_profiles.verification_status,
+      lawyer_profiles.created_at AS submitted_at,
+      COUNT(*) OVER () AS total_count,
+      COALESCE(
+        (
+          SELECT json_agg(
+            json_build_object(
+              'document_type', d.document_type,
+              'storage_bucket', d.storage_bucket,
+              'storage_path', d.storage_path,
+              'file_name', d.file_name,
+              'mime_type', d.mime_type,
+              'file_size', d.file_size,
+              'uploaded_at', d.uploaded_at
+            )
+            ORDER BY d.document_type
+          )
+          FROM lawyer_verification_documents d
+          WHERE d.lawyer_profile_id = lawyer_profiles.id
+        ),
+        '[]'::json
+      ) AS documents
+    FROM lawyer_profiles
+    JOIN users ON users.id = lawyer_profiles.user_id
+    WHERE lawyer_profiles.verification_status = 'pending'
+    ORDER BY lawyer_profiles.created_at ASC
+    LIMIT $1 OFFSET $2`,
+    [safeLimit, safeOffset]
+  );
+
+  const total = result.rows[0] ? Number(result.rows[0].total_count) : 0;
+  const items = await Promise.all(result.rows.map(mapPendingLawyer));
+
+  return {
+    items,
+    pagination: {
+      total,
+      limit: safeLimit,
+      offset: safeOffset
+    }
+  };
 }
 
 export async function reviewLawyerRegistration({
