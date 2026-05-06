@@ -46,6 +46,67 @@ CREATE TABLE IF NOT EXISTS users (
 ALTER TABLE users
   ALTER COLUMN account_status SET DEFAULT 'pending_verification';
 
+CREATE TABLE IF NOT EXISTS pending_registrations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  role_id UUID NOT NULL REFERENCES roles(id),
+
+  email CITEXT UNIQUE NOT NULL,
+  cnic VARCHAR(15) UNIQUE NOT NULL,
+  first_name VARCHAR(100) NOT NULL,
+  last_name VARCHAR(100) NOT NULL,
+  phone_number VARCHAR(20) NOT NULL,
+
+  password_hash TEXT NOT NULL,
+  profile_data JSONB NOT NULL,
+  otp_hash TEXT NOT NULL,
+  expires_at TIMESTAMP NOT NULL,
+
+  created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+
+  CONSTRAINT valid_pending_registration_cnic_format
+    CHECK (cnic ~ '^[0-9]{5}-[0-9]{7}-[0-9]{1}$')
+);
+
+-- Seed default admin user for local development/testing.
+-- Default login:
+-- Email: LfAdmin@gmail.com
+-- Password: Admin@123
+INSERT INTO users (
+  role_id,
+  first_name,
+  last_name,
+  email,
+  phone,
+  cnic,
+  password_hash,
+  auth_provider,
+  email_verified,
+  account_status
+)
+VALUES (
+  (SELECT id FROM roles WHERE name = 'admin'),
+  'LawFlow',
+  'Admin',
+  'LfAdmin@gmail.com',
+  '+920000000000',
+  '34104-0000000-1',
+  crypt('Admin@123', gen_salt('bf', 12)),
+  'local',
+  true,
+  'active'
+)
+ON CONFLICT (email) DO UPDATE
+SET role_id = (SELECT id FROM roles WHERE name = 'admin'),
+    first_name = EXCLUDED.first_name,
+    last_name = EXCLUDED.last_name,
+    phone = EXCLUDED.phone,
+    cnic = EXCLUDED.cnic,
+    password_hash = EXCLUDED.password_hash,
+    auth_provider = 'local',
+    email_verified = true,
+    account_status = 'active',
+    updated_at = NOW();
+
 CREATE TABLE IF NOT EXISTS client_profiles (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID UNIQUE NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -68,6 +129,9 @@ CREATE TABLE IF NOT EXISTS lawyer_profiles (
   experience_years INTEGER DEFAULT 0,
   consultation_fee NUMERIC,
 
+  cnic_match BOOLEAN NOT NULL DEFAULT false,
+  cnic_match_remarks TEXT,
+
   verification_status VARCHAR(30) NOT NULL DEFAULT 'pending',
   verification_remarks TEXT,
   verified_by UUID REFERENCES users(id),
@@ -85,7 +149,12 @@ CREATE TABLE IF NOT EXISTS lawyer_verification_documents (
   lawyer_profile_id UUID NOT NULL REFERENCES lawyer_profiles(id) ON DELETE CASCADE,
 
   document_type VARCHAR(50) NOT NULL,
-  file_url TEXT NOT NULL,
+
+  -- Actual files will be stored in Supabase private storage.
+  -- PostgreSQL stores only bucket name, internal storage path, and file metadata.
+  storage_bucket VARCHAR(100) NOT NULL,
+  storage_path TEXT NOT NULL,
+
   file_name TEXT,
   mime_type VARCHAR(100),
   file_size BIGINT,
@@ -93,8 +162,30 @@ CREATE TABLE IF NOT EXISTS lawyer_verification_documents (
   uploaded_at TIMESTAMP NOT NULL DEFAULT NOW(),
 
   CONSTRAINT valid_lawyer_document_type
-    CHECK (document_type IN ('law_degree', 'bar_license_card'))
+    CHECK (document_type IN (
+      'law_degree',
+      'bar_license_card',
+      'bar_license_card_front',
+      'bar_license_card_back'
+    )),
+
+  CONSTRAINT unique_lawyer_document_type
+    UNIQUE (lawyer_profile_id, document_type)
 );
+
+ALTER TABLE lawyer_verification_documents
+  DROP CONSTRAINT IF EXISTS valid_lawyer_document_type;
+
+-- Allow separate district bar license card sides. Files live in Supabase private
+-- storage; this table stores only the internal bucket/path and metadata.
+ALTER TABLE lawyer_verification_documents
+  ADD CONSTRAINT valid_lawyer_document_type
+  CHECK (document_type IN (
+    'law_degree',
+    'bar_license_card',
+    'bar_license_card_front',
+    'bar_license_card_back'
+  ));
 
 CREATE TABLE IF NOT EXISTS email_verification_otps (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -157,17 +248,34 @@ DROP INDEX IF EXISTS idx_auth_sessions_refresh_token_hash;
 
 -- Query-focused indexes. Keep these aligned with real service queries.
 CREATE INDEX IF NOT EXISTS idx_users_role_id ON users(role_id);
+
+CREATE INDEX IF NOT EXISTS idx_pending_registrations_expires_at
+  ON pending_registrations(expires_at);
+
+CREATE INDEX IF NOT EXISTS idx_pending_registrations_role_id
+  ON pending_registrations(role_id);
+
+CREATE INDEX IF NOT EXISTS idx_pending_registrations_bar_license_number
+  ON pending_registrations((profile_data ->> 'barLicenseNumber'))
+  WHERE profile_data ? 'barLicenseNumber';
+
 CREATE INDEX IF NOT EXISTS idx_auth_sessions_active_user_created_at
   ON auth_sessions(user_id, created_at DESC)
   WHERE is_revoked = false;
+
 CREATE INDEX IF NOT EXISTS idx_email_verification_otps_active_user_created_at
   ON email_verification_otps(user_id, created_at DESC)
   WHERE used_at IS NULL;
+
 CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_active_user_created_at
   ON password_reset_tokens(user_id, created_at DESC)
   WHERE used_at IS NULL;
-CREATE INDEX IF NOT EXISTS idx_auth_identities_user_id ON auth_identities(user_id);
+
+CREATE INDEX IF NOT EXISTS idx_auth_identities_user_id
+  ON auth_identities(user_id);
+
 CREATE INDEX IF NOT EXISTS idx_lawyer_verification_documents_profile_id
   ON lawyer_verification_documents(lawyer_profile_id);
+
 CREATE INDEX IF NOT EXISTS idx_lawyer_profiles_verification_status
   ON lawyer_profiles(verification_status);

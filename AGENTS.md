@@ -15,18 +15,49 @@ Rules for AI agents and contributors working in this LawFlow repo.
 
 Backend code lives in `Backend/src`.
 
-Use this structure:
+Use this layered structure:
 
 ```text
 Backend/src/
   config/        app, database, and environment config
   middleware/    auth, RBAC, validation, and error middleware
-  modules/       feature modules
+  modules/       feature modules, grouped by domain
   services/      reusable external integrations like email
   utils/         reusable helpers
   app.js
   server.js
 ```
+
+Current backend module architecture:
+
+```text
+Backend/src/
+  config/
+  middleware/
+  modules/
+    auth/
+      auth.routes.js
+      auth.controller.js
+      auth.service.js
+      auth.validators.js
+      registration.service.js
+      registration.strategies.js
+    users/
+    admin/
+    cases/
+    documents/
+    signatures/
+    registrar/
+    payments/
+    messages/
+    notifications/
+  services/
+  utils/
+  app.js
+  server.js
+```
+
+Do not create empty placeholder modules just to match this list. Add a module only when the feature is being implemented.
 
 Feature modules should follow this pattern:
 
@@ -38,6 +69,14 @@ modules/auth/
   auth.validators.js
 ```
 
+Auth registration has an extra split:
+
+```text
+modules/auth/
+  registration.service.js      shared registration workflow
+  registration.strategies.js   role-specific profile mapping and creation
+```
+
 Responsibilities:
 
 - Routes only define endpoints and middleware.
@@ -46,6 +85,8 @@ Responsibilities:
 - Services contain business logic and database queries.
 - Shared services contain reusable external integrations.
 - Utils contain small reusable helpers.
+- `registration.service.js` owns the shared registration pipeline, pending registration storage, OTP hashing, email queueing, verification, and user creation transaction.
+- `registration.strategies.js` owns role-specific profile data mapping and profile table inserts.
 
 Do not put database queries directly in route files.
 

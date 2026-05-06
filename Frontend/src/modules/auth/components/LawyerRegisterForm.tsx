@@ -1,14 +1,65 @@
 import { useMutation } from "@tanstack/react-query";
+import { useNavigate } from "@tanstack/react-router";
 import { useState, type ChangeEvent } from "react";
 import { useController, useForm } from "react-hook-form";
 import PasswordField from "./PasswordField";
 import RoleSelector from "./RoleSelector";
 import TextField from "./TextField";
-import { registerLawyer } from "../../lawyer/api";
+import { registerLawyer } from "../lawyerApi";
 import { getAuthErrorMessage } from "../api";
 import type { LawyerRegisterFormValues } from "../types";
 
+const imageMimeTypes = new Set(["image/jpeg", "image/png"]);
+
+function getSelectedFile(value: File | FileList | null | undefined) {
+  if (value instanceof File) return value;
+  if (value instanceof FileList) return value[0] ?? null;
+  return null;
+}
+
+function isPdfFile(value: File | FileList | null | undefined) {
+  const file = getSelectedFile(value);
+
+  return file instanceof File && (
+    file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")
+  );
+}
+
+function isJpgOrPngFile(value: File | FileList | null | undefined) {
+  const file = getSelectedFile(value);
+  const fileName = file?.name.toLowerCase() || "";
+
+  return file instanceof File && (
+    imageMimeTypes.has(file.type) ||
+    fileName.endsWith(".jpg") ||
+    fileName.endsWith(".jpeg") ||
+    fileName.endsWith(".png")
+  );
+}
+
+function createDocumentMetadata({
+  safeEmail,
+  folder,
+  file,
+  fallbackName
+}: {
+  safeEmail: string;
+  folder: string;
+  file: File | null;
+  fallbackName: string;
+}) {
+  // Supabase upload will later store the file first; Postgres should keep only this private bucket/path metadata.
+  return {
+    storageBucket: "lawyer-verification-documents",
+    storagePath: `lawyers/temp/${safeEmail}/${folder}/${file?.name ?? fallbackName}`,
+    fileName: file?.name ?? null,
+    mimeType: file?.type ?? null,
+    fileSize: file?.size ?? null,
+  };
+}
+
 export default function LawyerRegisterForm() {
+  const navigate = useNavigate();
   const {
     register,
     control,
@@ -16,6 +67,8 @@ export default function LawyerRegisterForm() {
     getValues,
     formState: { errors, isSubmitting: isFormSubmitting },
   } = useForm<LawyerRegisterFormValues>({
+    mode: "onTouched",
+    reValidateMode: "onChange",
     defaultValues: {
       firstName: "",
       lastName: "",
@@ -26,10 +79,10 @@ export default function LawyerRegisterForm() {
       districtBar: "Gujranwala",
       barLicenseNumber: "",
       lawDegree: null,
-      barLicenseCard: null,
+      barLicenseCardFront: null,
+      barLicenseCardBack: null,
       password: "",
       confirmPassword: "",
-      agree: false,
     },
   });
 
@@ -53,10 +106,19 @@ export default function LawyerRegisterForm() {
 
   const registerMutation = useMutation({
     mutationFn: registerLawyer,
+    onSuccess: (_data, variables) => {
+      navigate({
+        to: "/verify-email",
+        search: {
+          email: variables.email,
+        },
+      });
+    },
   });
 
   const [lawDegreeName, setLawDegreeName] = useState("");
-  const [barLicenseName, setBarLicenseName] = useState("");
+  const [barLicenseFrontName, setBarLicenseFrontName] = useState("");
+  const [barLicenseBackName, setBarLicenseBackName] = useState("");
 
   const disabled = registerMutation.isPending || isFormSubmitting;
 
@@ -70,19 +132,50 @@ export default function LawyerRegisterForm() {
     ].join(" ");
 
   const submit = (values: LawyerRegisterFormValues) => {
+    const degreeFile = getSelectedFile(values.lawDegree);
+    const licenseFrontFile = getSelectedFile(values.barLicenseCardFront);
+    const licenseBackFile = getSelectedFile(values.barLicenseCardBack);
+    const safeEmail = values.email.trim().toLowerCase().replace(/[^a-z0-9]/gi, "-");
+
     registerMutation.mutate({
-      role: "lawyer",
       firstName: values.firstName,
       lastName: values.lastName,
       email: values.email,
       phone: values.phone,
       cnic: values.cnic,
-      specialization: values.specialization,
+      specialization: values.specialization as "Civil" | "Family",
       districtBar: values.districtBar,
       barLicenseNumber: values.barLicenseNumber,
-      lawDegree: values.lawDegree,
-      barLicenseCard: values.barLicenseCard,
+      experienceYears: null,
+      consultationFee: null,
+
+      degreeDocument: createDocumentMetadata({
+        safeEmail,
+        folder: "degree",
+        file: degreeFile,
+        fallbackName: "degree.pdf",
+      }),
+
+      licenseCardFrontImage: createDocumentMetadata({
+        safeEmail,
+        folder: "bar-license-front",
+        file: licenseFrontFile,
+        fallbackName: "front.jpg",
+      }),
+
+      licenseCardBackImage: createDocumentMetadata({
+        safeEmail,
+        folder: "bar-license-back",
+        file: licenseBackFile,
+        fallbackName: "back.jpg",
+      }),
+
+      // OCR is not connected yet, so backend will keep cnicMatch=false and admin will review.
+      extractedCnic: null,
+      ocrReadable: true,
+
       password: values.password,
+      confirmPassword: values.confirmPassword,
     });
   };
 
@@ -92,13 +185,13 @@ export default function LawyerRegisterForm() {
   ];
 
   const specializationOptions = [
-    { value: "Civil Law", label: "Civil Law" },
-    { value: "Family Law", label: "Family Law" },
+    { value: "Civil", label: "Civil" },
+    { value: "Family", label: "Family" },
   ];
 
   const lawDegreeRegister = register("lawDegree", {
     required: "Law degree document is required.",
-    validate: (file: File | null) => file instanceof File || "Upload a valid document.",
+    validate: (file: File | FileList | null) => isPdfFile(file) || "Upload the law degree as a PDF file.",
     setValueAs: (value: FileList | null) => value?.[0] ?? null,
     onChange: (event: ChangeEvent<HTMLInputElement>) => {
       const file = event.target.files?.[0];
@@ -106,13 +199,23 @@ export default function LawyerRegisterForm() {
     },
   });
 
-  const barLicenseRegister = register("barLicenseCard", {
-    required: "Bar license card is required.",
-    validate: (file: File | null) => file instanceof File || "Upload a valid document.",
+  const barLicenseFrontRegister = register("barLicenseCardFront", {
+    required: "Bar license card front picture is required.",
+    validate: (file: File | FileList | null) => isJpgOrPngFile(file) || "Upload the front picture as JPG or PNG.",
     setValueAs: (value: FileList | null) => value?.[0] ?? null,
     onChange: (event: ChangeEvent<HTMLInputElement>) => {
       const file = event.target.files?.[0];
-      setBarLicenseName(file?.name ?? "");
+      setBarLicenseFrontName(file?.name ?? "");
+    },
+  });
+
+  const barLicenseBackRegister = register("barLicenseCardBack", {
+    required: "Bar license card back picture is required.",
+    validate: (file: File | FileList | null) => isJpgOrPngFile(file) || "Upload the back picture as JPG or PNG.",
+    setValueAs: (value: FileList | null) => value?.[0] ?? null,
+    onChange: (event: ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      setBarLicenseBackName(file?.name ?? "");
     },
   });
 
@@ -219,13 +322,13 @@ export default function LawyerRegisterForm() {
         />
       </div>
 
-      <div className="grid gap-2 sm:grid-cols-2">
+      <div className="grid gap-2">
         <div className="space-y-1">
           <label className="text-xs font-semibold text-gray-700">Law Degree Document</label>
           <input
             id="law-degree-file"
             type="file"
-            accept=".pdf,.jpg,.jpeg,.png"
+            accept="application/pdf,.pdf"
             disabled={disabled}
             className="sr-only"
             {...lawDegreeRegister}
@@ -247,31 +350,60 @@ export default function LawyerRegisterForm() {
           ) : null}
         </div>
 
-        <div className="space-y-1">
-          <label className="text-xs font-semibold text-gray-700">Bar License Card</label>
-          <input
-            id="bar-license-file"
-            type="file"
-            accept=".pdf,.jpg,.jpeg,.png"
-            disabled={disabled}
-            className="sr-only"
-            {...barLicenseRegister}
-          />
-          <label
-            htmlFor="bar-license-file"
-            className={[
-              inputClass(Boolean(errors.barLicenseCard)),
-              "flex cursor-pointer items-center justify-between gap-2 text-gray-600",
-            ].join(" ")}
-          >
-            <span className="truncate">
-              {barLicenseName || "Upload bar license card"}
-            </span>
-            <span className="text-xs font-semibold text-[var(--primary)]">Browse</span>
-          </label>
-          {errors.barLicenseCard ? (
-            <p className="text-xs text-red-600">{errors.barLicenseCard.message}</p>
-          ) : null}
+        <div className="grid gap-2 sm:grid-cols-2">
+          <div className="space-y-1">
+            <label className="text-xs font-semibold text-gray-700">Bar License Card Front</label>
+            <input
+              id="bar-license-front-file"
+              type="file"
+              accept="image/jpeg,image/png,.jpg,.jpeg,.png"
+              disabled={disabled}
+              className="sr-only"
+              {...barLicenseFrontRegister}
+            />
+            <label
+              htmlFor="bar-license-front-file"
+              className={[
+                inputClass(Boolean(errors.barLicenseCardFront)),
+                "flex cursor-pointer items-center justify-between gap-2 text-gray-600",
+              ].join(" ")}
+            >
+              <span className="truncate">
+                {barLicenseFrontName || "Upload front picture"}
+              </span>
+              <span className="text-xs font-semibold text-[var(--primary)]">Browse</span>
+            </label>
+            {errors.barLicenseCardFront ? (
+              <p className="text-xs text-red-600">{errors.barLicenseCardFront.message}</p>
+            ) : null}
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-xs font-semibold text-gray-700">Bar License Card Back</label>
+            <input
+              id="bar-license-back-file"
+              type="file"
+              accept="image/jpeg,image/png,.jpg,.jpeg,.png"
+              disabled={disabled}
+              className="sr-only"
+              {...barLicenseBackRegister}
+            />
+            <label
+              htmlFor="bar-license-back-file"
+              className={[
+                inputClass(Boolean(errors.barLicenseCardBack)),
+                "flex cursor-pointer items-center justify-between gap-2 text-gray-600",
+              ].join(" ")}
+            >
+              <span className="truncate">
+                {barLicenseBackName || "Upload back picture"}
+              </span>
+              <span className="text-xs font-semibold text-[var(--primary)]">Browse</span>
+            </label>
+            {errors.barLicenseCardBack ? (
+              <p className="text-xs text-red-600">{errors.barLicenseCardBack.message}</p>
+            ) : null}
+          </div>
         </div>
       </div>
 
@@ -309,19 +441,6 @@ export default function LawyerRegisterForm() {
           disabled={disabled}
         />
       </div>
-
-      <label className="flex items-start gap-2 text-xs text-gray-600">
-        <input
-          {...register("agree", {
-            required: "You must accept the terms to continue.",
-          })}
-          type="checkbox"
-          className="mt-1 h-4 w-4 rounded border-gray-300"
-          disabled={disabled}
-        />
-        I agree to the Terms of Service and Privacy Policy
-      </label>
-      {errors.agree ? <p className="text-xs text-red-600">{errors.agree.message}</p> : null}
 
       <button
         type="submit"

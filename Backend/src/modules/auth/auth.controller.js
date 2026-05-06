@@ -2,11 +2,14 @@ import {
   getCurrentUser,
   loginUser,
   logoutUser,
-  registerClientAccount,
-  resendEmailVerificationOtp,
   refreshAuthSession,
-  verifyEmailOtp
+  reviewLawyerRegistration,
 } from "./auth.service.js";
+import {
+  completeRegistrationVerification,
+  resendRegistrationVerificationOtp,
+  startRegistration
+} from "./registration.service.js";
 import { parseDurationToMilliseconds } from "../../utils/tokens.js";
 
 const refreshTokenCookieName = "refreshToken";
@@ -38,7 +41,10 @@ function getRefreshTokenCookieOptions({ rememberMe = false, expiresAt } = {}) {
 }
 
 export async function registerClient(req, res) {
-  const result = await registerClientAccount(req.body);
+  const result = await startRegistration({
+    role: "client",
+    payload: req.body
+  });
 
   return res.status(201).json({
     message: "Client registered successfully. Please verify your email.",
@@ -47,8 +53,17 @@ export async function registerClient(req, res) {
   });
 }
 
-export function registerLawyer(req, res) {
-  return res.status(501).json({ message: "Lawyer registration is not implemented yet" });
+export async function registerLawyer(req, res) {
+  const result = await startRegistration({
+    role: "lawyer",
+    payload: req.body
+  });
+
+  return res.status(201).json({
+    message: "Lawyer registration started successfully. Please verify your email.",
+    user: result.user,
+    verification: result.verification
+  });
 }
 
 function setRefreshTokenCookie(res, refreshToken, { rememberMe, expiresAt }) {
@@ -116,7 +131,10 @@ export async function refresh(req, res) {
 }
 
 export async function verifyEmail(req, res) {
-  const result = await verifyEmailOtp(req.body);
+  const result = await completeRegistrationVerification({
+    email: req.body.email,
+    otp: req.body.otp
+  });
 
   return res.status(200).json({
     message: "Email verified successfully",
@@ -125,7 +143,7 @@ export async function verifyEmail(req, res) {
 }
 
 export async function resendVerificationOtp(req, res) {
-  const result = await resendEmailVerificationOtp(req.body);
+  const result = await resendRegistrationVerificationOtp(req.body);
 
   return res.status(200).json({
     message: "Verification OTP sent successfully",
@@ -144,4 +162,21 @@ export async function me(req, res) {
   const user = await getCurrentUser(req.user.sub);
 
   return res.status(200).json({ user });
+}
+
+export async function reviewLawyer(req, res) {
+  const result = await reviewLawyerRegistration({
+    lawyerProfileId: req.params.lawyerProfileId,
+    adminUserId: req.user.sub,
+    status: req.body.status,
+    remarks: req.body.remarks
+  });
+
+  return res.status(200).json({
+    message:
+      result.verificationStatus === "approved"
+        ? "Lawyer registration approved successfully"
+        : "Lawyer registration rejected successfully",
+    lawyer: result
+  });
 }
