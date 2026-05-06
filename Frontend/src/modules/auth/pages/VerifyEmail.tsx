@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { MailCheck, RefreshCw } from "lucide-react";
+import { MailCheck, RefreshCw, ShieldCheck } from "lucide-react";
 import AuthForm from "../components/AuthForm";
 import { getAuthErrorMessage } from "../api";
 import { sendClientEmailVerification, verifyClientEmail } from "../../client/api";
@@ -58,7 +58,7 @@ function getInitialOtpExpiresAt() {
 export default function VerifyEmail() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const [email, setEmail] = useState(getStoredEmail);
+  const [email] = useState(getStoredEmail);
   const [otpExpiresAt, setOtpExpiresAt] = useState(getInitialOtpExpiresAt);
   const [secondsRemaining, setSecondsRemaining] = useState(() => (
     getSecondsUntil(getInitialOtpExpiresAt())
@@ -72,12 +72,22 @@ export default function VerifyEmail() {
   const verifyMutation = useMutation({
     mutationKey: ["verify-client-email"],
     mutationFn: verifyClientEmail,
-    onSuccess: () => {
+    onSuccess: (data) => {
       sessionStorage.removeItem(pendingEmailStorageKey);
       sessionStorage.removeItem(pendingOtpExpiresAtStorageKey);
+
+      if (data.user?.role === "lawyer") {
+        return;
+      }
+
       void navigate({ to: "/login", replace: true });
     },
   });
+
+  const verifiedLawyer =
+    verifyMutation.isSuccess && verifyMutation.data?.user?.role === "lawyer"
+      ? verifyMutation.data.user
+      : null;
 
   const resendMutation = useMutation({
   mutationKey: ["resend-client-email-verification"],
@@ -167,6 +177,52 @@ export default function VerifyEmail() {
   resendMutation.mutate({ email });
 };
 
+  if (verifiedLawyer) {
+    return (
+      <AuthForm
+        title="Email verified"
+        subtitle="Your registration is now under admin review"
+        mode="custom"
+        maxWidthClassName="max-w-xl"
+        footer={
+          <div className="text-center text-sm text-gray-600">
+            <button
+              type="button"
+              onClick={() => navigate({ to: "/login", replace: true })}
+              className="font-semibold text-[var(--primary)] hover:underline"
+            >
+              Back to login
+            </button>
+          </div>
+        }
+      >
+        <div className="space-y-5 text-center">
+          <div className="mx-auto grid h-11 w-11 place-items-center rounded-xl bg-green-50 text-[var(--primary)]">
+            <ShieldCheck className="h-5 w-5" />
+          </div>
+          <p className="text-sm text-gray-700">
+            Your email has been successfully verified. Your account is currently
+            under admin approval. Your degree document and bar license card are
+            under verification. You will receive a confirmation email once your
+            account is approved.
+          </p>
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-left text-xs text-amber-800">
+            <span className="font-semibold">Status:</span> Email verified · Admin approval pending
+            <br />
+            <span className="font-semibold">Account:</span> {verifiedLawyer.email}
+          </div>
+          <button
+            type="button"
+            onClick={() => navigate({ to: "/login", replace: true })}
+            className="w-full rounded-lg bg-[var(--primary)] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#024a23] active:scale-[0.99]"
+          >
+            Go to Login
+          </button>
+        </div>
+      </AuthForm>
+    );
+  }
+
   return (
     <AuthForm
       title="Verify your email"
@@ -191,21 +247,18 @@ export default function VerifyEmail() {
         </div>
 
         <div className="space-y-1">
-          <label htmlFor="verification-email" className="text-xs font-semibold text-gray-700">
-            Email Address
-          </label>
-          <input
-            id="verification-email"
-            name="email"
-            value={email}
-            type="email"
-            placeholder="your.email@gmail.com"
-            autoComplete="email"
-            disabled={disabled}
-            onChange={(event) => setEmail(event.target.value)}
-            className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none transition focus:border-[var(--primary)] focus:ring-2 focus:ring-green-100 disabled:cursor-not-allowed disabled:bg-gray-50 disabled:text-gray-500"
-          />
-          {!email ? <p className="text-xs text-red-600">Email is required.</p> : null}
+          <span className="text-xs font-semibold text-gray-700">Email Address</span>
+          <div
+            aria-label="Email pending verification"
+            className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700"
+          >
+            {email || "—"}
+          </div>
+          {!email ? (
+            <p className="text-xs text-red-600">
+              No pending verification was found. Please register again.
+            </p>
+          ) : null}
         </div>
 
         <div className="space-y-2">

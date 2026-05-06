@@ -1,13 +1,56 @@
+import { randomUUID } from "node:crypto";
+
 import { pool } from "../../config/db.js";
 import {
   queueVerificationOtpEmail,
   queueWelcomeEmail
 } from "../../services/email.service.js";
+import {
+  deleteLawyerDocuments,
+  uploadLawyerDocument
+} from "../../services/storage.service.js";
 import { ApiError } from "../../utils/apiError.js";
 import { normalizeCnic } from "../../utils/cnic.js";
 import { compareHash, hashValue } from "../../utils/hash.js";
 import { generateNumericOtp, getEmailOtpExpiryDate } from "../../utils/otp.js";
 import { registrationStrategies } from "./registration.strategies.js";
+
+const lawyerDocumentFields = [
+  { fieldName: "degreeDocument", documentType: "law_degree" },
+  { fieldName: "licenseCardFrontImage", documentType: "bar_license_card_front" },
+  { fieldName: "licenseCardBackImage", documentType: "bar_license_card_back" }
+];
+
+async function uploadLawyerRegistrationDocuments({ files, lawyerKey }) {
+  const uploaded = [];
+
+  try {
+    for (const { fieldName, documentType } of lawyerDocumentFields) {
+      const file = files?.[fieldName]?.[0];
+
+      if (!file) {
+        throw new ApiError(400, `Missing upload for ${fieldName}`);
+      }
+
+      const result = await uploadLawyerDocument({
+        documentType,
+        file,
+        lawyerKey
+      });
+
+      uploaded.push({ fieldName, ...result });
+    }
+
+    return uploaded;
+  } catch (error) {
+    if (uploaded.length > 0) {
+      await deleteLawyerDocuments({
+        storagePaths: uploaded.map((doc) => doc.storagePath)
+      });
+    }
+    throw error;
+  }
+}
 
 function getField(payload, ...names) {
   for (const name of names) {
@@ -217,7 +260,7 @@ async function createPendingRegistration(dbClient, {
   return result.rows[0];
 }
 
-export async function startRegistration({ role, payload }) {
+export async function startRegistration({ role, payload, files }) {
   const strategy = registrationStrategies[role];
 
   if (!strategy) {
@@ -225,8 +268,8 @@ export async function startRegistration({ role, payload }) {
   }
 
   const commonData = normalizeCommonRegistrationFields(payload);
-  const profileData = strategy.mapProfileData(payload);
   const client = await pool.connect();
+  const uploadedStoragePaths = [];
 
   try {
     await deleteExpiredPendingRegistrations(client);
@@ -235,12 +278,35 @@ export async function startRegistration({ role, payload }) {
     await ensureUniqueUserIdentity(client, commonData);
     await ensureUniquePendingIdentity(client, commonData);
 
+    let workingPayload = payload;
+
     if (strategy.roleName === "lawyer") {
+      const previewProfile = strategy.mapProfileData(payload);
+
       await ensureUniqueLawyerLicense(client, {
         email: commonData.email,
-        barLicenseNumber: profileData.barLicenseNumber
+        barLicenseNumber: previewProfile.barLicenseNumber
       });
+
+      const lawyerKey = randomUUID();
+      const uploads = await uploadLawyerRegistrationDocuments({ files, lawyerKey });
+
+      uploadedStoragePaths.push(...uploads.map((doc) => doc.storagePath));
+
+      const uploadByField = uploads.reduce((acc, upload) => {
+        acc[upload.fieldName] = upload;
+        return acc;
+      }, {});
+
+      workingPayload = {
+        ...payload,
+        degreeDocument: uploadByField.degreeDocument,
+        licenseCardFrontImage: uploadByField.licenseCardFrontImage,
+        licenseCardBackImage: uploadByField.licenseCardBackImage
+      };
     }
+
+    const profileData = strategy.mapProfileData(workingPayload);
 
     const otp = generateNumericOtp();
     const otpHash = await hashValue(otp);
@@ -270,6 +336,10 @@ export async function startRegistration({ role, payload }) {
       createdAt: pendingRegistration.created_at
     });
   } catch (error) {
+    if (uploadedStoragePaths.length > 0) {
+      await deleteLawyerDocuments({ storagePaths: uploadedStoragePaths });
+    }
+
     if (error.code === "23505") {
       throw new ApiError(409, "Email, CNIC, or bar license number is already being registered");
     }

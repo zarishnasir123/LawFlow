@@ -8,16 +8,16 @@ import { saveStoredAuthUser } from "../utils/authStorage";
 import PasswordField from "./PasswordField";
 import RoleSelector from "./RoleSelector";
 import TextField from "./TextField";
-import { DEFAULT_ADMIN } from "../mock/admin.default";
 import { useRegistrarAccountsStore } from "../../admin/store/registrars.store";
+import { loginAdmin } from "../../admin/api";
 import { loginClient } from "../../client/api";
+import { loginLawyer } from "../../lawyer/api";
 
 type LoginFormProps = {
   onForgotPassword?: () => void;
-  onAdminLogin?: (email: string, password: string) => boolean;
 };
 
-export default function LoginForm({ onForgotPassword, onAdminLogin }: LoginFormProps) {
+export default function LoginForm({ onForgotPassword }: LoginFormProps) {
   const navigate = useNavigate();
   const role = useLoginStore((state) => state.role);
   const setRole = useLoginStore((state) => state.setRole);
@@ -49,17 +49,72 @@ export default function LoginForm({ onForgotPassword, onAdminLogin }: LoginFormP
           name: fullName || data.user.email,
           refreshTokenExpiresAt: data.refreshTokenExpiresAt,
         },
-        Boolean(variables.rememberMe)
+        Boolean(variables.rememberMe),
+        data.accessToken
       );
       navigate({ to: "/client-dashboard" });
     },
   });
 
-  const disabled = isSubmitting || clientLoginMutation.isPending;
+  const adminLoginMutation = useMutation({
+    mutationFn: loginAdmin,
+    onSuccess: (data, variables) => {
+      if (data.user.role !== "admin") {
+        alert("These credentials do not belong to an admin account.");
+        return;
+      }
+
+      const fullName = [data.user.firstName, data.user.lastName].filter(Boolean).join(" ");
+
+      setEmail(data.user.email);
+      saveStoredAuthUser(
+        {
+          id: data.user.id,
+          email: data.user.email,
+          role: data.user.role,
+          name: fullName || data.user.email,
+          refreshTokenExpiresAt: data.refreshTokenExpiresAt,
+        },
+        Boolean(variables.rememberMe),
+        data.accessToken
+      );
+      navigate({ to: "/admin-dashboard" });
+    },
+  });
+
+  const lawyerLoginMutation = useMutation({
+    mutationFn: loginLawyer,
+    onSuccess: (data, variables) => {
+      if (data.user.role !== "lawyer") {
+        alert("These credentials do not belong to a lawyer account.");
+        return;
+      }
+
+      const fullName = [data.user.firstName, data.user.lastName].filter(Boolean).join(" ");
+
+      setEmail(data.user.email);
+      saveStoredAuthUser(
+        {
+          id: data.user.id,
+          email: data.user.email,
+          role: data.user.role,
+          name: fullName || data.user.email,
+          refreshTokenExpiresAt: data.refreshTokenExpiresAt,
+        },
+        Boolean(variables.rememberMe),
+        data.accessToken
+      );
+      navigate({ to: "/Lawyer-dashboard" });
+    },
+  });
+
+  const disabled =
+    isSubmitting ||
+    clientLoginMutation.isPending ||
+    adminLoginMutation.isPending ||
+    lawyerLoginMutation.isPending;
 
   const submit = (values: LoginPayload) => {
-    if (onAdminLogin?.(values.email, values.password)) return;
-
     setEmail(values.email);
 
     switch (role) {
@@ -72,14 +127,11 @@ export default function LoginForm({ onForgotPassword, onAdminLogin }: LoginFormP
         break;
 
       case "lawyer":
-        localStorage.setItem(
-          "user",
-          JSON.stringify({
-            email: values.email,
-            role: "lawyer",
-          })
-        );
-        navigate({ to: "/Lawyer-dashboard" });
+        lawyerLoginMutation.mutate({
+          email: values.email,
+          password: values.password,
+          rememberMe: Boolean(values.rememberMe),
+        });
         break;
 
       case "registrar": {
@@ -105,28 +157,13 @@ export default function LoginForm({ onForgotPassword, onAdminLogin }: LoginFormP
         break;
       }
 
-      case "admin": {
-        const ok =
-          values.email === DEFAULT_ADMIN.email &&
-          values.password === DEFAULT_ADMIN.password;
-
-        if (!ok) {
-          alert("Invalid admin email or password.");
-          return;
-        }
-
-        localStorage.setItem(
-          "user",
-          JSON.stringify({
-            email: DEFAULT_ADMIN.email,
-            role: DEFAULT_ADMIN.role,
-            name: DEFAULT_ADMIN.name,
-          })
-        );
-
-        navigate({ to: "/admin-dashboard" });
+      case "admin":
+        adminLoginMutation.mutate({
+          email: values.email,
+          password: values.password,
+          rememberMe: Boolean(values.rememberMe),
+        });
         break;
-      }
 
       default:
         navigate({ to: "/login" });
@@ -210,6 +247,18 @@ export default function LoginForm({ onForgotPassword, onAdminLogin }: LoginFormP
       {clientLoginMutation.isError ? (
         <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
           {getAuthErrorMessage(clientLoginMutation.error)}
+        </div>
+      ) : null}
+
+      {adminLoginMutation.isError ? (
+        <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {getAuthErrorMessage(adminLoginMutation.error)}
+        </div>
+      ) : null}
+
+      {lawyerLoginMutation.isError ? (
+        <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {getAuthErrorMessage(lawyerLoginMutation.error)}
         </div>
       ) : null}
     </form>

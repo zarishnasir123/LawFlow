@@ -37,27 +37,6 @@ function isJpgOrPngFile(value: File | FileList | null | undefined) {
   );
 }
 
-function createDocumentMetadata({
-  safeEmail,
-  folder,
-  file,
-  fallbackName
-}: {
-  safeEmail: string;
-  folder: string;
-  file: File | null;
-  fallbackName: string;
-}) {
-  // Supabase upload will later store the file first; Postgres should keep only this private bucket/path metadata.
-  return {
-    storageBucket: "lawyer-verification-documents",
-    storagePath: `lawyers/temp/${safeEmail}/${folder}/${file?.name ?? fallbackName}`,
-    fileName: file?.name ?? null,
-    mimeType: file?.type ?? null,
-    fileSize: file?.size ?? null,
-  };
-}
-
 export default function LawyerRegisterForm() {
   const navigate = useNavigate();
   const {
@@ -106,13 +85,15 @@ export default function LawyerRegisterForm() {
 
   const registerMutation = useMutation({
     mutationFn: registerLawyer,
-    onSuccess: (_data, variables) => {
-      navigate({
-        to: "/verify-email",
-        search: {
-          email: variables.email,
-        },
-      });
+    onSuccess: (data) => {
+      sessionStorage.setItem("lawflow_pending_verification_email", data.user.email);
+      if (data.verification?.expiresAt) {
+        sessionStorage.setItem(
+          "lawflow_pending_verification_expires_at",
+          data.verification.expiresAt
+        );
+      }
+      navigate({ to: "/verify-email" });
     },
   });
 
@@ -135,7 +116,10 @@ export default function LawyerRegisterForm() {
     const degreeFile = getSelectedFile(values.lawDegree);
     const licenseFrontFile = getSelectedFile(values.barLicenseCardFront);
     const licenseBackFile = getSelectedFile(values.barLicenseCardBack);
-    const safeEmail = values.email.trim().toLowerCase().replace(/[^a-z0-9]/gi, "-");
+
+    if (!degreeFile || !licenseFrontFile || !licenseBackFile) {
+      return;
+    }
 
     registerMutation.mutate({
       firstName: values.firstName,
@@ -148,34 +132,12 @@ export default function LawyerRegisterForm() {
       barLicenseNumber: values.barLicenseNumber,
       experienceYears: null,
       consultationFee: null,
-
-      degreeDocument: createDocumentMetadata({
-        safeEmail,
-        folder: "degree",
-        file: degreeFile,
-        fallbackName: "degree.pdf",
-      }),
-
-      licenseCardFrontImage: createDocumentMetadata({
-        safeEmail,
-        folder: "bar-license-front",
-        file: licenseFrontFile,
-        fallbackName: "front.jpg",
-      }),
-
-      licenseCardBackImage: createDocumentMetadata({
-        safeEmail,
-        folder: "bar-license-back",
-        file: licenseBackFile,
-        fallbackName: "back.jpg",
-      }),
-
-      // OCR is not connected yet, so backend will keep cnicMatch=false and admin will review.
-      extractedCnic: null,
-      ocrReadable: true,
-
       password: values.password,
       confirmPassword: values.confirmPassword,
+
+      degreeDocument: degreeFile,
+      licenseCardFrontImage: licenseFrontFile,
+      licenseCardBackImage: licenseBackFile,
     });
   };
 

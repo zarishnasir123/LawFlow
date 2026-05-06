@@ -1,5 +1,6 @@
 import {
   getCurrentUser,
+  listPendingLawyerVerifications,
   loginUser,
   logoutUser,
   refreshAuthSession,
@@ -56,7 +57,8 @@ export async function registerClient(req, res) {
 export async function registerLawyer(req, res) {
   const result = await startRegistration({
     role: "lawyer",
-    payload: req.body
+    payload: req.body,
+    files: req.files
   });
 
   return res.status(201).json({
@@ -179,4 +181,13 @@ export async function reviewLawyer(req, res) {
         : "Lawyer registration rejected successfully",
     lawyer: result
   });
+}
+
+export async function listPendingLawyers(req, res) {
+  const result = await listPendingLawyerVerifications({
+    limit: req.query.limit,
+    offset: req.query.offset
+  });
+
+  return res.status(200).json(result);
 }
