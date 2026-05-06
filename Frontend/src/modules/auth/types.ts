@@ -49,10 +49,9 @@ export type ClientRegisterFormValues = {
   cnic: string;
   password: string;
   confirmPassword: string;
-  agree: boolean;
 };
 
-export type ClientRegisterSubmit = Omit<ClientRegisterFormValues, "confirmPassword" | "agree">;
+export type ClientRegisterSubmit = Omit<ClientRegisterFormValues, "confirmPassword">;
 
 export type ClientRegisterPayload = ClientRegisterSubmit & {
   confirmPassword: string;
@@ -89,13 +88,13 @@ export type LawyerRegisterFormValues = {
   districtBar: string;
   barLicenseNumber: string;
   lawDegree: File | null;
-  barLicenseCard: File | null;
+  barLicenseCardFront: File | null;
+  barLicenseCardBack: File | null;
   password: string;
   confirmPassword: string;
-  agree: boolean;
 };
 
-export type LawyerRegisterSubmit = Omit<LawyerRegisterFormValues, "confirmPassword" | "agree">;
+export type LawyerRegisterSubmit = Omit<LawyerRegisterFormValues, "confirmPassword">;
 
 export type LawyerRegisterPayload = LawyerRegisterSubmit & {
   role: "lawyer";
@@ -121,7 +120,8 @@ export type LawyerDegreeUploadPayload = {
 };
 
 export type LawyerBarLicenseUploadPayload = {
-  barLicenseCard: File;
+  barLicenseCardFront: File;
+  barLicenseCardBack: File;
 };
 
 export type RegisterResponse = {

@@ -1,12 +1,7 @@
 import { pool } from "../../config/db.js";
-import {
-  queueVerificationOtpEmail,
-  queueWelcomeEmail
-} from "../../services/email.service.js";
+import { queueLawyerRegistrationDecisionEmail } from "../../services/email.service.js";
 import { ApiError } from "../../utils/apiError.js";
-import { normalizeCnic } from "../../utils/cnic.js";
 import { compareHash, hashValue } from "../../utils/hash.js";
-import { generateNumericOtp, getEmailOtpExpiryDate } from "../../utils/otp.js";
 import {
   getRefreshTokenDuration,
   getRefreshTokenExpiryDate,
@@ -18,110 +13,6 @@ import {
 const maxFailedLoginAttempts = 5;
 const lockDurationMinutes = 15;
 
-const pendingClientRegistrations = new Map();
-
-function getPendingClientRegistration(email, { allowExpired = false } = {}) {
-  const normalizedEmail = email.trim().toLowerCase();
-  const pendingRegistration = pendingClientRegistrations.get(normalizedEmail);
-
-  if (!pendingRegistration) {
-    return null;
-  }
-
-  const isExpired = new Date(pendingRegistration.expiresAt).getTime() < Date.now();
-
-  if (isExpired && !allowExpired) {
-    return null;
-  }
-
-  return pendingRegistration;
-}
-
-function removeExpiredPendingClientRegistrations() {
-  for (const [email, pendingRegistration] of pendingClientRegistrations.entries()) {
-    if (new Date(pendingRegistration.expiresAt).getTime() < Date.now()) {
-      pendingClientRegistrations.delete(email);
-    }
-  }
-}
-
-function findPendingClientRegistrationByCnic(cnic) {
-  removeExpiredPendingClientRegistrations();
-
-  for (const pendingRegistration of pendingClientRegistrations.values()) {
-    if (pendingRegistration.cnic === cnic) {
-      return pendingRegistration;
-    }
-  }
-
-  return null;
-}
-
-async function getRoleId(client, roleName) {
-  const result = await client.query(
-    "SELECT id FROM roles WHERE name = $1",
-    [roleName]
-  );
-
-  if (result.rowCount === 0) {
-    throw new ApiError(500, `Required role is missing: ${roleName}`);
-  }
-
-  return result.rows[0].id;
-}
-
-async function ensureUniqueUserIdentity(client, { email, cnic }) {
-  const result = await client.query(
-    "SELECT email, cnic FROM users WHERE email = $1 OR cnic = $2 LIMIT 1",
-    [email, cnic]
-  );
-
-  if (result.rowCount === 0) {
-    return;
-  }
-
-  const existingUser = result.rows[0];
-
-  if (existingUser.email === email) {
-    throw new ApiError(409, "Email is already registered");
-  }
-
-  throw new ApiError(409, "CNIC is already registered");
-}
-
-async function createEmailVerificationOtp(client, userId) {
-  const otp = generateNumericOtp();
-  const otpHash = await hashValue(otp);
-  const expiresAt = getEmailOtpExpiryDate();
-
-  // Only one active email verification OTP should exist per user.
-  await client.query(
-    `UPDATE email_verification_otps
-    SET used_at = NOW()
-    WHERE user_id = $1 AND used_at IS NULL`,
-    [userId]
-  );
-
-  await client.query(
-    `INSERT INTO email_verification_otps (user_id, otp_hash, expires_at)
-    VALUES ($1, $2, $3)`,
-    [userId, otpHash, expiresAt]
-  );
-
-  return { otp, expiresAt };
-}
-
-async function findUserByEmail(client, email) {
-  const result = await client.query(
-    `SELECT id, first_name, email, email_verified, account_status
-    FROM users
-    WHERE email = $1`,
-    [email]
-  );
-
-  return result.rows[0] || null;
-}
-
 function mapAuthUser(row) {
   return {
     id: row.id,
@@ -132,7 +23,8 @@ function mapAuthUser(row) {
     cnic: row.cnic,
     role: row.role,
     emailVerified: row.email_verified,
-    accountStatus: row.account_status
+    accountStatus: row.account_status,
+    lawyerVerificationStatus: row.lawyer_verification_status || null
   };
 }
 
@@ -150,9 +42,11 @@ async function findAuthUserByEmail(email) {
       users.account_status,
       users.failed_login_attempts,
       users.locked_until,
-      roles.name AS role
+      roles.name AS role,
+      lawyer_profiles.verification_status AS lawyer_verification_status
     FROM users
     JOIN roles ON roles.id = users.role_id
+    LEFT JOIN lawyer_profiles ON lawyer_profiles.user_id = users.id
     WHERE users.email = $1`,
     [email]
   );
@@ -171,9 +65,11 @@ async function findAuthUserById(userId) {
       users.cnic,
       users.email_verified,
       users.account_status,
-      roles.name AS role
+      roles.name AS role,
+      lawyer_profiles.verification_status AS lawyer_verification_status
     FROM users
     JOIN roles ON roles.id = users.role_id
+    LEFT JOIN lawyer_profiles ON lawyer_profiles.user_id = users.id
     WHERE users.id = $1`,
     [userId]
   );
@@ -266,227 +162,6 @@ async function revokeAuthSession(sessionId) {
   );
 }
 
-export async function registerClientAccount(payload) {
-  const email = payload.email.trim().toLowerCase();
-  const cnic = normalizeCnic(payload.cnic);
-
-  const client = await pool.connect();
-
-  try {
-    await ensureUniqueUserIdentity(client, { email, cnic });
-  } finally {
-    client.release();
-  }
-
-  const pendingRegistrationWithSameCnic = findPendingClientRegistrationByCnic(cnic);
-
-  if (pendingRegistrationWithSameCnic && pendingRegistrationWithSameCnic.email !== email) {
-    throw new ApiError(409, "CNIC is already being registered. Please verify the pending email first.");
-  }
-
-  const otp = generateNumericOtp();
-  const otpHash = await hashValue(otp);
-  const expiresAt = getEmailOtpExpiryDate();
-  const passwordHash = await hashValue(payload.password);
-
-  const pendingRegistration = {
-    firstName: payload.firstName.trim(),
-    lastName: payload.lastName.trim(),
-    email,
-    phone: payload.phone.trim(),
-    cnic,
-    passwordHash,
-    address: payload.address?.trim() || null,
-    city: payload.city?.trim() || null,
-    tehsil: payload.tehsil?.trim() || null,
-    otpHash,
-    expiresAt,
-    createdAt: new Date()
-  };
-
-  pendingClientRegistrations.set(email, pendingRegistration);
-
-  const emailDelivery = queueVerificationOtpEmail({
-    email,
-    otp,
-    firstName: pendingRegistration.firstName
-  });
-
-  return {
-    user: {
-      id: null,
-      firstName: pendingRegistration.firstName,
-      lastName: pendingRegistration.lastName,
-      email: pendingRegistration.email,
-      phone: pendingRegistration.phone,
-      cnic: pendingRegistration.cnic,
-      role: "client",
-      emailVerified: false,
-      accountStatus: "pending_verification",
-      createdAt: pendingRegistration.createdAt
-    },
-    verification: {
-      emailSent: emailDelivery.mode === "smtp",
-      emailQueued: emailDelivery.queued,
-      deliveryMode: emailDelivery.mode,
-      deliveryReason: emailDelivery.reason,
-      expiresAt
-    }
-  };
-}
-
-export async function verifyEmailOtp({ email, otp }) {
-  const normalizedEmail = email.trim().toLowerCase();
-  const pendingRegistration = getPendingClientRegistration(normalizedEmail);
-
-  if (!pendingRegistration) {
-    const client = await pool.connect();
-
-    try {
-      const existingUser = await findUserByEmail(client, normalizedEmail);
-
-      if (existingUser?.email_verified) {
-        return {
-          email: existingUser.email,
-          emailVerified: true,
-          accountStatus: existingUser.account_status
-        };
-      }
-    } finally {
-      client.release();
-    }
-
-    throw new ApiError(400, "OTP expired. Please register again.");
-  }
-
-  const otpMatches = await compareHash(otp, pendingRegistration.otpHash);
-
-  if (!otpMatches) {
-    throw new ApiError(400, "Invalid verification OTP");
-  }
-
-  const client = await pool.connect();
-  let verifiedUser = null;
-
-  try {
-    await client.query("BEGIN");
-
-    await ensureUniqueUserIdentity(client, {
-      email: pendingRegistration.email,
-      cnic: pendingRegistration.cnic
-    });
-
-    const clientRoleId = await getRoleId(client, "client");
-
-    const userResult = await client.query(
-      `INSERT INTO users (
-        role_id,
-        first_name,
-        last_name,
-        email,
-        phone,
-        cnic,
-        password_hash,
-        auth_provider,
-        email_verified,
-        account_status
-      )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, 'local', true, 'active')
-      RETURNING id, first_name, last_name, email, phone, cnic, email_verified, account_status, created_at`,
-      [
-        clientRoleId,
-        pendingRegistration.firstName,
-        pendingRegistration.lastName,
-        pendingRegistration.email,
-        pendingRegistration.phone,
-        pendingRegistration.cnic,
-        pendingRegistration.passwordHash
-      ]
-    );
-
-    const user = userResult.rows[0];
-
-    await client.query(
-      `INSERT INTO client_profiles (user_id, address, city, tehsil)
-      VALUES ($1, $2, $3, $4)`,
-      [
-        user.id,
-        pendingRegistration.address,
-        pendingRegistration.city,
-        pendingRegistration.tehsil
-      ]
-    );
-
-    await client.query("COMMIT");
-
-    verifiedUser = user;
-    pendingClientRegistrations.delete(normalizedEmail);
-  } catch (error) {
-    await client.query("ROLLBACK");
-
-    if (error.code === "23505") {
-      throw new ApiError(409, "Email or CNIC is already registered");
-    }
-
-    throw error;
-  } finally {
-    client.release();
-  }
-
-  queueWelcomeEmail({
-    email: verifiedUser.email,
-    firstName: verifiedUser.first_name
-  });
-
-  return {
-    id: verifiedUser.id,
-    firstName: verifiedUser.first_name,
-    lastName: verifiedUser.last_name,
-    email: verifiedUser.email,
-    phone: verifiedUser.phone,
-    cnic: verifiedUser.cnic,
-    role: "client",
-    emailVerified: verifiedUser.email_verified,
-    accountStatus: verifiedUser.account_status,
-    createdAt: verifiedUser.created_at
-  };
-}
-
-export async function resendEmailVerificationOtp({ email }) {
-  const normalizedEmail = email.trim().toLowerCase();
-  const pendingRegistration = getPendingClientRegistration(normalizedEmail, {
-    allowExpired: true
-  });
-
-  if (!pendingRegistration) {
-    throw new ApiError(400, "Registration session expired. Please register again.");
-  }
-
-  const otp = generateNumericOtp();
-  const otpHash = await hashValue(otp);
-  const expiresAt = getEmailOtpExpiryDate();
-
-  pendingRegistration.otpHash = otpHash;
-  pendingRegistration.expiresAt = expiresAt;
-
-  pendingClientRegistrations.set(normalizedEmail, pendingRegistration);
-
-  const emailDelivery = queueVerificationOtpEmail({
-    email: pendingRegistration.email,
-    otp,
-    firstName: pendingRegistration.firstName
-  });
-
-  return {
-    email: pendingRegistration.email,
-    emailSent: emailDelivery.mode === "smtp",
-    emailQueued: emailDelivery.queued,
-    deliveryMode: emailDelivery.mode,
-    deliveryReason: emailDelivery.reason,
-    expiresAt
-  };
-}
-
 export async function loginUser({ email, password, rememberMe = false, req }) {
   const normalizedEmail = email.trim().toLowerCase();
   const user = await findAuthUserByEmail(normalizedEmail);
@@ -508,6 +183,10 @@ export async function loginUser({ email, password, rememberMe = false, req }) {
 
   if (!user.email_verified) {
     throw new ApiError(403, "Please verify your email before logging in");
+  }
+
+  if (user.role === "lawyer" && user.lawyer_verification_status !== "approved") {
+    throw new ApiError(403, "Your lawyer account is pending admin approval");
   }
 
   if (user.account_status !== "active") {
@@ -561,6 +240,10 @@ export async function refreshAuthSession({ refreshToken, req }) {
 
   if (!user.email_verified || user.account_status !== "active") {
     throw new ApiError(403, "Account is not allowed to refresh session");
+  }
+
+  if (user.role === "lawyer" && user.lawyer_verification_status !== "approved") {
+    throw new ApiError(403, "Lawyer account is not approved");
   }
 
   const matchingSession = await findMatchingRefreshSession({
@@ -630,4 +313,119 @@ export async function getCurrentUser(userId) {
   }
 
   return mapAuthUser(user);
+}
+
+export async function reviewLawyerRegistration({
+  lawyerProfileId,
+  adminUserId,
+  status,
+  remarks = null
+}) {
+  if (!["approved", "rejected"].includes(status)) {
+    throw new ApiError(400, "Status must be approved or rejected");
+  }
+
+  if (status === "rejected" && !remarks?.trim()) {
+    throw new ApiError(400, "Rejection remarks are required");
+  }
+
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    const adminResult = await client.query(
+      `SELECT users.id, roles.name AS role
+      FROM users
+      JOIN roles ON roles.id = users.role_id
+      WHERE users.id = $1`,
+      [adminUserId]
+    );
+
+    if (adminResult.rowCount === 0) {
+      throw new ApiError(404, "Admin user not found");
+    }
+
+    if (adminResult.rows[0].role !== "admin") {
+      throw new ApiError(403, "Only admin can review lawyer registrations");
+    }
+
+    const lawyerProfileResult = await client.query(
+      `SELECT
+        lawyer_profiles.id,
+        lawyer_profiles.user_id,
+        lawyer_profiles.verification_status,
+        users.email,
+        users.first_name,
+        users.account_status
+      FROM lawyer_profiles
+      JOIN users ON users.id = lawyer_profiles.user_id
+      WHERE lawyer_profiles.id = $1`,
+      [lawyerProfileId]
+    );
+
+    if (lawyerProfileResult.rowCount === 0) {
+      throw new ApiError(404, "Lawyer registration request not found");
+    }
+
+    const lawyerProfile = lawyerProfileResult.rows[0];
+    const nextAccountStatus = status === "approved" ? "active" : "inactive";
+
+    const updatedProfileResult = await client.query(
+      `UPDATE lawyer_profiles
+      SET verification_status = $1,
+          verification_remarks = $2,
+          verified_by = $3,
+          verified_at = NOW(),
+          updated_at = NOW()
+      WHERE id = $4
+      RETURNING id, user_id, verification_status, verification_remarks, verified_by, verified_at`,
+      [
+        status,
+        remarks?.trim() || null,
+        adminUserId,
+        lawyerProfileId
+      ]
+    );
+
+    const updatedUserResult = await client.query(
+      `UPDATE users
+      SET account_status = $1,
+          updated_at = NOW()
+      WHERE id = $2
+      RETURNING id, first_name, last_name, email, account_status, email_verified`,
+      [nextAccountStatus, lawyerProfile.user_id]
+    );
+
+    await client.query("COMMIT");
+
+    const updatedProfile = updatedProfileResult.rows[0];
+    const updatedUser = updatedUserResult.rows[0];
+
+    queueLawyerRegistrationDecisionEmail({
+      email: updatedUser.email,
+      firstName: updatedUser.first_name,
+      status,
+      remarks: updatedProfile.verification_remarks
+    });
+
+    return {
+      lawyerProfileId: updatedProfile.id,
+      userId: updatedUser.id,
+      firstName: updatedUser.first_name,
+      lastName: updatedUser.last_name,
+      email: updatedUser.email,
+      emailVerified: updatedUser.email_verified,
+      accountStatus: updatedUser.account_status,
+      verificationStatus: updatedProfile.verification_status,
+      verificationRemarks: updatedProfile.verification_remarks,
+      verifiedBy: updatedProfile.verified_by,
+      verifiedAt: updatedProfile.verified_at
+    };
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
 }

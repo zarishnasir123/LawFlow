@@ -33,8 +33,12 @@ export async function registerLawyer(
     formData.append("lawDegree", payload.lawDegree);
   }
 
-  if (payload.barLicenseCard) {
-    formData.append("barLicenseCard", payload.barLicenseCard);
+  if (payload.barLicenseCardFront) {
+    formData.append("barLicenseCardFront", payload.barLicenseCardFront);
+  }
+
+  if (payload.barLicenseCardBack) {
+    formData.append("barLicenseCardBack", payload.barLicenseCardBack);
   }
 
   const { data } = await apiClient.post<RegisterResponse>(
@@ -92,7 +96,8 @@ export async function uploadLawyerBarLicenseCard(
   payload: LawyerBarLicenseUploadPayload
 ): Promise<VerificationResponse> {
   const formData = new FormData();
-  formData.append("barLicenseCard", payload.barLicenseCard);
+  formData.append("barLicenseCardFront", payload.barLicenseCardFront);
+  formData.append("barLicenseCardBack", payload.barLicenseCardBack);
 
   const { data } = await apiClient.post<VerificationResponse>(
     "/auth/lawyer/documents/bar-license",

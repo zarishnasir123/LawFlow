@@ -70,8 +70,7 @@ export async function sendEmail({ to, subject, text, html }) {
     console.log("[DEV EMAIL]", {
       reason: `SMTP is not configured. Missing or placeholder values: ${emailConfig.issues.join(", ")}`,
       to,
-      subject,
-      text
+      subject
     });
     return {
       mode: "console",
@@ -333,4 +332,88 @@ export function sendWelcomeEmail({ email, firstName }) {
 
 export function queueWelcomeEmail({ email, firstName }) {
   return queueEmailTask("welcome", () => sendWelcomeEmail({ email, firstName }));
+}
+
+export function sendLawyerRegistrationDecisionEmail({
+  email,
+  firstName,
+  status,
+  remarks
+}) {
+  const approved = status === "approved";
+  const subject = approved
+    ? "Your LawFlow lawyer account is approved"
+    : "Your LawFlow lawyer registration needs updates";
+  const safeFirstName = escapeHtml(firstName);
+  const safeRemarks = escapeHtml(remarks || "Please review your submitted documents and re-upload the required files.");
+  const loginUrl = `${process.env.FRONTEND_URL || "http://localhost:5173"}/login`;
+  const text = approved
+    ? [
+        `Hello ${firstName},`,
+        "",
+        "Your LawFlow lawyer account has been approved.",
+        "You can now log in and access your lawyer dashboard.",
+        "",
+        "Thank you for choosing LawFlow."
+      ].join("\n")
+    : [
+        `Hello ${firstName},`,
+        "",
+        "Your LawFlow lawyer registration was rejected by admin review.",
+        `Reason: ${remarks || "Please re-upload documents for review."}`,
+        "",
+        "Please update your documents and submit again."
+      ].join("\n");
+
+  const html = createEmailLayout({
+    title: approved ? "Lawyer Account Approved" : "Lawyer Registration Update Required",
+    previewText: approved
+      ? "Your LawFlow lawyer account is approved."
+      : "Your LawFlow lawyer registration needs updates.",
+    bodyHtml: approved
+      ? `
+        <h1 style="margin:0 0 12px;color:${defaultBrandColor};font-size:24px;line-height:1.3;">Account approved</h1>
+        <p style="margin:0 0 18px;color:#344054;font-size:15px;line-height:1.7;">Hello ${safeFirstName},</p>
+        <p style="margin:0 0 18px;color:#344054;font-size:15px;line-height:1.7;">
+          Your lawyer registration has been approved. Your account is now active.
+        </p>
+        <table role="presentation" cellspacing="0" cellpadding="0" style="margin:24px 0;">
+          <tr>
+            <td style="background:${defaultBrandColor};border-radius:10px;">
+              <a href="${escapeHtml(loginUrl)}" style="display:inline-block;padding:13px 22px;color:#ffffff;text-decoration:none;font-size:14px;font-weight:700;">
+                Continue to Login
+              </a>
+            </td>
+          </tr>
+        </table>
+      `
+      : `
+        <h1 style="margin:0 0 12px;color:${defaultBrandColor};font-size:24px;line-height:1.3;">Registration update required</h1>
+        <p style="margin:0 0 18px;color:#344054;font-size:15px;line-height:1.7;">Hello ${safeFirstName},</p>
+        <p style="margin:0 0 18px;color:#344054;font-size:15px;line-height:1.7;">
+          Your lawyer registration could not be approved after admin review.
+        </p>
+        <div style="margin:22px 0;padding:20px;background:#fff8ed;border:1px solid #f7d59a;border-radius:14px;">
+          <p style="margin:0;color:#7a4b00;font-size:14px;line-height:1.7;">
+            ${safeRemarks}
+          </p>
+        </div>
+        <p style="margin:0;color:#667085;font-size:13px;line-height:1.7;">
+          Please re-upload the requested documents for another review.
+        </p>
+      `
+  });
+
+  return sendEmail({ to: email, subject, text, html });
+}
+
+export function queueLawyerRegistrationDecisionEmail({
+  email,
+  firstName,
+  status,
+  remarks
+}) {
+  return queueEmailTask("lawyer-registration-decision", () => (
+    sendLawyerRegistrationDecisionEmail({ email, firstName, status, remarks })
+  ));
 }

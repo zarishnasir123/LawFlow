@@ -13,7 +13,6 @@ export default function ClientRegisterForm() {
     register,
     handleSubmit,
     getValues,
-    clearErrors,
     formState: { errors, isSubmitting: isFormSubmitting },
   } = useForm<ClientRegisterFormValues>({
     mode: "onChange",
@@ -26,7 +25,6 @@ export default function ClientRegisterForm() {
       cnic: "",
       password: "",
       confirmPassword: "",
-      agree: false,
     },
   });
 
@@ -45,9 +43,6 @@ export default function ClientRegisterForm() {
   });
 
   const disabled = registerMutation.isPending || isFormSubmitting;
-  const agreeField = register("agree", {
-    validate: (value) => value === true || "You must accept the terms to continue.",
-  });
 
   const submit = (values: ClientRegisterFormValues) => {
     registerMutation.mutate({
@@ -164,24 +159,6 @@ export default function ClientRegisterForm() {
           disabled={disabled}
         />
       </div>
-
-      <label className="flex items-start gap-2 text-xs text-gray-600">
-        <input
-          {...agreeField}
-          type="checkbox"
-          className="mt-1 h-4 w-4 rounded border-gray-300"
-          disabled={disabled}
-          onChange={(event) => {
-            agreeField.onChange(event);
-
-            if (event.target.checked) {
-              clearErrors("agree");
-            }
-          }}
-        />
-        I agree to the Terms of Service and Privacy Policy
-      </label>
-      {errors.agree ? <p className="text-xs text-red-600">{errors.agree.message}</p> : null}
 
       <button
         type="submit"
