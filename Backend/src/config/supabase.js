@@ -22,6 +22,7 @@ export function getSupabaseStorageConfig() {
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   const bucket = process.env.SUPABASE_LAWYER_BUCKET || "lawyer-verification-documents";
   const previewUrlExpiresIn = Number(process.env.SUPABASE_PREVIEW_URL_EXPIRES_IN || 900);
+ 
 
   const issues = [];
   if (isPlaceholder(url)) issues.push("SUPABASE_URL");
@@ -39,6 +40,24 @@ export function getSupabaseStorageConfig() {
   };
 }
 
+export const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY,
+  {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+    },
+    global: {
+      headers: {
+        "X-Client-Info": "lawflow-backend",
+      },
+    },
+    realtime: {
+      transport: WebSocket,
+    },
+  }
+);
 export function getSupabaseClient() {
   const config = getSupabaseStorageConfig();
 

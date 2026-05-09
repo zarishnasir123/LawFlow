@@ -7,6 +7,7 @@ import { registerClient } from "../../client/api";
 import { getAuthErrorMessage } from "../api";
 import type { ClientRegisterFormValues } from "../types";
 
+
 export default function ClientRegisterForm() {
   const navigate = useNavigate();
   const {
@@ -41,6 +42,10 @@ export default function ClientRegisterForm() {
       navigate({ to: "/verify-email" });
     },
   });
+  
+  const handleGoogleLogin = () => {
+  window.location.href = "http://localhost:5000/auth/google";
+};
 
   const disabled = registerMutation.isPending || isFormSubmitting;
 
@@ -55,8 +60,8 @@ export default function ClientRegisterForm() {
       confirmPassword: values.confirmPassword,
     });
   };
-
-  return (
+   
+  return ( 
     <form onSubmit={handleSubmit(submit)} className="space-y-3">
       <div className="grid gap-2 sm:grid-cols-2">
         <TextField
@@ -190,9 +195,10 @@ export default function ClientRegisterForm() {
         <span className="text-xs text-gray-500">or continue with</span>
         <span className="h-px flex-1 bg-gray-200" />
       </div>
-
+        
       <button
         type="button"
+         onClick={handleGoogleLogin}
         className="flex w-full items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 transition hover:bg-gray-50"
       >
         <span className="inline-flex h-5 w-5">

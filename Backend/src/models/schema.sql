@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS users (
   last_name VARCHAR(100) NOT NULL,
   email CITEXT UNIQUE NOT NULL,
   phone VARCHAR(20),
-  cnic VARCHAR(15) UNIQUE NOT NULL,
+  cnic VARCHAR(15) UNIQUE,
 
   -- Nullable because Google OAuth users may not have a local password.
   password_hash TEXT,
@@ -36,7 +36,7 @@ CREATE TABLE IF NOT EXISTS users (
   updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
 
   CONSTRAINT valid_cnic_format
-    CHECK (cnic ~ '^[0-9]{5}-[0-9]{7}-[0-9]{1}$'),
+    CHECK (cnic IS NULL OR cnic ~ '^[0-9]{5}-[0-9]{7}-[0-9]{1}$'),
   CONSTRAINT valid_account_status
     CHECK (account_status IN ('active', 'inactive', 'suspended', 'pending_verification')),
   CONSTRAINT valid_auth_provider
@@ -279,3 +279,40 @@ CREATE INDEX IF NOT EXISTS idx_lawyer_verification_documents_profile_id
 
 CREATE INDEX IF NOT EXISTS idx_lawyer_profiles_verification_status
   ON lawyer_profiles(verification_status);
+
+-- Function to handle new user sync from auth.users to public.users
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS trigger AS $$
+BEGIN
+  INSERT INTO public.users (id, role_id, first_name, last_name, email, auth_provider, email_verified, account_status)
+  VALUES (
+    new.id,
+    (SELECT id FROM public.roles WHERE name = 'client'),
+    COALESCE(new.raw_user_meta_data->>'full_name', split_part(new.email, '@', 1)),
+    '',
+    new.email,
+    'google',
+    true,
+    'active'
+  )
+  ON CONFLICT (email) DO UPDATE
+  SET first_name = EXCLUDED.first_name,
+      auth_provider = 'google',
+      email_verified = true,
+      account_status = 'active',
+      updated_at = NOW();
+
+  INSERT INTO public.client_profiles (user_id)
+  VALUES (new.id)
+  ON CONFLICT (user_id) DO NOTHING;
+
+  RETURN new;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Trigger to run the function on every signup
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+

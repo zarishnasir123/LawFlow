@@ -1,6 +1,7 @@
 import { Router } from "express";
-
 import {
+  googleLogin,
+  googleCallback,
   listPendingLawyers,
   login,
   logout,
@@ -83,5 +84,6 @@ router.post(
 );
 router.post("/logout", asyncHandler(logout));
 router.get("/me", authenticate, asyncHandler(me));
-
+router.get("/google", asyncHandler(googleLogin));
+router.get("/google/callback", asyncHandler(googleCallback));
 export default router;

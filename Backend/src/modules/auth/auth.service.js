@@ -544,3 +544,77 @@ export async function reviewLawyerRegistration({
     client.release();
   }
 }
+
+export async function syncOAuthUser({ supabaseUserId, email, firstName, lastName, provider }) {
+  console.log(`Starting syncOAuthUser for email: ${email}, provider: ${provider}, ID: ${supabaseUserId}`);
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+    console.log("Transaction started");
+
+    const roleResult = await client.query(
+      "SELECT id FROM roles WHERE name = 'client'"
+    );
+
+    if (roleResult.rowCount === 0) {
+      console.error("Critical Error: 'client' role not found in roles table.");
+      throw new ApiError(500, "Required role 'client' is missing");
+    }
+
+    const roleId = roleResult.rows[0].id;
+    console.log(`Found roleId for client: ${roleId}`);
+
+    // Use ON CONFLICT to update if user already exists
+    // We use the supabaseUserId as our public.users ID
+    console.log("Attempting to insert/update user record...");
+    const userResult = await client.query(
+      `INSERT INTO users (
+        id,
+        role_id,
+        first_name,
+        last_name,
+        email,
+        auth_provider,
+        email_verified,
+        account_status
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, true, 'active')
+      ON CONFLICT (email) DO UPDATE
+      SET first_name = EXCLUDED.first_name,
+          last_name = EXCLUDED.last_name,
+          auth_provider = EXCLUDED.auth_provider,
+          email_verified = true,
+          account_status = 'active',
+          updated_at = NOW()
+      RETURNING id, first_name, last_name, email`,
+      [supabaseUserId, roleId, firstName, lastName, email, provider]
+    );
+
+    const user = userResult.rows[0];
+    console.log(`User record sync successful. ID: ${user.id}`);
+
+    // Ensure client profile exists
+    console.log("Ensuring client profile exists...");
+    await client.query(
+      `INSERT INTO client_profiles (user_id)
+      VALUES ($1)
+      ON CONFLICT (user_id) DO NOTHING`,
+      [user.id]
+    );
+    console.log("Client profile check complete");
+
+    await client.query("COMMIT");
+    console.log("Transaction committed successfully");
+
+    const authUser = await findAuthUserById(user.id);
+    return mapAuthUser(authUser);
+  } catch (error) {
+    console.error("Database sync error occurred:", error);
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+    console.log("DB connection released");
+  }
+}
