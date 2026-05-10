@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { pool } from "../../config/db.js";
 import {
+  queueGoogleWelcomeEmail,
   queueVerificationOtpEmail,
   queueWelcomeEmail
 } from "../../services/email.service.js";
@@ -577,7 +578,7 @@ export async function completeOAuthRegistration({
 
     await dbClient.query("COMMIT");
 
-    queueWelcomeEmail({
+    queueGoogleWelcomeEmail({
       email: normalizedEmail,
       firstName: profileData.firstName
     });

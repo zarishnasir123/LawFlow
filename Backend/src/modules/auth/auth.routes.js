@@ -11,6 +11,7 @@ import {
   registerLawyer,
   resendVerificationOtp,
   reviewLawyer,
+  supabaseAuthWebhook,
   verifyEmail
 } from "./auth.controller.js";
 import { asyncHandler } from "../../middleware/asyncHandler.js";
@@ -86,5 +87,6 @@ router.post("/logout", asyncHandler(logout));
 router.get("/me", authenticate, asyncHandler(me));
 router.get("/google", asyncHandler(googleLogin));
 router.post("/google/session", asyncHandler(googleSession));
+router.post("/webhooks/supabase", asyncHandler(supabaseAuthWebhook));
 
 export default router;

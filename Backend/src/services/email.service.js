@@ -158,18 +158,27 @@ function createLogoMarkup() {
     return `
       <img
         src="${escapeHtml(logoUrl)}"
-        width="64"
-        height="64"
+        width="72"
+        height="72"
         alt="${brandName} logo"
-        style="display:block;width:64px;height:64px;border-radius:18px;object-fit:cover;margin:0 auto 12px;"
+        style="display:block;width:72px;height:72px;border-radius:14px;object-fit:cover;margin:0 auto 14px;"
       />
     `;
   }
 
+  // Mirrors the LawFlow homepage logo: brand-green rounded square with a
+  // white scales-of-justice glyph inside. Uses a Unicode character (U+2696)
+  // rendered as an HTML entity rather than inline SVG, since Gmail and
+  // several mobile clients strip inline SVG from emails.
   return `
-    <div style="width:64px;height:64px;border-radius:18px;background:#ffffff;color:${defaultBrandColor};font-size:22px;font-weight:800;line-height:64px;text-align:center;margin:0 auto 12px;">
-      LF
-    </div>
+    <table role="presentation" align="center" cellspacing="0" cellpadding="0" style="margin:0 auto 14px;">
+      <tr>
+        <td width="68" height="68" align="center" valign="middle"
+          style="background:${defaultBrandColor};border:2px solid #ffffff;border-radius:14px;width:68px;height:68px;color:#ffffff;font-size:38px;line-height:64px;text-align:center;font-family:'Apple Color Emoji','Segoe UI Emoji','Segoe UI Symbol','Noto Color Emoji','Noto Sans Symbols 2','DejaVu Sans',Arial,sans-serif;">
+          &#9878;&#xFE0F;
+        </td>
+      </tr>
+    </table>
   `;
 }
 
@@ -332,6 +341,48 @@ export function sendWelcomeEmail({ email, firstName }) {
 
 export function queueWelcomeEmail({ email, firstName }) {
   return queueEmailTask("welcome", () => sendWelcomeEmail({ email, firstName }));
+}
+
+export function sendGoogleWelcomeEmail({ email, firstName }) {
+  const subject = "Welcome to LawFlow";
+  const safeFirstName = escapeHtml(firstName || "there");
+  const text = [
+    `Hi ${firstName || "there"},`,
+    "",
+    "Your LawFlow account has been created using Google Sign-In.",
+    "",
+    "LawFlow will never ask for your Google password. If anyone does, ignore it and contact support.",
+    "",
+    "Best regards,",
+    "The LawFlow Team"
+  ].join("\n");
+
+  const html = createEmailLayout({
+    title: "Welcome to LawFlow",
+    previewText: "Your LawFlow account is ready.",
+    bodyHtml: `
+      <h1 style="margin:0 0 12px;color:${defaultBrandColor};font-size:24px;line-height:1.3;">Welcome to LawFlow</h1>
+      <p style="margin:0 0 18px;color:#344054;font-size:15px;line-height:1.7;">Hi ${safeFirstName},</p>
+      <p style="margin:0 0 18px;color:#344054;font-size:15px;line-height:1.7;">
+        Your LawFlow account has been created using <strong>Google Sign-In</strong>.
+      </p>
+      <div style="margin:22px 0;padding:16px 18px;background:#fff8ed;border:1px solid #f7d59a;border-radius:12px;">
+        <p style="margin:0;color:#7a4b00;font-size:13px;line-height:1.7;">
+          <strong>Security tip:</strong> LawFlow will never ask for your Google password. If anyone does, ignore it and contact support.
+        </p>
+      </div>
+      <p style="margin:18px 0 0;color:#344054;font-size:14px;line-height:1.7;">
+        Best regards,<br />
+        <span style="color:${defaultBrandColor};font-weight:700;">The LawFlow Team</span>
+      </p>
+    `
+  });
+
+  return sendEmail({ to: email, subject, text, html });
+}
+
+export function queueGoogleWelcomeEmail({ email, firstName }) {
+  return queueEmailTask("google-welcome", () => sendGoogleWelcomeEmail({ email, firstName }));
 }
 
 export function sendLawyerRegistrationDecisionEmail({
