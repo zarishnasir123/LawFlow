@@ -5,6 +5,7 @@ import { useLoginStore } from "../store";
 import type { LoginPayload, LoginRole } from "../types";
 import { getAuthErrorMessage } from "../api";
 import { saveStoredAuthUser } from "../utils/authStorage";
+import GoogleAuthButton from "./GoogleAuthButton";
 import PasswordField from "./PasswordField";
 import RoleSelector from "./RoleSelector";
 import TextField from "./TextField";
@@ -260,6 +261,18 @@ export default function LoginForm({ onForgotPassword }: LoginFormProps) {
         <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
           {getAuthErrorMessage(lawyerLoginMutation.error)}
         </div>
+      ) : null}
+
+      {role === "client" ? (
+        <>
+          <div className="flex items-center gap-1.5">
+            <span className="h-px flex-1 bg-gray-200" />
+            <span className="text-xs text-gray-500">or continue with</span>
+            <span className="h-px flex-1 bg-gray-200" />
+          </div>
+
+          <GoogleAuthButton disabled={disabled} />
+        </>
       ) : null}
     </form>
   );

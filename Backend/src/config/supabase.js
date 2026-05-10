@@ -1,6 +1,8 @@
 import { createClient } from "@supabase/supabase-js";
 import WebSocket from "ws";
 
+import { ApiError } from "../utils/apiError.js";
+
 const placeholderValues = new Set([
   "",
   "your_supabase_url",
@@ -54,6 +56,11 @@ export function getSupabaseClient() {
         persistSession: false,
         autoRefreshToken: false
       },
+      global: {
+        headers: {
+          "X-Client-Info": "lawflow-backend"
+        }
+      },
       realtime: {
         transport: WebSocket
       }
@@ -62,4 +69,14 @@ export function getSupabaseClient() {
   }
 
   return cachedClient;
+}
+
+export function requireSupabaseClient() {
+  const client = getSupabaseClient();
+
+  if (!client) {
+    throw new ApiError(503, "Supabase is not configured on this server");
+  }
+
+  return client;
 }

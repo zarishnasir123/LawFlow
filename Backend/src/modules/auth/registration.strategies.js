@@ -78,6 +78,21 @@ async function insertLawyerDocument(dbClient, lawyerProfileId, documentType, doc
   );
 }
 
+function splitFullName(fullName, fallbackEmail) {
+  const trimmed = optionalString(fullName);
+
+  if (trimmed) {
+    const parts = trimmed.split(/\s+/);
+    return {
+      firstName: parts[0],
+      lastName: parts.length > 1 ? parts.slice(1).join(" ") : ""
+    };
+  }
+
+  const localPart = fallbackEmail ? fallbackEmail.split("@")[0] : "user";
+  return { firstName: localPart, lastName: "" };
+}
+
 export const registrationStrategies = {
   client: {
     roleName: "client",
@@ -100,6 +115,32 @@ export const registrationStrategies = {
           profileData.city,
           profileData.tehsil
         ]
+      );
+
+      return {};
+    }
+  },
+
+  googleClient: {
+    roleName: "client",
+    authProvider: "google",
+
+    mapProfileData(payload) {
+      const { firstName, lastName } = splitFullName(payload.fullName, payload.email);
+
+      return {
+        firstName,
+        lastName,
+        address: null,
+        city: null,
+        tehsil: null
+      };
+    },
+
+    async createProfile(dbClient, userId) {
+      await dbClient.query(
+        `INSERT INTO client_profiles (user_id) VALUES ($1)`,
+        [userId]
       );
 
       return {};

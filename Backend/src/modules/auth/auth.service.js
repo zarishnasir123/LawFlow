@@ -180,6 +180,25 @@ async function createAuthSession({ userId, refreshToken, refreshTokenDuration, r
   return expiresAt;
 }
 
+async function issueSessionTokens({ user, rememberMe, req }) {
+  const tokenPayload = {
+    sub: user.id,
+    role: user.role,
+    rememberMe
+  };
+  const refreshTokenDuration = getRefreshTokenDuration(rememberMe);
+  const accessToken = signAccessToken(tokenPayload);
+  const refreshToken = signRefreshToken(tokenPayload, refreshTokenDuration);
+  const refreshTokenExpiresAt = await createAuthSession({
+    userId: user.id,
+    refreshToken,
+    refreshTokenDuration,
+    req
+  });
+
+  return { accessToken, refreshToken, refreshTokenExpiresAt };
+}
+
 async function findMatchingRefreshSession({ userId, refreshToken }) {
   const result = await pool.query(
     `SELECT id, refresh_token_hash, expires_at, is_revoked
@@ -245,26 +264,11 @@ export async function loginUser({ email, password, rememberMe = false, req }) {
 
   await resetLoginLock(user.id);
 
-  const tokenPayload = {
-    sub: user.id,
-    role: user.role,
-    rememberMe
-  };
-  const refreshTokenDuration = getRefreshTokenDuration(rememberMe);
-  const accessToken = signAccessToken(tokenPayload);
-  const refreshToken = signRefreshToken(tokenPayload, refreshTokenDuration);
-  const refreshTokenExpiresAt = await createAuthSession({
-    userId: user.id,
-    refreshToken,
-    refreshTokenDuration,
-    req
-  });
+  const tokens = await issueSessionTokens({ user, rememberMe, req });
 
   return {
     user: mapAuthUser(user),
-    accessToken,
-    refreshToken,
-    refreshTokenExpiresAt,
+    ...tokens,
     rememberMe
   };
 }
@@ -308,26 +312,11 @@ export async function refreshAuthSession({ refreshToken, req }) {
   await revokeAuthSession(matchingSession.id);
 
   const rememberMe = decodedToken.rememberMe === true;
-  const tokenPayload = {
-    sub: user.id,
-    role: user.role,
-    rememberMe
-  };
-  const refreshTokenDuration = getRefreshTokenDuration(rememberMe);
-  const newAccessToken = signAccessToken(tokenPayload);
-  const newRefreshToken = signRefreshToken(tokenPayload, refreshTokenDuration);
-  const refreshTokenExpiresAt = await createAuthSession({
-    userId: user.id,
-    refreshToken: newRefreshToken,
-    refreshTokenDuration,
-    req
-  });
+  const tokens = await issueSessionTokens({ user, rememberMe, req });
 
   return {
     user: mapAuthUser(user),
-    accessToken: newAccessToken,
-    refreshToken: newRefreshToken,
-    refreshTokenExpiresAt,
+    ...tokens,
     rememberMe
   };
 }
@@ -543,4 +532,24 @@ export async function reviewLawyerRegistration({
   } finally {
     client.release();
   }
+}
+
+export async function issueOAuthSession({ userId, req }) {
+  const user = await findAuthUserById(userId);
+
+  if (!user) {
+    throw new ApiError(500, "Failed to load user after OAuth sign-in");
+  }
+
+  if (user.account_status !== "active") {
+    throw new ApiError(403, "Account is not active");
+  }
+
+  const tokens = await issueSessionTokens({ user, rememberMe: false, req });
+
+  return {
+    user: mapAuthUser(user),
+    ...tokens,
+    rememberMe: false
+  };
 }

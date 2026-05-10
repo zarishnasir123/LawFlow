@@ -1,20 +1,28 @@
+import { randomUUID } from "node:crypto";
+
 import {
   getCurrentUser,
+  issueOAuthSession,
   listPendingLawyerVerifications,
   loginUser,
   logoutUser,
   refreshAuthSession,
-  reviewLawyerRegistration,
+  reviewLawyerRegistration
 } from "./auth.service.js";
 import {
+  completeOAuthRegistration,
   completeRegistrationVerification,
   resendRegistrationVerificationOtp,
   startRegistration
 } from "./registration.service.js";
 import { parseDurationToMilliseconds } from "../../utils/tokens.js";
+import { ApiError } from "../../utils/apiError.js";
+import { requireSupabaseClient } from "../../config/supabase.js";
 
 const refreshTokenCookieName = "refreshToken";
 const refreshTokenCookiePath = "/";
+const oauthStateCookieName = "oauth_state";
+const oauthStateMaxAgeMs = 10 * 60 * 1000;
 
 function shouldUseSecureCookies() {
   return process.env.NODE_ENV === "production" || process.env.COOKIE_SECURE === "true";
@@ -41,6 +49,40 @@ function getRefreshTokenCookieOptions({ rememberMe = false, expiresAt } = {}) {
   return options;
 }
 
+function setRefreshTokenCookie(res, refreshToken, { rememberMe, expiresAt }) {
+  res.cookie(refreshTokenCookieName, refreshToken, getRefreshTokenCookieOptions({
+    rememberMe,
+    expiresAt
+  }));
+}
+
+function clearRefreshTokenCookie(res) {
+  res.clearCookie(refreshTokenCookieName, {
+    httpOnly: true,
+    secure: shouldUseSecureCookies(),
+    sameSite: process.env.COOKIE_SAME_SITE || "lax",
+    path: refreshTokenCookiePath
+  });
+}
+
+function getOAuthStateCookieOptions() {
+  return {
+    httpOnly: true,
+    secure: shouldUseSecureCookies(),
+    sameSite: process.env.COOKIE_SAME_SITE || "lax",
+    path: refreshTokenCookiePath,
+    maxAge: oauthStateMaxAgeMs
+  };
+}
+
+function clearOAuthStateCookie(res) {
+  res.clearCookie(oauthStateCookieName, getOAuthStateCookieOptions());
+}
+
+function getFrontendUrl() {
+  return process.env.FRONTEND_URL || "http://localhost:5173";
+}
+
 export async function registerClient(req, res) {
   const result = await startRegistration({
     role: "client",
@@ -65,22 +107,6 @@ export async function registerLawyer(req, res) {
     message: "Lawyer registration started successfully. Please verify your email.",
     user: result.user,
     verification: result.verification
-  });
-}
-
-function setRefreshTokenCookie(res, refreshToken, { rememberMe, expiresAt }) {
-  res.cookie(refreshTokenCookieName, refreshToken, getRefreshTokenCookieOptions({
-    rememberMe,
-    expiresAt
-  }));
-}
-
-function clearRefreshTokenCookie(res) {
-  res.clearCookie(refreshTokenCookieName, {
-    httpOnly: true,
-    secure: shouldUseSecureCookies(),
-    sameSite: process.env.COOKIE_SAME_SITE || "lax",
-    path: refreshTokenCookiePath
   });
 }
 
@@ -190,4 +216,77 @@ export async function listPendingLawyers(req, res) {
   });
 
   return res.status(200).json(result);
+}
+
+export async function googleLogin(req, res) {
+  const supabase = requireSupabaseClient();
+
+  // Generate our own CSRF state, store it in an httpOnly cookie, and append
+  // it as a query param to redirectTo. Supabase preserves redirectTo query
+  // params, so the state arrives back in the browser alongside the access
+  // token (in the URL hash, since the JS SDK uses implicit flow by default).
+  // Supabase redirects straight to the frontend; the frontend reads the hash
+  // and POSTs the access token to /google/session for verification.
+  const state = randomUUID();
+  const callbackUrl = new URL("/auth/callback", getFrontendUrl());
+  callbackUrl.searchParams.set("state", state);
+
+  const { data, error } = await supabase.auth.signInWithOAuth({
+    provider: "google",
+    options: {
+      redirectTo: callbackUrl.toString()
+    }
+  });
+
+  if (error || !data?.url) {
+    throw new ApiError(502, "Failed to start Google sign-in");
+  }
+
+  res.cookie(oauthStateCookieName, state, getOAuthStateCookieOptions());
+  return res.redirect(data.url);
+}
+
+export async function googleSession(req, res) {
+  const { accessToken, state } = req.body;
+  const cookieState = req.cookies[oauthStateCookieName];
+
+  // Always clear the state cookie regardless of outcome.
+  clearOAuthStateCookie(res);
+
+  if (!accessToken || typeof accessToken !== "string") {
+    throw new ApiError(400, "Access token is required");
+  }
+
+  if (!state || !cookieState || cookieState !== state) {
+    throw new ApiError(403, "Invalid OAuth state");
+  }
+
+  const supabase = requireSupabaseClient();
+  const { data, error } = await supabase.auth.getUser(accessToken);
+
+  if (error || !data?.user?.email) {
+    throw new ApiError(401, "Invalid Google access token");
+  }
+
+  const supabaseUser = data.user;
+
+  const { userId } = await completeOAuthRegistration({
+    provider: "google",
+    providerUserId: supabaseUser.id,
+    providerEmail: supabaseUser.email,
+    fullName: supabaseUser.user_metadata?.full_name
+  });
+
+  const session = await issueOAuthSession({ userId, req });
+
+  setRefreshTokenCookie(res, session.refreshToken, {
+    rememberMe: session.rememberMe,
+    expiresAt: session.refreshTokenExpiresAt
+  });
+
+  return res.status(200).json({
+    user: session.user,
+    accessToken: session.accessToken,
+    refreshTokenExpiresAt: session.refreshTokenExpiresAt
+  });
 }
