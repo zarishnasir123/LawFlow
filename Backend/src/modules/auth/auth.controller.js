@@ -1,5 +1,6 @@
-import { randomUUID } from "node:crypto";
+import { randomUUID, timingSafeEqual } from "node:crypto";
 
+import { pool } from "../../config/db.js";
 import {
   getCurrentUser,
   issueOAuthSession,
@@ -244,6 +245,72 @@ export async function googleLogin(req, res) {
 
   res.cookie(oauthStateCookieName, state, getOAuthStateCookieOptions());
   return res.redirect(data.url);
+}
+
+function safeEqualString(a, b) {
+  if (typeof a !== "string" || typeof b !== "string") return false;
+  const aBuf = Buffer.from(a);
+  const bBuf = Buffer.from(b);
+  if (aBuf.length !== bBuf.length) return false;
+  return timingSafeEqual(aBuf, bBuf);
+}
+
+// Cascades a Supabase auth.users deletion into the LawFlow database.
+// Configure in Supabase: Database -> Webhooks -> new webhook on auth.users
+// for the DELETE event, sending an HTTP POST to /api/auth/webhooks/supabase
+// with the header `x-webhook-secret: <SUPABASE_WEBHOOK_SECRET>`.
+export async function supabaseAuthWebhook(req, res) {
+  const expectedSecret = process.env.SUPABASE_WEBHOOK_SECRET;
+
+  if (!expectedSecret) {
+    throw new ApiError(503, "Webhook is not configured on this server");
+  }
+
+  const provided = req.headers["x-webhook-secret"];
+
+  if (!safeEqualString(provided, expectedSecret)) {
+    throw new ApiError(401, "Invalid webhook signature");
+  }
+
+  const event = req.body || {};
+  const isAuthUserDelete =
+    event.type === "DELETE" &&
+    event.schema === "auth" &&
+    event.table === "users";
+
+  if (!isAuthUserDelete) {
+    return res.status(200).json({ received: true, processed: false, reason: "event ignored" });
+  }
+
+  const supabaseUserId = event.old_record?.id;
+  const oldEmail = event.old_record?.email?.toLowerCase().trim();
+
+  if (!supabaseUserId && !oldEmail) {
+    return res.status(200).json({ received: true, processed: false, reason: "missing user identifiers" });
+  }
+
+  // Prefer the auth_identities link (provider_user_id matches the Supabase
+  // user id we stored at sign-up). Fall back to email match if no identity
+  // row exists, scoped to OAuth users so we never wipe a manually
+  // registered local account that happens to share the email.
+  const result = await pool.query(
+    `DELETE FROM users
+    WHERE id = (
+      SELECT user_id FROM auth_identities
+      WHERE provider = 'google' AND provider_user_id = $1
+      LIMIT 1
+    )
+    OR (email = $2 AND auth_provider = 'google' AND $2 IS NOT NULL)
+    RETURNING id, email`,
+    [supabaseUserId || null, oldEmail || null]
+  );
+
+  return res.status(200).json({
+    received: true,
+    processed: true,
+    deletedCount: result.rowCount,
+    deleted: result.rows
+  });
 }
 
 export async function googleSession(req, res) {
