@@ -475,6 +475,127 @@ export async function completeRegistrationVerification({ email, otp }) {
   }
 }
 
+async function findIdentityLinkedUser(dbClient, { provider, providerUserId }) {
+  const result = await dbClient.query(
+    `SELECT users.id
+    FROM auth_identities
+    JOIN users ON users.id = auth_identities.user_id
+    WHERE auth_identities.provider = $1
+      AND auth_identities.provider_user_id = $2
+    LIMIT 1`,
+    [provider, providerUserId]
+  );
+
+  return result.rows[0]?.id || null;
+}
+
+async function findUserIdByEmail(dbClient, email) {
+  const result = await dbClient.query(
+    "SELECT id FROM users WHERE email = $1 LIMIT 1",
+    [email]
+  );
+
+  return result.rows[0]?.id || null;
+}
+
+export async function completeOAuthRegistration({
+  provider,
+  providerUserId,
+  providerEmail,
+  fullName
+}) {
+  const strategyKey = provider === "google" ? "googleClient" : null;
+  const strategy = strategyKey ? registrationStrategies[strategyKey] : null;
+
+  if (!strategy) {
+    throw new ApiError(400, "Unsupported OAuth provider");
+  }
+
+  const normalizedEmail = providerEmail?.trim().toLowerCase();
+
+  if (!normalizedEmail) {
+    throw new ApiError(400, "OAuth provider did not return an email");
+  }
+
+  const profileData = strategy.mapProfileData({ fullName, email: normalizedEmail });
+  const dbClient = await pool.connect();
+
+  try {
+    await dbClient.query("BEGIN");
+
+    const existingUserId = await findIdentityLinkedUser(dbClient, { provider, providerUserId });
+
+    if (existingUserId) {
+      await dbClient.query("COMMIT");
+      return { userId: existingUserId };
+    }
+
+    const collidingUserId = await findUserIdByEmail(dbClient, normalizedEmail);
+
+    if (collidingUserId) {
+      // Refuse to silently merge a Google identity into an existing local account.
+      // The user must sign in with their existing credentials and link Google
+      // explicitly from settings (future feature).
+      throw new ApiError(
+        409,
+        "An account with this email already exists. Please sign in with your password."
+      );
+    }
+
+    const roleId = await getRoleId(dbClient, strategy.roleName);
+
+    const userResult = await dbClient.query(
+      `INSERT INTO users (
+        role_id,
+        first_name,
+        last_name,
+        email,
+        auth_provider,
+        email_verified,
+        account_status
+      )
+      VALUES ($1, $2, $3, $4, $5, true, 'active')
+      RETURNING id`,
+      [
+        roleId,
+        profileData.firstName,
+        profileData.lastName,
+        normalizedEmail,
+        strategy.authProvider
+      ]
+    );
+
+    const userId = userResult.rows[0].id;
+
+    await strategy.createProfile(dbClient, userId, profileData);
+
+    await dbClient.query(
+      `INSERT INTO auth_identities (user_id, provider, provider_user_id, provider_email)
+      VALUES ($1, $2, $3, $4)`,
+      [userId, provider, providerUserId, normalizedEmail]
+    );
+
+    await dbClient.query("COMMIT");
+
+    queueWelcomeEmail({
+      email: normalizedEmail,
+      firstName: profileData.firstName
+    });
+
+    return { userId };
+  } catch (error) {
+    await dbClient.query("ROLLBACK");
+
+    if (error.code === "23505") {
+      throw new ApiError(409, "An account with this email or identity already exists");
+    }
+
+    throw error;
+  } finally {
+    dbClient.release();
+  }
+}
+
 export async function resendRegistrationVerificationOtp({ email }) {
   const normalizedEmail = email.trim().toLowerCase();
   const client = await pool.connect();

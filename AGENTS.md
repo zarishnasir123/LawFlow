@@ -114,7 +114,11 @@ Do not put database queries directly in route files.
 - Do not add duplicate indexes for `PRIMARY KEY` or `UNIQUE` columns because PostgreSQL already creates indexes for them.
 - Review `EXPLAIN`/query plans before adding broad indexes or denormalizing data for performance.
 - Keep schema changes in `Backend/src/models/schema.sql` until migrations are introduced.
+- `schema.sql` is a clean drop-and-recreate script: running it wipes every row. Use it only for local dev and fresh Supabase setup. For incremental changes once users exist, write a migration.
 - When migrations are introduced, use ordered migration files and never edit historical migrations casually.
+- `users.cnic`, `users.phone`, and `users.password_hash` are nullable. Local registrants are required to provide CNIC and phone via the `registerClient` / `registerLawyer` validators; OAuth users do not have them at signup and may add them later via profile editing.
+- Use the `auth_identities` table for OAuth provider linkage — one row per `(provider, provider_user_id)` pair. Never look up an OAuth user by email.
+- Row Level Security is enabled on every public table by default with no policies. The Express backend bypasses RLS via `SUPABASE_SERVICE_ROLE_KEY`. The frontend never talks to Supabase REST directly. Add a policy only when a new role legitimately needs direct database access.
 
 ## Separation Of Concerns
 
@@ -149,6 +153,24 @@ Rules:
 - Keep JWT payloads small.
 - Do not put CNIC, phone, document URLs, case data, or signatures inside JWTs.
 
+## OAuth (Google sign-in)
+
+Only clients can sign in with Google. Lawyers, registrars, and admins use the local password flow only.
+
+Identity rules:
+
+- Match Google identities by `(auth_identities.provider, auth_identities.provider_user_id)`, never by email. Email ownership can change; the provider's stable subject id cannot.
+- Never `ON CONFLICT (email) DO UPDATE` an OAuth row into an existing local-password account. If the email already exists locally, reject with a friendly error and ask the user to sign in with their password.
+- OAuth user creation goes through the same `registration.service.js` / `registration.strategies.js` pipeline as local registration. The Google strategy is the `googleClient` key in `registration.strategies.js`.
+- The Express backend always verifies the Supabase access token with `supabase.auth.getUser(token)` before trusting any user claim. Do not trust `id`, `email`, or metadata sent from the frontend.
+
+Flow rules:
+
+- Use an httpOnly `oauth_state` cookie set on `/auth/google` and verified on the session-creation step. This is the login-CSRF defence; do not skip it.
+- Backend redirects Supabase straight to the frontend `/auth/callback`. The frontend reads the implicit-flow access token from the URL hash and POSTs it to `/api/auth/google/session` along with the state.
+- Never log the OAuth `code`, `state`, Supabase access tokens, or user emails. They are tokens under the Security Rules.
+- Use `requireSupabaseClient()` from `config/supabase.js`. Do not instantiate new Supabase clients ad-hoc.
+
 ## Security Rules
 
 LawFlow handles private legal data, so security matters in every PR.
@@ -170,11 +192,21 @@ Avoid logging:
 ```text
 passwords
 tokens
+OAuth codes and access tokens
+OAuth state values
 CNICs
+emails
 private document URLs
 case file contents
 signatures
 ```
+
+OAuth-specific security:
+
+- Verify the OAuth `state` cookie on every callback (login-CSRF defence).
+- Validate provider tokens server-side via `supabase.auth.getUser(token)` before trusting user identity.
+- Keep `SUPABASE_SERVICE_ROLE_KEY` in the backend only. Never expose it to the frontend or commit it.
+- Keep RLS enabled on every public table. Service role bypasses RLS; do not rely on backend-only writes as the security boundary if the anon key ever ships in the frontend.
 
 ## Error Handling
 

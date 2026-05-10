@@ -13,6 +13,7 @@ import Register from "../modules/auth/pages/Register";
 import Login from "../modules/auth/pages/Login";
 import ForgotPassword from "../modules/auth/pages/ForgotPassword";
 import VerifyEmail from "../modules/auth/pages/VerifyEmail";
+import AuthCallback from "../modules/auth/pages/AuthCallback";
 
 /* =====================================================
    CLIENT MODULE IMPORTS
@@ -119,6 +120,12 @@ const verifyEmailRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "verify-email",
   component: VerifyEmail,
+});
+
+const authCallbackRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "auth/callback",
+  component: AuthCallback,
 });
 
 /* =====================================================
@@ -471,6 +478,7 @@ const routeTree = rootRoute.addChildren([
   loginRoute,
   forgotPasswordRoute,
   verifyEmailRoute,
+  authCallbackRoute,
 
   // Client Routes
   clientDashboardRoute,

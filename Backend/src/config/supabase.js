@@ -1,6 +1,8 @@
 import { createClient } from "@supabase/supabase-js";
 import WebSocket from "ws";
 
+import { ApiError } from "../utils/apiError.js";
+
 const placeholderValues = new Set([
   "",
   "your_supabase_url",
@@ -22,7 +24,6 @@ export function getSupabaseStorageConfig() {
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   const bucket = process.env.SUPABASE_LAWYER_BUCKET || "lawyer-verification-documents";
   const previewUrlExpiresIn = Number(process.env.SUPABASE_PREVIEW_URL_EXPIRES_IN || 900);
- 
 
   const issues = [];
   if (isPlaceholder(url)) issues.push("SUPABASE_URL");
@@ -40,24 +41,6 @@ export function getSupabaseStorageConfig() {
   };
 }
 
-export const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY,
-  {
-    auth: {
-      persistSession: false,
-      autoRefreshToken: false,
-    },
-    global: {
-      headers: {
-        "X-Client-Info": "lawflow-backend",
-      },
-    },
-    realtime: {
-      transport: WebSocket,
-    },
-  }
-);
 export function getSupabaseClient() {
   const config = getSupabaseStorageConfig();
 
@@ -73,6 +56,11 @@ export function getSupabaseClient() {
         persistSession: false,
         autoRefreshToken: false
       },
+      global: {
+        headers: {
+          "X-Client-Info": "lawflow-backend"
+        }
+      },
       realtime: {
         transport: WebSocket
       }
@@ -81,4 +69,14 @@ export function getSupabaseClient() {
   }
 
   return cachedClient;
+}
+
+export function requireSupabaseClient() {
+  const client = getSupabaseClient();
+
+  if (!client) {
+    throw new ApiError(503, "Supabase is not configured on this server");
+  }
+
+  return client;
 }

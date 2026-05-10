@@ -1,36 +1,71 @@
 -- LawFlow database schema
--- Run this file against the lawflow_db PostgreSQL database for a fresh setup.
+-- Single-shot script: drops every LawFlow table and recreates from scratch.
+-- WARNING: this wipes all rows. Use only on local dev / fresh setup.
+--
+-- Apply with:
+--   psql -U postgres -h localhost -d lawflow_db -f Backend/src/models/schema.sql
 
+-- =====================================================================
+-- Extensions
+-- =====================================================================
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 CREATE EXTENSION IF NOT EXISTS "citext";
 
-CREATE TABLE IF NOT EXISTS roles (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+-- =====================================================================
+-- Drop in reverse dependency order. CASCADE removes dependent objects.
+-- =====================================================================
+DROP TABLE IF EXISTS auth_identities                CASCADE;
+DROP TABLE IF EXISTS auth_sessions                  CASCADE;
+DROP TABLE IF EXISTS password_reset_tokens          CASCADE;
+DROP TABLE IF EXISTS email_verification_otps        CASCADE;
+DROP TABLE IF EXISTS lawyer_verification_documents  CASCADE;
+DROP TABLE IF EXISTS lawyer_profiles                CASCADE;
+DROP TABLE IF EXISTS client_profiles                CASCADE;
+DROP TABLE IF EXISTS pending_registrations          CASCADE;
+DROP TABLE IF EXISTS users                          CASCADE;
+DROP TABLE IF EXISTS roles                          CASCADE;
+
+-- Legacy Supabase-side trigger function. Safe no-op if it never existed.
+DROP FUNCTION IF EXISTS public.handle_new_user();
+
+-- =====================================================================
+-- Reference data
+-- =====================================================================
+CREATE TABLE roles (
+  id   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name VARCHAR(30) UNIQUE NOT NULL
 );
 
-INSERT INTO roles (name)
-VALUES ('client'), ('lawyer'), ('registrar'), ('admin')
-ON CONFLICT (name) DO NOTHING;
+INSERT INTO roles (name) VALUES
+  ('client'),
+  ('lawyer'),
+  ('registrar'),
+  ('admin');
 
-CREATE TABLE IF NOT EXISTS users (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+-- =====================================================================
+-- Identity
+-- =====================================================================
+CREATE TABLE users (
+  id      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   role_id UUID NOT NULL REFERENCES roles(id),
 
   first_name VARCHAR(100) NOT NULL,
-  last_name VARCHAR(100) NOT NULL,
-  email CITEXT UNIQUE NOT NULL,
-  phone VARCHAR(20),
-  cnic VARCHAR(15) UNIQUE,
+  last_name  VARCHAR(100) NOT NULL,
+  email      CITEXT UNIQUE NOT NULL,
 
-  -- Nullable because Google OAuth users may not have a local password.
+  -- Optional fields. Google OAuth users have no CNIC and no local password,
+  -- and may opt out of phone. Manual registrants must supply CNIC + phone
+  -- via the app-level validators (registerClientValidator / registerLawyerValidator).
+  phone         VARCHAR(20),
+  cnic          VARCHAR(15) UNIQUE,
   password_hash TEXT,
+
   auth_provider VARCHAR(30) NOT NULL DEFAULT 'local',
 
-  email_verified BOOLEAN NOT NULL DEFAULT false,
-  account_status VARCHAR(30) NOT NULL DEFAULT 'pending_verification',
-  failed_login_attempts INTEGER NOT NULL DEFAULT 0,
-  locked_until TIMESTAMP,
+  email_verified        BOOLEAN     NOT NULL DEFAULT false,
+  account_status        VARCHAR(30) NOT NULL DEFAULT 'pending_verification',
+  failed_login_attempts INTEGER     NOT NULL DEFAULT 0,
+  locked_until          TIMESTAMP,
 
   created_at TIMESTAMP NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
@@ -43,34 +78,8 @@ CREATE TABLE IF NOT EXISTS users (
     CHECK (auth_provider IN ('local', 'google'))
 );
 
-ALTER TABLE users
-  ALTER COLUMN account_status SET DEFAULT 'pending_verification';
-
-CREATE TABLE IF NOT EXISTS pending_registrations (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  role_id UUID NOT NULL REFERENCES roles(id),
-
-  email CITEXT UNIQUE NOT NULL,
-  cnic VARCHAR(15) UNIQUE NOT NULL,
-  first_name VARCHAR(100) NOT NULL,
-  last_name VARCHAR(100) NOT NULL,
-  phone_number VARCHAR(20) NOT NULL,
-
-  password_hash TEXT NOT NULL,
-  profile_data JSONB NOT NULL,
-  otp_hash TEXT NOT NULL,
-  expires_at TIMESTAMP NOT NULL,
-
-  created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-
-  CONSTRAINT valid_pending_registration_cnic_format
-    CHECK (cnic ~ '^[0-9]{5}-[0-9]{7}-[0-9]{1}$')
-);
-
--- Seed default admin user for local development/testing.
--- Default login:
--- Email: LfAdmin@gmail.com
--- Password: Admin@123
+-- Default admin for local dev.
+-- Login: LfAdmin@gmail.com / Admin@123
 INSERT INTO users (
   role_id,
   first_name,
@@ -94,48 +103,64 @@ VALUES (
   'local',
   true,
   'active'
-)
-ON CONFLICT (email) DO UPDATE
-SET role_id = (SELECT id FROM roles WHERE name = 'admin'),
-    first_name = EXCLUDED.first_name,
-    last_name = EXCLUDED.last_name,
-    phone = EXCLUDED.phone,
-    cnic = EXCLUDED.cnic,
-    password_hash = EXCLUDED.password_hash,
-    auth_provider = 'local',
-    email_verified = true,
-    account_status = 'active',
-    updated_at = NOW();
+);
 
-CREATE TABLE IF NOT EXISTS client_profiles (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+-- =====================================================================
+-- Pending registrations (waiting on email OTP)
+-- =====================================================================
+CREATE TABLE pending_registrations (
+  id      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  role_id UUID NOT NULL REFERENCES roles(id),
+
+  email        CITEXT       UNIQUE NOT NULL,
+  cnic         VARCHAR(15)  UNIQUE NOT NULL,
+  first_name   VARCHAR(100) NOT NULL,
+  last_name    VARCHAR(100) NOT NULL,
+  phone_number VARCHAR(20)  NOT NULL,
+
+  password_hash TEXT  NOT NULL,
+  profile_data  JSONB NOT NULL,
+  otp_hash      TEXT  NOT NULL,
+  expires_at    TIMESTAMP NOT NULL,
+
+  created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+
+  CONSTRAINT valid_pending_registration_cnic_format
+    CHECK (cnic ~ '^[0-9]{5}-[0-9]{7}-[0-9]{1}$')
+);
+
+-- =====================================================================
+-- Role profiles
+-- =====================================================================
+CREATE TABLE client_profiles (
+  id      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID UNIQUE NOT NULL REFERENCES users(id) ON DELETE CASCADE,
 
   address TEXT,
-  city VARCHAR(100),
-  tehsil VARCHAR(100),
+  city    VARCHAR(100),
+  tehsil  VARCHAR(100),
 
   created_at TIMESTAMP NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS lawyer_profiles (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+CREATE TABLE lawyer_profiles (
+  id      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID UNIQUE NOT NULL REFERENCES users(id) ON DELETE CASCADE,
 
-  specialization VARCHAR(150) NOT NULL,
-  district_bar VARCHAR(150) NOT NULL,
+  specialization     VARCHAR(150) NOT NULL,
+  district_bar       VARCHAR(150) NOT NULL,
   bar_license_number VARCHAR(100) UNIQUE NOT NULL,
-  experience_years INTEGER DEFAULT 0,
-  consultation_fee NUMERIC,
+  experience_years   INTEGER DEFAULT 0,
+  consultation_fee   NUMERIC,
 
-  cnic_match BOOLEAN NOT NULL DEFAULT false,
+  cnic_match         BOOLEAN NOT NULL DEFAULT false,
   cnic_match_remarks TEXT,
 
-  verification_status VARCHAR(30) NOT NULL DEFAULT 'pending',
+  verification_status  VARCHAR(30) NOT NULL DEFAULT 'pending',
   verification_remarks TEXT,
-  verified_by UUID REFERENCES users(id),
-  verified_at TIMESTAMP,
+  verified_by          UUID REFERENCES users(id),
+  verified_at          TIMESTAMP,
 
   created_at TIMESTAMP NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
@@ -144,16 +169,15 @@ CREATE TABLE IF NOT EXISTS lawyer_profiles (
     CHECK (verification_status IN ('pending', 'approved', 'rejected'))
 );
 
-CREATE TABLE IF NOT EXISTS lawyer_verification_documents (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+-- File metadata only; actual files live in Supabase private storage.
+CREATE TABLE lawyer_verification_documents (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   lawyer_profile_id UUID NOT NULL REFERENCES lawyer_profiles(id) ON DELETE CASCADE,
 
   document_type VARCHAR(50) NOT NULL,
 
-  -- Actual files will be stored in Supabase private storage.
-  -- PostgreSQL stores only bucket name, internal storage path, and file metadata.
   storage_bucket VARCHAR(100) NOT NULL,
-  storage_path TEXT NOT NULL,
+  storage_path   TEXT NOT NULL,
 
   file_name TEXT,
   mime_type VARCHAR(100),
@@ -173,146 +197,111 @@ CREATE TABLE IF NOT EXISTS lawyer_verification_documents (
     UNIQUE (lawyer_profile_id, document_type)
 );
 
-ALTER TABLE lawyer_verification_documents
-  DROP CONSTRAINT IF EXISTS valid_lawyer_document_type;
-
--- Allow separate district bar license card sides. Files live in Supabase private
--- storage; this table stores only the internal bucket/path and metadata.
-ALTER TABLE lawyer_verification_documents
-  ADD CONSTRAINT valid_lawyer_document_type
-  CHECK (document_type IN (
-    'law_degree',
-    'bar_license_card',
-    'bar_license_card_front',
-    'bar_license_card_back'
-  ));
-
-CREATE TABLE IF NOT EXISTS email_verification_otps (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+-- =====================================================================
+-- Auth supporting tables
+-- =====================================================================
+CREATE TABLE email_verification_otps (
+  id      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
 
-  -- Store only the hash. Never store or log a production OTP in plain text.
-  otp_hash TEXT NOT NULL,
+  -- Hash only. Never store or log plaintext OTPs.
+  otp_hash   TEXT NOT NULL,
   expires_at TIMESTAMP NOT NULL,
-  used_at TIMESTAMP,
+  used_at    TIMESTAMP,
 
   created_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS password_reset_tokens (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+CREATE TABLE password_reset_tokens (
+  id      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
 
   token_hash TEXT NOT NULL,
   expires_at TIMESTAMP NOT NULL,
-  used_at TIMESTAMP,
+  used_at    TIMESTAMP,
 
   created_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS auth_sessions (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+CREATE TABLE auth_sessions (
+  id      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
 
-  -- Refresh tokens are hashed before storage so leaked DB rows cannot be used directly.
+  -- Refresh tokens are hashed before storage so leaked DB rows cannot be replayed.
   refresh_token_hash TEXT NOT NULL,
-  user_agent TEXT,
-  ip_address VARCHAR(100),
-  is_revoked BOOLEAN NOT NULL DEFAULT false,
-  revoked_at TIMESTAMP,
-  expires_at TIMESTAMP NOT NULL,
+  user_agent         TEXT,
+  ip_address         VARCHAR(100),
+  is_revoked         BOOLEAN NOT NULL DEFAULT false,
+  revoked_at         TIMESTAMP,
+  expires_at         TIMESTAMP NOT NULL,
 
   created_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS auth_identities (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+-- OAuth identity links. One row per (provider, provider_user_id) pair.
+-- Joining on email is unsafe because email ownership can change over time;
+-- this table lets us reuse the same LawFlow user across repeat Google sign-ins
+-- without ever silently merging into an existing local-password account.
+CREATE TABLE auth_identities (
+  id      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
 
-  provider VARCHAR(30) NOT NULL,
+  provider         VARCHAR(30) NOT NULL,
   provider_user_id TEXT NOT NULL,
-  provider_email CITEXT,
+  provider_email   CITEXT,
 
   created_at TIMESTAMP NOT NULL DEFAULT NOW(),
 
   UNIQUE (provider, provider_user_id)
 );
 
--- Remove older redundant indexes. PostgreSQL already creates indexes for
--- PRIMARY KEY and UNIQUE constraints.
-DROP INDEX IF EXISTS idx_users_email;
-DROP INDEX IF EXISTS idx_users_cnic;
-DROP INDEX IF EXISTS idx_lawyer_profiles_user_id;
-DROP INDEX IF EXISTS idx_client_profiles_user_id;
-DROP INDEX IF EXISTS idx_auth_sessions_refresh_token_hash;
+-- =====================================================================
+-- Indexes (only for real query patterns; PRIMARY KEY / UNIQUE already
+-- get implicit indexes, so do not duplicate them here.)
+-- =====================================================================
+CREATE INDEX idx_users_role_id ON users(role_id);
 
--- Query-focused indexes. Keep these aligned with real service queries.
-CREATE INDEX IF NOT EXISTS idx_users_role_id ON users(role_id);
-
-CREATE INDEX IF NOT EXISTS idx_pending_registrations_expires_at
-  ON pending_registrations(expires_at);
-
-CREATE INDEX IF NOT EXISTS idx_pending_registrations_role_id
-  ON pending_registrations(role_id);
-
-CREATE INDEX IF NOT EXISTS idx_pending_registrations_bar_license_number
+CREATE INDEX idx_pending_registrations_expires_at  ON pending_registrations(expires_at);
+CREATE INDEX idx_pending_registrations_role_id     ON pending_registrations(role_id);
+CREATE INDEX idx_pending_registrations_bar_license_number
   ON pending_registrations((profile_data ->> 'barLicenseNumber'))
   WHERE profile_data ? 'barLicenseNumber';
 
-CREATE INDEX IF NOT EXISTS idx_auth_sessions_active_user_created_at
+CREATE INDEX idx_auth_sessions_active_user_created_at
   ON auth_sessions(user_id, created_at DESC)
   WHERE is_revoked = false;
 
-CREATE INDEX IF NOT EXISTS idx_email_verification_otps_active_user_created_at
+CREATE INDEX idx_email_verification_otps_active_user_created_at
   ON email_verification_otps(user_id, created_at DESC)
   WHERE used_at IS NULL;
 
-CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_active_user_created_at
+CREATE INDEX idx_password_reset_tokens_active_user_created_at
   ON password_reset_tokens(user_id, created_at DESC)
   WHERE used_at IS NULL;
 
-CREATE INDEX IF NOT EXISTS idx_auth_identities_user_id
-  ON auth_identities(user_id);
+CREATE INDEX idx_auth_identities_user_id ON auth_identities(user_id);
 
-CREATE INDEX IF NOT EXISTS idx_lawyer_verification_documents_profile_id
+CREATE INDEX idx_lawyer_verification_documents_profile_id
   ON lawyer_verification_documents(lawyer_profile_id);
 
-CREATE INDEX IF NOT EXISTS idx_lawyer_profiles_verification_status
+CREATE INDEX idx_lawyer_profiles_verification_status
   ON lawyer_profiles(verification_status);
 
--- Function to handle new user sync from auth.users to public.users
-CREATE OR REPLACE FUNCTION public.handle_new_user()
-RETURNS trigger AS $$
-BEGIN
-  INSERT INTO public.users (id, role_id, first_name, last_name, email, auth_provider, email_verified, account_status)
-  VALUES (
-    new.id,
-    (SELECT id FROM public.roles WHERE name = 'client'),
-    COALESCE(new.raw_user_meta_data->>'full_name', split_part(new.email, '@', 1)),
-    '',
-    new.email,
-    'google',
-    true,
-    'active'
-  )
-  ON CONFLICT (email) DO UPDATE
-  SET first_name = EXCLUDED.first_name,
-      auth_provider = 'google',
-      email_verified = true,
-      account_status = 'active',
-      updated_at = NOW();
-
-  INSERT INTO public.client_profiles (user_id)
-  VALUES (new.id)
-  ON CONFLICT (user_id) DO NOTHING;
-
-  RETURN new;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
--- Trigger to run the function on every signup
-DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
-CREATE TRIGGER on_auth_user_created
-  AFTER INSERT ON auth.users
-  FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
-
+-- =====================================================================
+-- Row Level Security: deny by default on every table.
+-- The Express backend uses SUPABASE_SERVICE_ROLE_KEY (and the local
+-- postgres superuser) which bypass RLS, so backend operations continue
+-- to work. The frontend never talks to Supabase REST directly. Without
+-- these locks, anyone with the public anon key could read refresh-token
+-- hashes, OTP hashes, password-reset tokens, and pending PII.
+-- =====================================================================
+ALTER TABLE roles                          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE users                          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE pending_registrations          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE client_profiles                ENABLE ROW LEVEL SECURITY;
+ALTER TABLE lawyer_profiles                ENABLE ROW LEVEL SECURITY;
+ALTER TABLE lawyer_verification_documents  ENABLE ROW LEVEL SECURITY;
+ALTER TABLE email_verification_otps        ENABLE ROW LEVEL SECURITY;
+ALTER TABLE password_reset_tokens          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE auth_sessions                  ENABLE ROW LEVEL SECURITY;
+ALTER TABLE auth_identities                ENABLE ROW LEVEL SECURITY;
