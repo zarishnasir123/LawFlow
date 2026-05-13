@@ -5,8 +5,20 @@ import { ApiError } from "../utils/apiError.js";
 
 const documentTypeToExtension = {
   law_degree: ".pdf",
+  bar_license_card: ".jpg",
   bar_license_card_front: ".jpg",
   bar_license_card_back: ".jpg"
+};
+
+// Category + filename mapping. Each lawyer's documents are organized under
+// lawyers/{lawyerKey}/{category}/{filename}.{ext} for scalability and easy
+// per-lawyer cleanup. New categories (cnic, profile) can be added here
+// without restructuring callers.
+const documentLayout = {
+  law_degree:             { category: "license", filename: "degree" },
+  bar_license_card:       { category: "license", filename: "card" },
+  bar_license_card_front: { category: "license", filename: "card-front" },
+  bar_license_card_back:  { category: "license", filename: "card-back" }
 };
 
 function pickExtension(documentType, originalName, mimeType) {
@@ -22,9 +34,18 @@ function pickExtension(documentType, originalName, mimeType) {
   return documentTypeToExtension[documentType] || ".bin";
 }
 
+function getLayout(documentType) {
+  return documentLayout[documentType] ?? { category: "misc", filename: documentType };
+}
+
 function buildStoragePath(lawyerKey, documentType, originalName, mimeType) {
   const extension = pickExtension(documentType, originalName, mimeType);
-  return `lawyers/pending/${lawyerKey}/${documentType}${extension}`;
+  const { category, filename } = getLayout(documentType);
+  return `lawyers/${lawyerKey}/${category}/${filename}${extension}`;
+}
+
+export function getLawyerStorageRoot(lawyerKey) {
+  return `lawyers/${lawyerKey}`;
 }
 
 export async function uploadLawyerDocument({ documentType, file, lawyerKey }) {
@@ -118,5 +139,57 @@ export async function deleteLawyerDocuments({ storagePaths }) {
     .remove(storagePaths.filter(Boolean))
     .catch(() => {
       // Best-effort cleanup; swallow errors so the original failure surfaces to the caller.
+    });
+}
+
+// Recursively lists every object under lawyers/{lawyerKey}/ and removes them.
+// Used when a lawyer is rejected or when re-registering after a prior rejection.
+export async function deleteLawyerStorageFolder({ lawyerKey }) {
+  if (!lawyerKey) {
+    return;
+  }
+
+  const supabase = getSupabaseClient();
+  if (!supabase) {
+    return;
+  }
+
+  const config = getSupabaseStorageConfig();
+  const root = getLawyerStorageRoot(lawyerKey);
+
+  async function collectPaths(prefix) {
+    const collected = [];
+    const { data, error } = await supabase.storage
+      .from(config.bucket)
+      .list(prefix, { limit: 100 });
+
+    if (error || !Array.isArray(data)) {
+      return collected;
+    }
+
+    for (const entry of data) {
+      const fullPath = `${prefix}/${entry.name}`;
+      const isFolder = !entry.id && !entry.metadata;
+      if (isFolder) {
+        const children = await collectPaths(fullPath);
+        collected.push(...children);
+      } else {
+        collected.push(fullPath);
+      }
+    }
+
+    return collected;
+  }
+
+  const allPaths = await collectPaths(root);
+  if (allPaths.length === 0) {
+    return;
+  }
+
+  await supabase.storage
+    .from(config.bucket)
+    .remove(allPaths)
+    .catch(() => {
+      // Best-effort.
     });
 }

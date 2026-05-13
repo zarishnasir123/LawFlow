@@ -1,6 +1,10 @@
 import { pool } from "../../config/db.js";
 import { queueLawyerRegistrationDecisionEmail } from "../../services/email.service.js";
-import { getLawyerDocumentSignedUrl } from "../../services/storage.service.js";
+import {
+  deleteLawyerDocuments,
+  deleteLawyerStorageFolder,
+  getLawyerDocumentSignedUrl
+} from "../../services/storage.service.js";
 import { ApiError } from "../../utils/apiError.js";
 import { compareHash, hashValue } from "../../utils/hash.js";
 import {
@@ -419,6 +423,112 @@ export async function listPendingLawyerVerifications({ limit = 20, offset = 0 } 
   };
 }
 
+// Approve path: keep the user, flip lawyer_profiles.verification_status to
+// 'approved' and users.account_status to 'active', send the welcome decision
+// email, return the updated record.
+async function approveLawyerRegistrationTx(client, { lawyerProfile, adminUserId, remarks }) {
+  const updatedProfileResult = await client.query(
+    `UPDATE lawyer_profiles
+    SET verification_status = 'approved',
+        verification_remarks = $1,
+        verified_by = $2,
+        verified_at = NOW(),
+        updated_at = NOW()
+    WHERE id = $3
+    RETURNING id, user_id, verification_status, verification_remarks, verified_by, verified_at`,
+    [remarks?.trim() || null, adminUserId, lawyerProfile.id]
+  );
+
+  const updatedUserResult = await client.query(
+    `UPDATE users
+    SET account_status = 'active',
+        updated_at = NOW()
+    WHERE id = $1
+    RETURNING id, first_name, last_name, email, account_status, email_verified`,
+    [lawyerProfile.user_id]
+  );
+
+  return {
+    updatedProfile: updatedProfileResult.rows[0],
+    updatedUser: updatedUserResult.rows[0]
+  };
+}
+
+// Reject path: persist the rejection to lawyer_rejection_history (so the
+// audit survives the cleanup), capture every storage_path tied to this
+// lawyer, then delete the user row. lawyer_profiles + lawyer_verification_documents
+// cascade via the existing FKs, so the SQL side is left in a clean state and
+// the email is free to re-register. The actual Supabase files are removed
+// outside the transaction.
+async function rejectLawyerRegistrationTx(client, {
+  lawyerProfile,
+  adminUserId,
+  adminEmail,
+  remarks
+}) {
+  const documentRows = (await client.query(
+    `SELECT storage_path
+    FROM lawyer_verification_documents
+    WHERE lawyer_profile_id = $1`,
+    [lawyerProfile.id]
+  )).rows;
+
+  const storagePaths = documentRows
+    .map((row) => row.storage_path)
+    .filter(Boolean);
+
+  await client.query(
+    `INSERT INTO lawyer_rejection_history (
+      email, cnic, bar_license_number,
+      first_name, last_name, phone,
+      specialization, district_bar,
+      rejection_remarks, rejected_by_user_id, rejected_by_email,
+      storage_paths_cleared
+    )
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+    [
+      lawyerProfile.email,
+      lawyerProfile.cnic,
+      lawyerProfile.bar_license_number,
+      lawyerProfile.first_name,
+      lawyerProfile.last_name,
+      lawyerProfile.phone,
+      lawyerProfile.specialization,
+      lawyerProfile.district_bar,
+      remarks?.trim() || null,
+      adminUserId,
+      adminEmail,
+      storagePaths.length > 0 ? storagePaths : null
+    ]
+  );
+
+  // Cascade deletes lawyer_profile + lawyer_verification_documents +
+  // client_profile (none for lawyers) + auth_sessions + auth_identities +
+  // email_verification_otps + password_reset_tokens.
+  await client.query(`DELETE FROM users WHERE id = $1`, [lawyerProfile.user_id]);
+
+  // Also clear any leftover pending_registrations row for this email/CNIC
+  // (best-effort — there usually isn't one once they've reached lawyer_profiles).
+  await client.query(
+    `DELETE FROM pending_registrations
+    WHERE email = $1 OR cnic = $2`,
+    [lawyerProfile.email, lawyerProfile.cnic]
+  );
+
+  return { storagePaths };
+}
+
+// Best-effort folder-level cleanup: parses one of the storage_paths to
+// extract the {lawyerKey} segment and removes the whole lawyers/{key}/
+// folder. Falls back to the explicit list if parsing fails.
+function deriveLawyerKey(storagePaths) {
+  for (const p of storagePaths) {
+    const match = /^lawyers\/([^/]+)\//.exec(p);
+    if (match) return match[1];
+  }
+  return null;
+}
+
 export async function reviewLawyerRegistration({
   lawyerProfileId,
   adminUserId,
@@ -439,7 +549,7 @@ export async function reviewLawyerRegistration({
     await client.query("BEGIN");
 
     const adminResult = await client.query(
-      `SELECT users.id, roles.name AS role
+      `SELECT users.id, users.email, roles.name AS role
       FROM users
       JOIN roles ON roles.id = users.role_id
       WHERE users.id = $1`,
@@ -459,8 +569,14 @@ export async function reviewLawyerRegistration({
         lawyer_profiles.id,
         lawyer_profiles.user_id,
         lawyer_profiles.verification_status,
+        lawyer_profiles.bar_license_number,
+        lawyer_profiles.specialization,
+        lawyer_profiles.district_bar,
         users.email,
         users.first_name,
+        users.last_name,
+        users.phone,
+        users.cnic,
         users.account_status
       FROM lawyer_profiles
       JOIN users ON users.id = lawyer_profiles.user_id
@@ -473,58 +589,77 @@ export async function reviewLawyerRegistration({
     }
 
     const lawyerProfile = lawyerProfileResult.rows[0];
-    const nextAccountStatus = status === "approved" ? "active" : "inactive";
+    const adminEmail = adminResult.rows[0].email;
 
-    const updatedProfileResult = await client.query(
-      `UPDATE lawyer_profiles
-      SET verification_status = $1,
-          verification_remarks = $2,
-          verified_by = $3,
-          verified_at = NOW(),
-          updated_at = NOW()
-      WHERE id = $4
-      RETURNING id, user_id, verification_status, verification_remarks, verified_by, verified_at`,
-      [
-        status,
-        remarks?.trim() || null,
+    if (status === "approved") {
+      const { updatedProfile, updatedUser } = await approveLawyerRegistrationTx(client, {
+        lawyerProfile,
         adminUserId,
-        lawyerProfileId
-      ]
-    );
+        remarks
+      });
 
-    const updatedUserResult = await client.query(
-      `UPDATE users
-      SET account_status = $1,
-          updated_at = NOW()
-      WHERE id = $2
-      RETURNING id, first_name, last_name, email, account_status, email_verified`,
-      [nextAccountStatus, lawyerProfile.user_id]
-    );
+      await client.query("COMMIT");
+
+      queueLawyerRegistrationDecisionEmail({
+        email: updatedUser.email,
+        firstName: updatedUser.first_name,
+        status: "approved",
+        remarks: updatedProfile.verification_remarks
+      });
+
+      return {
+        lawyerProfileId: updatedProfile.id,
+        userId: updatedUser.id,
+        firstName: updatedUser.first_name,
+        lastName: updatedUser.last_name,
+        email: updatedUser.email,
+        emailVerified: updatedUser.email_verified,
+        accountStatus: updatedUser.account_status,
+        verificationStatus: updatedProfile.verification_status,
+        verificationRemarks: updatedProfile.verification_remarks,
+        verifiedBy: updatedProfile.verified_by,
+        verifiedAt: updatedProfile.verified_at
+      };
+    }
+
+    // Rejection branch.
+    const { storagePaths } = await rejectLawyerRegistrationTx(client, {
+      lawyerProfile,
+      adminUserId,
+      adminEmail,
+      remarks
+    });
 
     await client.query("COMMIT");
 
-    const updatedProfile = updatedProfileResult.rows[0];
-    const updatedUser = updatedUserResult.rows[0];
+    // Best-effort storage cleanup (post-commit so a storage failure cannot
+    // leave the DB in a half-rolled-back state).
+    const lawyerKey = deriveLawyerKey(storagePaths);
+    if (lawyerKey) {
+      await deleteLawyerStorageFolder({ lawyerKey });
+    } else if (storagePaths.length > 0) {
+      await deleteLawyerDocuments({ storagePaths });
+    }
 
     queueLawyerRegistrationDecisionEmail({
-      email: updatedUser.email,
-      firstName: updatedUser.first_name,
-      status,
-      remarks: updatedProfile.verification_remarks
+      email: lawyerProfile.email,
+      firstName: lawyerProfile.first_name,
+      status: "rejected",
+      remarks: remarks?.trim() || null
     });
 
     return {
-      lawyerProfileId: updatedProfile.id,
-      userId: updatedUser.id,
-      firstName: updatedUser.first_name,
-      lastName: updatedUser.last_name,
-      email: updatedUser.email,
-      emailVerified: updatedUser.email_verified,
-      accountStatus: updatedUser.account_status,
-      verificationStatus: updatedProfile.verification_status,
-      verificationRemarks: updatedProfile.verification_remarks,
-      verifiedBy: updatedProfile.verified_by,
-      verifiedAt: updatedProfile.verified_at
+      lawyerProfileId: lawyerProfile.id,
+      userId: lawyerProfile.user_id,
+      firstName: lawyerProfile.first_name,
+      lastName: lawyerProfile.last_name,
+      email: lawyerProfile.email,
+      emailVerified: true,
+      accountStatus: "deleted",
+      verificationStatus: "rejected",
+      verificationRemarks: remarks?.trim() || null,
+      verifiedBy: adminUserId,
+      verifiedAt: new Date().toISOString()
     };
   } catch (error) {
     await client.query("ROLLBACK");
