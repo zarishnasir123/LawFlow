@@ -4,6 +4,7 @@ import { useForm } from "react-hook-form";
 import { useNavigate } from "@tanstack/react-router";
 import AuthForm from "../components/AuthForm";
 import TextField from "../components/TextField";
+import { authApi, getAuthErrorMessage } from "../api";
 
 type ForgotPasswordValues = {
   email: string;
@@ -13,6 +14,7 @@ export default function ForgotPassword() {
   const navigate = useNavigate();
   const [submitted, setSubmitted] = useState(false);
   const [submittedEmail, setSubmittedEmail] = useState("");
+  const [error, setError] = useState<string | null>(null);
 
   const {
     register,
@@ -22,9 +24,16 @@ export default function ForgotPassword() {
     defaultValues: { email: "" },
   });
 
-  const submit = (values: ForgotPasswordValues) => {
-    setSubmittedEmail(values.email);
-    setSubmitted(true);
+  const submit = async (values: ForgotPasswordValues) => {
+    try {
+      setError(null);
+      await authApi.forgotPassword(values.email);
+      setSubmittedEmail(values.email);
+      setSubmitted(true);
+    } catch (err: any) {
+      const message = getAuthErrorMessage(err);
+      setError(message);
+    }
   };
 
   const footer = (
@@ -54,7 +63,7 @@ export default function ForgotPassword() {
     return (
       <AuthForm
         title="Check Your Email"
-        subtitle="We've sent a password reset link to your email."
+        subtitle="If your email is registered, a reset link has been sent."
         mode="custom"
         footer={footer}
         maxWidthClassName="max-w-md"
@@ -64,11 +73,14 @@ export default function ForgotPassword() {
             <CheckCircle className="h-6 w-6" />
           </div>
           <p className="text-sm text-gray-600">
-            We've sent a password reset link to{" "}
+            If an account is registered with{" "}
             <span className="font-semibold text-gray-800">
-              {submittedEmail || "your email"}
+              {submittedEmail || "this email"}
             </span>
-            . Please check your inbox and follow the instructions.
+            , a reset link has been sent. Please check your inbox and follow the instructions.
+          </p>
+          <p className="text-xs text-gray-500">
+            Didn't get an email? Check your spam folder, or try again in a few minutes.
           </p>
           <button
             type="button"
@@ -112,6 +124,12 @@ export default function ForgotPassword() {
             },
           })}
         />
+        
+        {error && (
+          <div className="rounded-lg bg-red-50 p-3 text-sm text-red-600 border border-red-100">
+            {error}
+          </div>
+        )}
 
         <button
           type="submit"

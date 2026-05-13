@@ -1,3 +1,4 @@
+import { createHash, randomBytes } from "node:crypto";
 import { pool } from "../../config/db.js";
 import { queueLawyerRegistrationDecisionEmail } from "../../services/email.service.js";
 import {
@@ -92,6 +93,7 @@ async function findAuthUserByEmail(email) {
       users.phone,
       users.cnic,
       users.password_hash,
+      users.auth_provider,
       users.email_verified,
       users.account_status,
       users.failed_login_attempts,
@@ -687,4 +689,125 @@ export async function issueOAuthSession({ userId, req }) {
     ...tokens,
     rememberMe: false
   };
+}
+
+const passwordResetExpiryMs = 15 * 60 * 1000;
+
+// SHA-256 of a 256-bit random token is preimage-secure and gives an O(1)
+// UNIQUE-indexed lookup. bcrypt's slowness only matters for low-entropy
+// secrets (passwords); applying it to a high-entropy reset token forces a
+// linear scan and turns the redemption endpoint into a CPU amplifier.
+function hashResetToken(token) {
+  return createHash("sha256").update(token).digest("hex");
+}
+
+export async function requestPasswordReset(email) {
+  const normalizedEmail = email.trim().toLowerCase();
+  const user = await findAuthUserByEmail(normalizedEmail);
+
+  // User enumeration protection: caller turns null into the same generic
+  // success response as the happy path.
+  if (!user) {
+    return null;
+  }
+
+  if (user.auth_provider === "google") {
+    throw new ApiError(403, "This account uses Google Sign-In. Please continue with Google authentication.");
+  }
+
+  const token = randomBytes(32).toString("hex");
+  const tokenHash = hashResetToken(token);
+  const expiresAt = new Date(Date.now() + passwordResetExpiryMs);
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    // Invalidate any still-active tokens for this user before issuing a new
+    // one — only the newest email link should work.
+    await client.query(
+      `UPDATE password_reset_tokens
+       SET used_at = NOW()
+       WHERE user_id = $1 AND used_at IS NULL`,
+      [user.id]
+    );
+
+    await client.query(
+      `INSERT INTO password_reset_tokens (user_id, token_hash, expires_at)
+       VALUES ($1, $2, $3)`,
+      [user.id, tokenHash, expiresAt]
+    );
+
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+
+  return {
+    token,
+    user: mapAuthUser(user)
+  };
+}
+
+export async function resetPassword({ token, password }) {
+  const tokenHash = hashResetToken(token);
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    // Lock the token row so a parallel POST with the same token can't
+    // double-consume it before we mark it used.
+    const lookup = await client.query(
+      `SELECT id, user_id, used_at, expires_at
+       FROM password_reset_tokens
+       WHERE token_hash = $1
+       FOR UPDATE`,
+      [tokenHash]
+    );
+
+    const tokenRow = lookup.rows[0];
+    if (!tokenRow || tokenRow.used_at !== null || new Date(tokenRow.expires_at) <= new Date()) {
+      throw new ApiError(400, "Reset link is invalid or expired.");
+    }
+
+    const newPasswordHash = await hashValue(password);
+
+    await client.query(
+      `UPDATE users
+       SET password_hash = $1,
+           failed_login_attempts = 0,
+           locked_until = NULL,
+           updated_at = NOW()
+       WHERE id = $2`,
+      [newPasswordHash, tokenRow.user_id]
+    );
+
+    await client.query(
+      `UPDATE password_reset_tokens
+       SET used_at = NOW()
+       WHERE id = $1`,
+      [tokenRow.id]
+    );
+
+    // Revoke any still-valid refresh sessions so a stolen-cookie attacker
+    // is logged out once the legitimate user resets.
+    await client.query(
+      `UPDATE auth_sessions
+       SET is_revoked = true,
+           revoked_at = NOW()
+       WHERE user_id = $1 AND is_revoked = false`,
+      [tokenRow.user_id]
+    );
+
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
 }

@@ -2,6 +2,7 @@ import { Router } from "express";
 import {
   googleLogin,
   googleSession,
+  forgotPassword,
   listPendingLawyers,
   login,
   logout,
@@ -10,6 +11,7 @@ import {
   registerClient,
   registerLawyer,
   resendVerificationOtp,
+  resetPassword,
   reviewLawyer,
   supabaseAuthWebhook,
   verifyEmail
@@ -19,6 +21,7 @@ import { authenticate } from "../../middleware/authenticate.js";
 import { authorizeRoles } from "../../middleware/authorizeRoles.js";
 import { uploadLawyerDocs } from "../../middleware/uploadLawyerDocs.js";
 import { validateRequest } from "../../middleware/validateRequest.js";
+import { forgotPasswordLimiter, resetPasswordLimiter } from "../../middleware/rateLimiter.js";
 import {
   listPendingLawyersValidator,
   loginValidator,
@@ -26,7 +29,9 @@ import {
   registerLawyerValidator,
   resendVerificationOtpValidator,
   reviewLawyerValidator,
-  verifyEmailValidator
+  verifyEmailValidator,
+  forgotPasswordValidator,
+  resetPasswordValidator
 } from "./auth.validators.js";
 
 const router = Router();
@@ -82,6 +87,20 @@ router.post(
   resendVerificationOtpValidator,
   validateRequest,
   asyncHandler(resendVerificationOtp)
+);
+router.post(
+  "/forgot-password",
+  forgotPasswordLimiter,
+  forgotPasswordValidator,
+  validateRequest,
+  asyncHandler(forgotPassword)
+);
+router.post(
+  "/reset-password",
+  resetPasswordLimiter,
+  resetPasswordValidator,
+  validateRequest,
+  asyncHandler(resetPassword)
 );
 router.post("/logout", asyncHandler(logout));
 router.get("/me", authenticate, asyncHandler(me));

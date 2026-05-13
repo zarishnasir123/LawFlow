@@ -378,3 +378,29 @@ export const reviewLawyerValidator = [
     .notEmpty()
     .withMessage("Remarks are required when rejecting a lawyer registration")
 ];
+
+export const forgotPasswordValidator = [
+  body("email")
+    .trim()
+    .isEmail()
+    .withMessage("Valid email is required")
+    .bail()
+    .customSanitizer((value) => value.toLowerCase())
+];
+
+export const resetPasswordValidator = [
+  body("token")
+    .trim()
+    .notEmpty()
+    .withMessage("Reset token is required")
+    .isHexadecimal()
+    .withMessage("Invalid token format")
+    .isLength({ min: 64, max: 64 })
+    .withMessage("Invalid token length"),
+
+  body("password")
+    .matches(passwordRule)
+    .withMessage("Password must be at least 8 characters and include one number and one special character"),
+
+  body().custom(validatePasswordConfirmation)
+];
