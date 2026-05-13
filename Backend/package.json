@@ -6,7 +6,10 @@
   "scripts": {
     "dev": "nodemon src/server.js",
     "start": "node src/server.js",
-    "email:check": "node src/scripts/checkEmailConfig.js"
+    "email:check": "node src/scripts/checkEmailConfig.js",
+    "sync:supabase-users": "node src/scripts/syncSupabaseUsers.js",
+    "sync:supabase-users:apply": "node src/scripts/syncSupabaseUsers.js --apply",
+    "user:delete": "node src/scripts/deleteUser.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.105.3",

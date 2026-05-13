@@ -343,48 +343,6 @@ export function queueWelcomeEmail({ email, firstName }) {
   return queueEmailTask("welcome", () => sendWelcomeEmail({ email, firstName }));
 }
 
-export function sendGoogleWelcomeEmail({ email, firstName }) {
-  const subject = "Welcome to LawFlow";
-  const safeFirstName = escapeHtml(firstName || "there");
-  const text = [
-    `Hi ${firstName || "there"},`,
-    "",
-    "Your LawFlow account has been created using Google Sign-In.",
-    "",
-    "LawFlow will never ask for your Google password. If anyone does, ignore it and contact support.",
-    "",
-    "Best regards,",
-    "The LawFlow Team"
-  ].join("\n");
-
-  const html = createEmailLayout({
-    title: "Welcome to LawFlow",
-    previewText: "Your LawFlow account is ready.",
-    bodyHtml: `
-      <h1 style="margin:0 0 12px;color:${defaultBrandColor};font-size:24px;line-height:1.3;">Welcome to LawFlow</h1>
-      <p style="margin:0 0 18px;color:#344054;font-size:15px;line-height:1.7;">Hi ${safeFirstName},</p>
-      <p style="margin:0 0 18px;color:#344054;font-size:15px;line-height:1.7;">
-        Your LawFlow account has been created using <strong>Google Sign-In</strong>.
-      </p>
-      <div style="margin:22px 0;padding:16px 18px;background:#fff8ed;border:1px solid #f7d59a;border-radius:12px;">
-        <p style="margin:0;color:#7a4b00;font-size:13px;line-height:1.7;">
-          <strong>Security tip:</strong> LawFlow will never ask for your Google password. If anyone does, ignore it and contact support.
-        </p>
-      </div>
-      <p style="margin:18px 0 0;color:#344054;font-size:14px;line-height:1.7;">
-        Best regards,<br />
-        <span style="color:${defaultBrandColor};font-weight:700;">The LawFlow Team</span>
-      </p>
-    `
-  });
-
-  return sendEmail({ to: email, subject, text, html });
-}
-
-export function queueGoogleWelcomeEmail({ email, firstName }) {
-  return queueEmailTask("google-welcome", () => sendGoogleWelcomeEmail({ email, firstName }));
-}
-
 export function sendLawyerRegistrationDecisionEmail({
   email,
   firstName,

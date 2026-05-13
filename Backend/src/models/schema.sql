@@ -255,6 +255,32 @@ CREATE TABLE auth_identities (
   UNIQUE (provider, provider_user_id)
 );
 
+-- Audit trail of rejected lawyer applications. We persist this BEFORE
+-- deleting the lawyer's user row on rejection so:
+--   1) storage stays clean (no orphan files / DB rows for ever-rejected lawyers),
+--   2) the email can be re-used for a fresh re-registration without conflict,
+--   3) admins can still audit who was rejected, when, why, and by whom.
+-- Note: no FK to users(id) on purpose — the user is intentionally deleted.
+CREATE TABLE lawyer_rejection_history (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+
+  email              CITEXT       NOT NULL,
+  cnic               VARCHAR(15),
+  bar_license_number VARCHAR(100),
+  first_name         VARCHAR(100),
+  last_name          VARCHAR(100),
+  phone              VARCHAR(20),
+  specialization     VARCHAR(150),
+  district_bar       VARCHAR(150),
+
+  rejection_remarks    TEXT,
+  rejected_by_user_id  UUID,
+  rejected_by_email    CITEXT,
+  rejected_at          TIMESTAMP NOT NULL DEFAULT NOW(),
+
+  storage_paths_cleared TEXT[]
+);
+
 -- =====================================================================
 -- Indexes (only for real query patterns; PRIMARY KEY / UNIQUE already
 -- get implicit indexes, so do not duplicate them here.)
@@ -287,6 +313,12 @@ CREATE INDEX idx_lawyer_verification_documents_profile_id
 CREATE INDEX idx_lawyer_profiles_verification_status
   ON lawyer_profiles(verification_status);
 
+CREATE INDEX idx_lawyer_rejection_history_email
+  ON lawyer_rejection_history(email);
+
+CREATE INDEX idx_lawyer_rejection_history_rejected_at
+  ON lawyer_rejection_history(rejected_at DESC);
+
 -- =====================================================================
 -- Row Level Security: deny by default on every table.
 -- The Express backend uses SUPABASE_SERVICE_ROLE_KEY (and the local
@@ -305,3 +337,4 @@ ALTER TABLE email_verification_otps        ENABLE ROW LEVEL SECURITY;
 ALTER TABLE password_reset_tokens          ENABLE ROW LEVEL SECURITY;
 ALTER TABLE auth_sessions                  ENABLE ROW LEVEL SECURITY;
 ALTER TABLE auth_identities                ENABLE ROW LEVEL SECURITY;
+ALTER TABLE lawyer_rejection_history       ENABLE ROW LEVEL SECURITY;

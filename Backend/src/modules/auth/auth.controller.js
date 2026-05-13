@@ -256,9 +256,9 @@ function safeEqualString(a, b) {
 }
 
 // Cascades a Supabase auth.users deletion into the LawFlow database.
-// Configure in Supabase: Database -> Webhooks -> new webhook on auth.users
-// for the DELETE event, sending an HTTP POST to /api/auth/webhooks/supabase
-// with the header `x-webhook-secret: <SUPABASE_WEBHOOK_SECRET>`.
+// Install the Postgres trigger from Backend/src/models/supabase_auth_users_delete_webhook.sql
+// in the Supabase SQL Editor (replacing the URL/secret placeholders). The
+// trigger POSTs to this endpoint on every auth.users DELETE.
 export async function supabaseAuthWebhook(req, res) {
   const expectedSecret = process.env.SUPABASE_WEBHOOK_SECRET;
 
@@ -283,16 +283,15 @@ export async function supabaseAuthWebhook(req, res) {
   }
 
   const supabaseUserId = event.old_record?.id;
-  const oldEmail = event.old_record?.email?.toLowerCase().trim();
 
-  if (!supabaseUserId && !oldEmail) {
-    return res.status(200).json({ received: true, processed: false, reason: "missing user identifiers" });
+  if (!supabaseUserId) {
+    return res.status(200).json({ received: true, processed: false, reason: "missing user id" });
   }
 
-  // Prefer the auth_identities link (provider_user_id matches the Supabase
-  // user id we stored at sign-up). Fall back to email match if no identity
-  // row exists, scoped to OAuth users so we never wipe a manually
-  // registered local account that happens to share the email.
+  // Match by the Supabase user id stored in auth_identities. Per AGENTS.md
+  // we never look up OAuth users by email — Supabase can recycle an email
+  // address across distinct auth.users rows, and matching by email would
+  // risk wiping an unrelated local account.
   const result = await pool.query(
     `DELETE FROM users
     WHERE id = (
@@ -300,9 +299,8 @@ export async function supabaseAuthWebhook(req, res) {
       WHERE provider = 'google' AND provider_user_id = $1
       LIMIT 1
     )
-    OR (email = $2 AND auth_provider = 'google' AND $2 IS NOT NULL)
     RETURNING id, email`,
-    [supabaseUserId || null, oldEmail || null]
+    [supabaseUserId]
   );
 
   return res.status(200).json({
