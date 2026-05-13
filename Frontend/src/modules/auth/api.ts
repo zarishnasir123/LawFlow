@@ -1,7 +1,11 @@
 import axios from "axios";
 import { apiClient } from "../../shared/api/axios";
 
-export const authApi = apiClient;
+export const authApi = {
+  ...apiClient,
+  forgotPassword: (email: string) => apiClient.post("/auth/forgot-password", { email }),
+  resetPassword: (payload: any) => apiClient.post("/auth/reset-password", payload),
+};
 
 export function getAuthErrorMessage(error: unknown): string {
   if (axios.isAxiosError(error)) {

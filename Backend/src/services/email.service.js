@@ -426,3 +426,59 @@ export function queueLawyerRegistrationDecisionEmail({
     sendLawyerRegistrationDecisionEmail({ email, firstName, status, remarks })
   ));
 }
+
+export function sendPasswordResetEmail({ email, firstName, resetUrl }) {
+  const subject = "Reset your LawFlow password";
+  const safeFirstName = escapeHtml(firstName);
+  const text = [
+    `Hello ${firstName},`,
+    "",
+    "We received a request to reset your LawFlow password.",
+    `Click the link below to set a new password:`,
+    resetUrl,
+    "",
+    "This link will expire in 15 minutes.",
+    "If you did not request a password reset, you can safely ignore this email."
+  ].join("\n");
+
+  const html = createEmailLayout({
+    title: "Reset your LawFlow password",
+    previewText: "Reset your LawFlow password.",
+    bodyHtml: `
+      <h1 style="margin:0 0 12px;color:${defaultBrandColor};font-size:24px;line-height:1.3;">Password Reset Request</h1>
+      <p style="margin:0 0 18px;color:#344054;font-size:15px;line-height:1.7;">Hello ${safeFirstName},</p>
+      <p style="margin:0 0 18px;color:#344054;font-size:15px;line-height:1.7;">
+        We received a request to reset the password for your LawFlow account. Click the button below to choose a new password.
+      </p>
+      <table role="presentation" cellspacing="0" cellpadding="0" style="margin:30px 0;">
+        <tr>
+          <td style="background:${defaultBrandColor};border-radius:10px;">
+            <a href="${escapeHtml(resetUrl)}" style="display:inline-block;padding:14px 28px;color:#ffffff;text-decoration:none;font-size:15px;font-weight:700;">
+              Reset Password
+            </a>
+          </td>
+        </tr>
+      </table>
+      <p style="margin:0 0 12px;color:#344054;font-size:14px;line-height:1.7;">
+        This link is valid for <strong>15 minutes</strong>. After that, you'll need to request another reset.
+      </p>
+      <p style="margin:0;color:#667085;font-size:13px;line-height:1.7;">
+        If you didn't request this change, you can safely ignore this email. Your password will remain unchanged.
+      </p>
+      <div style="margin-top:24px;padding-top:20px;border-top:1px solid #e2f0e8;">
+        <p style="margin:0;color:#98a2b3;font-size:12px;word-break:break-all;">
+          If the button above doesn't work, copy and paste this URL into your browser:<br/>
+          <span style="color:${defaultBrandColor};">${escapeHtml(resetUrl)}</span>
+        </p>
+      </div>
+    `
+  });
+
+  return sendEmail({ to: email, subject, text, html });
+}
+
+export function queuePasswordResetEmail({ email, firstName, resetUrl }) {
+  return queueEmailTask("password-reset", () => (
+    sendPasswordResetEmail({ email, firstName, resetUrl })
+  ));
+}

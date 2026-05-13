@@ -8,6 +8,8 @@ import {
   loginUser,
   logoutUser,
   refreshAuthSession,
+  requestPasswordReset,
+  resetPassword as resetUserPassword,
   reviewLawyerRegistration
 } from "./auth.service.js";
 import {
@@ -16,6 +18,7 @@ import {
   resendRegistrationVerificationOtp,
   startRegistration
 } from "./registration.service.js";
+import { queuePasswordResetEmail } from "../../services/email.service.js";
 import { parseDurationToMilliseconds } from "../../utils/tokens.js";
 import { ApiError } from "../../utils/apiError.js";
 import { requireSupabaseClient } from "../../config/supabase.js";
@@ -353,5 +356,37 @@ export async function googleSession(req, res) {
     user: session.user,
     accessToken: session.accessToken,
     refreshTokenExpiresAt: session.refreshTokenExpiresAt
+  });
+}
+
+export async function forgotPassword(req, res) {
+  const result = await requestPasswordReset(req.body.email);
+
+  // result will be null if user doesn't exist (user enumeration protection)
+  if (result) {
+    const { token, user } = result;
+    const resetUrl = `${getFrontendUrl()}/reset-password?token=${token}`;
+
+    queuePasswordResetEmail({
+      email: user.email,
+      firstName: user.firstName,
+      resetUrl
+    });
+  }
+
+  // Always return the same generic message for security
+  return res.status(200).json({
+    message: "If an account exists, a reset link has been sent."
+  });
+}
+
+export async function resetPassword(req, res) {
+  await resetUserPassword({
+    token: req.body.token,
+    password: req.body.password
+  });
+
+  return res.status(200).json({
+    message: "Password has been reset successfully. Please log in with your new password."
   });
 }

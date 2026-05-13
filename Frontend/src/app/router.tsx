@@ -14,6 +14,7 @@ import Login from "../modules/auth/pages/Login";
 import ForgotPassword from "../modules/auth/pages/ForgotPassword";
 import VerifyEmail from "../modules/auth/pages/VerifyEmail";
 import AuthCallback from "../modules/auth/pages/AuthCallback";
+import ResetPassword from "../modules/auth/pages/ResetPassword";
 
 /* =====================================================
    CLIENT MODULE IMPORTS
@@ -126,6 +127,17 @@ const authCallbackRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "auth/callback",
   component: AuthCallback,
+});
+
+const resetPasswordRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "reset-password",
+  component: ResetPassword,
+  validateSearch: (search: Record<string, unknown>) => {
+    return {
+      token: (search.token as string) || undefined,
+    };
+  },
 });
 
 /* =====================================================
@@ -479,6 +491,7 @@ const routeTree = rootRoute.addChildren([
   forgotPasswordRoute,
   verifyEmailRoute,
   authCallbackRoute,
+  resetPasswordRoute,
 
   // Client Routes
   clientDashboardRoute,

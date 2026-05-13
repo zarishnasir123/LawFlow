@@ -4,6 +4,7 @@ import { useForm } from "react-hook-form";
 import { useNavigate } from "@tanstack/react-router";
 import AuthForm from "../components/AuthForm";
 import TextField from "../components/TextField";
+import { authApi, getAuthErrorMessage } from "../api";
 
 type ForgotPasswordValues = {
   email: string;
@@ -13,6 +14,7 @@ export default function ForgotPassword() {
   const navigate = useNavigate();
   const [submitted, setSubmitted] = useState(false);
   const [submittedEmail, setSubmittedEmail] = useState("");
+  const [error, setError] = useState<string | null>(null);
 
   const {
     register,
@@ -22,9 +24,16 @@ export default function ForgotPassword() {
     defaultValues: { email: "" },
   });
 
-  const submit = (values: ForgotPasswordValues) => {
-    setSubmittedEmail(values.email);
-    setSubmitted(true);
+  const submit = async (values: ForgotPasswordValues) => {
+    try {
+      setError(null);
+      await authApi.forgotPassword(values.email);
+      setSubmittedEmail(values.email);
+      setSubmitted(true);
+    } catch (err: any) {
+      const message = getAuthErrorMessage(err);
+      setError(message);
+    }
   };
 
   const footer = (
@@ -112,6 +121,12 @@ export default function ForgotPassword() {
             },
           })}
         />
+        
+        {error && (
+          <div className="rounded-lg bg-red-50 p-3 text-sm text-red-600 border border-red-100">
+            {error}
+          </div>
+        )}
 
         <button
           type="submit"
