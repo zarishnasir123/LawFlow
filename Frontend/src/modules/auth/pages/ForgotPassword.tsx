@@ -63,7 +63,7 @@ export default function ForgotPassword() {
     return (
       <AuthForm
         title="Check Your Email"
-        subtitle="We've sent a password reset link to your email."
+        subtitle="If your email is registered, a reset link has been sent."
         mode="custom"
         footer={footer}
         maxWidthClassName="max-w-md"
@@ -73,11 +73,14 @@ export default function ForgotPassword() {
             <CheckCircle className="h-6 w-6" />
           </div>
           <p className="text-sm text-gray-600">
-            We've sent a password reset link to{" "}
+            If an account is registered with{" "}
             <span className="font-semibold text-gray-800">
-              {submittedEmail || "your email"}
+              {submittedEmail || "this email"}
             </span>
-            . Please check your inbox and follow the instructions.
+            , a reset link has been sent. Please check your inbox and follow the instructions.
+          </p>
+          <p className="text-xs text-gray-500">
+            Didn't get an email? Check your spam folder, or try again in a few minutes.
           </p>
           <button
             type="button"
