@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, CheckCircle, Lock } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { useNavigate, useSearch } from "@tanstack/react-router";
@@ -13,9 +13,17 @@ type ResetPasswordValues = {
 
 export default function ResetPassword() {
   const navigate = useNavigate();
-  // We assume the route is configured to accept 'token' in search params
   const search = useSearch({ from: "/reset-password" }) as { token?: string };
-  const token = search.token;
+
+  // Capture the token once on mount, then strip it from the URL so it does
+  // not linger in browser history, the Referer header, or webserver logs.
+  const tokenRef = useRef<string | undefined>(search.token);
+  useEffect(() => {
+    if (search.token && typeof window !== "undefined") {
+      window.history.replaceState(null, "", window.location.pathname);
+    }
+  }, []);
+  const token = tokenRef.current;
 
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState<string | null>(null);

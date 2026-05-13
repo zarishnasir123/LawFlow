@@ -1,4 +1,4 @@
-import { authApi } from "./api";
+import { apiClient } from "../../shared/api/axios";
 
 export type RegisterLawyerPayload = {
   firstName: string;
@@ -72,7 +72,7 @@ export async function registerLawyer(payload: RegisterLawyerPayload) {
   formData.append("licenseCardFrontImage", payload.licenseCardFrontImage);
   formData.append("licenseCardBackImage", payload.licenseCardBackImage);
 
-  const { data } = await authApi.post<RegisterLawyerResponse>(
+  const { data } = await apiClient.post<RegisterLawyerResponse>(
     "/auth/register/lawyer",
     formData
   );

@@ -21,7 +21,7 @@ import { authenticate } from "../../middleware/authenticate.js";
 import { authorizeRoles } from "../../middleware/authorizeRoles.js";
 import { uploadLawyerDocs } from "../../middleware/uploadLawyerDocs.js";
 import { validateRequest } from "../../middleware/validateRequest.js";
-import { rateLimiter } from "../../middleware/rateLimiter.js";
+import { forgotPasswordLimiter, resetPasswordLimiter } from "../../middleware/rateLimiter.js";
 import {
   listPendingLawyersValidator,
   loginValidator,
@@ -90,17 +90,14 @@ router.post(
 );
 router.post(
   "/forgot-password",
-  rateLimiter({
-    windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 5, // Limit each IP to 5 requests per window
-    message: "Too many password reset requests from this IP. Please try again after 15 minutes."
-  }),
+  forgotPasswordLimiter,
   forgotPasswordValidator,
   validateRequest,
   asyncHandler(forgotPassword)
 );
 router.post(
   "/reset-password",
+  resetPasswordLimiter,
   resetPasswordValidator,
   validateRequest,
   asyncHandler(resetPassword)

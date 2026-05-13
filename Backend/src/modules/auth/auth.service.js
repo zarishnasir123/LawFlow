@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { pool } from "../../config/db.js";
 import { queueLawyerRegistrationDecisionEmail } from "../../services/email.service.js";
 import {
@@ -93,6 +93,7 @@ async function findAuthUserByEmail(email) {
       users.phone,
       users.cnic,
       users.password_hash,
+      users.auth_provider,
       users.email_verified,
       users.account_status,
       users.failed_login_attempts,
@@ -690,31 +691,60 @@ export async function issueOAuthSession({ userId, req }) {
   };
 }
 
+const passwordResetExpiryMs = 15 * 60 * 1000;
+
+// SHA-256 of a 256-bit random token is preimage-secure and gives an O(1)
+// UNIQUE-indexed lookup. bcrypt's slowness only matters for low-entropy
+// secrets (passwords); applying it to a high-entropy reset token forces a
+// linear scan and turns the redemption endpoint into a CPU amplifier.
+function hashResetToken(token) {
+  return createHash("sha256").update(token).digest("hex");
+}
+
 export async function requestPasswordReset(email) {
   const normalizedEmail = email.trim().toLowerCase();
   const user = await findAuthUserByEmail(normalizedEmail);
 
-  // Protection against user enumeration: if user not found, we don't throw 404 here,
-  // we return null so the controller can send a generic "success" message.
+  // User enumeration protection: caller turns null into the same generic
+  // success response as the happy path.
   if (!user) {
     return null;
   }
 
-  // Google users cannot reset password via LawFlow
   if (user.auth_provider === "google") {
     throw new ApiError(403, "This account uses Google Sign-In. Please continue with Google authentication.");
   }
 
-  // Generate a secure 32-byte token (64 hex characters)
   const token = randomBytes(32).toString("hex");
-  const tokenHash = await hashValue(token);
-  const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
+  const tokenHash = hashResetToken(token);
+  const expiresAt = new Date(Date.now() + passwordResetExpiryMs);
 
-  await pool.query(
-    `INSERT INTO password_reset_tokens (user_id, token_hash, expires_at)
-     VALUES ($1, $2, $3)`,
-    [user.id, tokenHash, expiresAt]
-  );
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    // Invalidate any still-active tokens for this user before issuing a new
+    // one — only the newest email link should work.
+    await client.query(
+      `UPDATE password_reset_tokens
+       SET used_at = NOW()
+       WHERE user_id = $1 AND used_at IS NULL`,
+      [user.id]
+    );
+
+    await client.query(
+      `INSERT INTO password_reset_tokens (user_id, token_hash, expires_at)
+       VALUES ($1, $2, $3)`,
+      [user.id, tokenHash, expiresAt]
+    );
+
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
 
   return {
     token,
@@ -723,68 +753,54 @@ export async function requestPasswordReset(email) {
 }
 
 export async function resetPassword({ token, password }) {
-  const tokenHash = await hashValue(token);
-
-  // Note: We hash the incoming token and look it up.
-  // Since we use bcrypt for hashValue, we can't just query by hash.
-  // We need to find the most recent unused tokens for all users (or we could optimize if we had a non-bcrypt hash like SHA256).
-  // However, bcrypt is requested for passwords. For tokens, we can use a simpler hash or just check all active ones.
-  // Given AGENTS.md says "Never store plain passwords, OTPs, reset tokens", hashing is required.
-  // Since bcrypt is slow, we'll fetch recently created unused tokens and compare.
-  
-  const result = await pool.query(
-    `SELECT t.id, t.user_id, t.token_hash, t.expires_at
-     FROM password_reset_tokens t
-     WHERE t.used_at IS NULL 
-       AND t.expires_at > NOW()
-     ORDER BY t.created_at DESC
-     LIMIT 100` // Safety limit
-  );
-
-  let validTokenRow = null;
-  for (const row of result.rows) {
-    const isMatch = await compareHash(token, row.token_hash);
-    if (isMatch) {
-      validTokenRow = row;
-      break;
-    }
-  }
-
-  if (!validTokenRow) {
-    throw new ApiError(400, "Reset link is invalid or expired.");
-  }
+  const tokenHash = hashResetToken(token);
 
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
 
-    // 1. Update password
+    // Lock the token row so a parallel POST with the same token can't
+    // double-consume it before we mark it used.
+    const lookup = await client.query(
+      `SELECT id, user_id, used_at, expires_at
+       FROM password_reset_tokens
+       WHERE token_hash = $1
+       FOR UPDATE`,
+      [tokenHash]
+    );
+
+    const tokenRow = lookup.rows[0];
+    if (!tokenRow || tokenRow.used_at !== null || new Date(tokenRow.expires_at) <= new Date()) {
+      throw new ApiError(400, "Reset link is invalid or expired.");
+    }
+
     const newPasswordHash = await hashValue(password);
+
     await client.query(
-      `UPDATE users 
-       SET password_hash = $1, 
-           failed_login_attempts = 0, 
+      `UPDATE users
+       SET password_hash = $1,
+           failed_login_attempts = 0,
            locked_until = NULL,
-           updated_at = NOW() 
+           updated_at = NOW()
        WHERE id = $2`,
-      [newPasswordHash, validTokenRow.user_id]
+      [newPasswordHash, tokenRow.user_id]
     );
 
-    // 2. Mark token as used
     await client.query(
-      `UPDATE password_reset_tokens 
-       SET used_at = NOW() 
+      `UPDATE password_reset_tokens
+       SET used_at = NOW()
        WHERE id = $1`,
-      [validTokenRow.id]
+      [tokenRow.id]
     );
 
-    // 3. Revoke all active sessions for this user (Security Requirement 7)
+    // Revoke any still-valid refresh sessions so a stolen-cookie attacker
+    // is logged out once the legitimate user resets.
     await client.query(
-      `UPDATE auth_sessions 
-       SET is_revoked = true, 
-           revoked_at = NOW() 
+      `UPDATE auth_sessions
+       SET is_revoked = true,
+           revoked_at = NOW()
        WHERE user_id = $1 AND is_revoked = false`,
-      [validTokenRow.user_id]
+      [tokenRow.user_id]
     );
 
     await client.query("COMMIT");

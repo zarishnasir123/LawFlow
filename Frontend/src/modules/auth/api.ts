@@ -1,10 +1,17 @@
 import axios from "axios";
 import { apiClient } from "../../shared/api/axios";
 
+type ResetPasswordPayload = {
+  token: string;
+  password: string;
+  confirmPassword: string;
+};
+
 export const authApi = {
-  ...apiClient,
-  forgotPassword: (email: string) => apiClient.post("/auth/forgot-password", { email }),
-  resetPassword: (payload: any) => apiClient.post("/auth/reset-password", payload),
+  forgotPassword: (email: string) =>
+    apiClient.post("/auth/forgot-password", { email }),
+  resetPassword: (payload: ResetPasswordPayload) =>
+    apiClient.post("/auth/reset-password", payload),
 };
 
 export function getAuthErrorMessage(error: unknown): string {
