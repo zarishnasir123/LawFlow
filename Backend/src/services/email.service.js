@@ -1,6 +1,6 @@
 import nodemailer from "nodemailer";
 
-import { renderEmail } from "./emailTemplates/index.js";
+import { preloadEmailTemplates, renderEmail } from "./emailTemplates/index.js";
 
 const placeholderValues = new Set([
   "your_email@gmail.com",
@@ -44,13 +44,19 @@ function shouldLogEmailDebug() {
   return process.env.EMAIL_DEBUG === "true";
 }
 
+let sharedTransporter = null;
+
 function createTransporter() {
   const timeoutMs = Number(process.env.SMTP_TIMEOUT_MS || 8000);
+  const port = Number(process.env.EMAIL_PORT || 587);
 
   return nodemailer.createTransport({
     host: process.env.EMAIL_HOST,
-    port: Number(process.env.EMAIL_PORT || 587),
-    secure: Number(process.env.EMAIL_PORT || 587) === 465,
+    port,
+    secure: port === 465,
+    pool: true,
+    maxConnections: 1,
+    maxMessages: 100,
     connectionTimeout: timeoutMs,
     greetingTimeout: timeoutMs,
     socketTimeout: timeoutMs,
@@ -59,6 +65,14 @@ function createTransporter() {
       pass: getSmtpPassword()
     }
   });
+}
+
+function getSharedTransporter() {
+  if (!sharedTransporter) {
+    sharedTransporter = createTransporter();
+  }
+
+  return sharedTransporter;
 }
 
 export async function sendEmail({ to, subject, text, html }) {
@@ -76,7 +90,7 @@ export async function sendEmail({ to, subject, text, html }) {
     };
   }
 
-  const transporter = createTransporter();
+  const transporter = getSharedTransporter();
 
   try {
     const info = await transporter.sendMail({
@@ -162,10 +176,25 @@ export function sendVerificationOtpEmail({ email, otp, firstName }) {
   });
 }
 
+function toOtpEmailDeliveryStatus(result) {
+  return {
+    queued: false,
+    emailSent: result.mode === "smtp",
+    emailQueued: false,
+    deliveryMode: result.mode,
+    deliveryReason: result.reason
+  };
+}
+
+// OTP is time-sensitive: send during the request instead of deferring with
+// setImmediate so the SMTP handshake starts before the HTTP response finishes.
+export async function deliverVerificationOtpEmail({ email, otp, firstName }) {
+  const result = await sendVerificationOtpEmail({ email, otp, firstName });
+  return toOtpEmailDeliveryStatus(result);
+}
+
 export function queueVerificationOtpEmail({ email, otp, firstName }) {
-  return queueEmailTask("verification-otp", () => (
-    sendVerificationOtpEmail({ email, otp, firstName })
-  ));
+  return deliverVerificationOtpEmail({ email, otp, firstName });
 }
 
 export function sendWelcomeEmail({ email, firstName }) {
@@ -177,6 +206,18 @@ export function sendWelcomeEmail({ email, firstName }) {
 
 export function queueWelcomeEmail({ email, firstName }) {
   return queueEmailTask("welcome", () => sendWelcomeEmail({ email, firstName }));
+}
+
+export function sendLawyerPendingReviewEmail({ email, firstName }) {
+  return send(email, "Your LawFlow lawyer registration is under review", "lawyerPendingReview", {
+    firstName
+  });
+}
+
+export function queueLawyerPendingReviewEmail({ email, firstName }) {
+  return queueEmailTask("lawyer-pending-review", () => (
+    sendLawyerPendingReviewEmail({ email, firstName })
+  ));
 }
 
 export function sendLawyerRegistrationDecisionEmail({ email, firstName, status, remarks }) {
@@ -194,7 +235,8 @@ export function sendLawyerRegistrationDecisionEmail({ email, firstName, status, 
 
   return send(email, subject, "lawyerRejected", {
     firstName,
-    remarks: remarks || "Please review your submitted documents and re-upload the required files."
+    remarks: remarks || "Please review your submitted documents and re-upload the required files.",
+    registerUrl: `${getFrontendUrl()}/register`
   });
 }
 
@@ -216,4 +258,21 @@ export function queuePasswordResetEmail({ email, firstName, resetUrl }) {
   return queueEmailTask("password-reset", () => (
     sendPasswordResetEmail({ email, firstName, resetUrl })
   ));
+}
+
+export async function warmEmailTransport() {
+  preloadEmailTemplates(["verificationOtp"]);
+
+  const emailConfig = getEmailDeliveryConfig();
+  if (emailConfig.mode !== "smtp") {
+    return { warmed: false, reason: emailConfig.issues.join(", ") };
+  }
+
+  try {
+    await getSharedTransporter().verify();
+    return { warmed: true };
+  } catch (error) {
+    console.warn("[EMAIL WARMUP FAILED]", error.message);
+    return { warmed: false, reason: error.message };
+  }
 }

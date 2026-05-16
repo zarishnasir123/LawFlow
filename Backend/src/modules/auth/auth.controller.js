@@ -4,6 +4,7 @@ import { pool } from "../../config/db.js";
 import {
   getCurrentUser,
   issueOAuthSession,
+  listLawyerRejectionHistory,
   listPendingLawyerVerifications,
   loginUser,
   logoutUser,
@@ -217,6 +218,16 @@ export async function listPendingLawyers(req, res) {
   const result = await listPendingLawyerVerifications({
     limit: req.query.limit,
     offset: req.query.offset
+  });
+
+  return res.status(200).json(result);
+}
+
+export async function listLawyerRejections(req, res) {
+  const result = await listLawyerRejectionHistory({
+    limit: req.query.limit,
+    offset: req.query.offset,
+    search: req.query.search
   });
 
   return res.status(200).json(result);

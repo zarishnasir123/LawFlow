@@ -2,12 +2,13 @@ import "dotenv/config";
 
 import app from "./app.js";
 import { pool } from "./config/db.js";
-// import { getEmailDeliveryConfig } from "./services/email.service.js";
+import { warmEmailTransport } from "./services/email.service.js";
 
 const port = process.env.PORT || 5000;
 
 async function startServer() {
   await pool.query("SELECT 1");
+  await warmEmailTransport();
 
   app.listen(port, () => {
     console.log(`LawFlow backend running on port ${port}`);

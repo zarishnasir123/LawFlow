@@ -202,9 +202,9 @@ export default function VerifyEmail() {
           </div>
           <p className="text-sm text-gray-700">
             Your email has been successfully verified. Your account is currently
-            under admin approval. Your degree document and bar license card are
-            under verification. You will receive a confirmation email once your
-            account is approved.
+            under admin approval. Your academic credentials and bar council
+            licence documentation are under verification. You will receive a
+            confirmation email once your account is approved.
           </p>
           <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-left text-xs text-amber-800">
             <span className="font-semibold">Status:</span> Email verified · Admin approval pending

@@ -60,6 +60,7 @@ When Supabase is not configured the backend will reject lawyer registration with
 - `POST /api/auth/refresh`
 - `POST /api/auth/logout`
 - `GET /api/auth/me`
+- `GET /api/auth/lawyers/rejections` (admin only — returned registration audit log)
 
 ## Email Verification
 

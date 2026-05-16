@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { BadgeCheck, BarChart3, FileText, Shield, UserCheck } from "lucide-react";
+import { BadgeCheck, BarChart3, FileText, Shield, UserCheck, UserX } from "lucide-react";
 
 import { AdminHeader } from "../components/AdminHeader";
 import { ActionCard } from "../components/ActionCard";
@@ -143,6 +143,17 @@ export default function AdminDashboardPage() {
                 iconTextClass="text-amber-700"
                 badgeClassName="bg-amber-100 text-amber-700"
                 onClick={() => navigate({ to: "/admin-verifications" })}
+              />
+
+              <ActionCard
+                title="Returned Registrations"
+                description="Review lawyers returned by admin and the remarks sent to them."
+                badgeText="Open Rejection History"
+                icon={UserX}
+                iconBgClass="bg-rose-100"
+                iconTextClass="text-rose-700"
+                badgeClassName="bg-rose-100 text-rose-700"
+                onClick={() => navigate({ to: "/admin-rejection-history" })}
               />
             </div>
           </div>

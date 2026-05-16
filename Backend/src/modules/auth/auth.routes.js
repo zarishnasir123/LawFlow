@@ -3,6 +3,7 @@ import {
   googleLogin,
   googleSession,
   forgotPassword,
+  listLawyerRejections,
   listPendingLawyers,
   login,
   logout,
@@ -23,6 +24,7 @@ import { uploadLawyerDocs } from "../../middleware/uploadLawyerDocs.js";
 import { validateRequest } from "../../middleware/validateRequest.js";
 import { forgotPasswordLimiter, resetPasswordLimiter } from "../../middleware/rateLimiter.js";
 import {
+  listLawyerRejectionHistoryValidator,
   listPendingLawyersValidator,
   loginValidator,
   registerClientValidator,
@@ -58,6 +60,15 @@ router.get(
   listPendingLawyersValidator,
   validateRequest,
   asyncHandler(listPendingLawyers)
+);
+
+router.get(
+  "/lawyers/rejections",
+  authenticate,
+  authorizeRoles("admin"),
+  listLawyerRejectionHistoryValidator,
+  validateRequest,
+  asyncHandler(listLawyerRejections)
 );
 
 router.patch(

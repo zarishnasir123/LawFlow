@@ -1,4 +1,4 @@
-import { useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { useLoginStore } from "../store";
@@ -258,9 +258,7 @@ export default function LoginForm({ onForgotPassword }: LoginFormProps) {
       ) : null}
 
       {lawyerLoginMutation.isError ? (
-        <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          {getAuthErrorMessage(lawyerLoginMutation.error)}
-        </div>
+        <LawyerLoginError message={getAuthErrorMessage(lawyerLoginMutation.error)} />
       ) : null}
 
       {role === "client" ? (
@@ -275,5 +273,24 @@ export default function LoginForm({ onForgotPassword }: LoginFormProps) {
         </>
       ) : null}
     </form>
+  );
+}
+
+function LawyerLoginError({ message }: { message: string }) {
+  const showRegisterLink =
+    message.includes("returned by admin") || message.includes("Register again");
+
+  return (
+    <div className="space-y-2 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+      <p>{message}</p>
+      {showRegisterLink ? (
+        <Link
+          to="/register"
+          className="inline-block font-semibold text-[var(--primary)] hover:underline"
+        >
+          Register again with updated documents
+        </Link>
+      ) : null}
+    </div>
   );
 }

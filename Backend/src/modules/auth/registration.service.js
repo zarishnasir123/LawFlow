@@ -2,7 +2,8 @@ import { randomUUID } from "node:crypto";
 
 import { pool } from "../../config/db.js";
 import {
-  queueVerificationOtpEmail,
+  queueLawyerPendingReviewEmail,
+  deliverVerificationOtpEmail,
   queueWelcomeEmail
 } from "../../services/email.service.js";
 import {
@@ -92,10 +93,10 @@ function toPendingRegistrationResponse({ role, commonData, emailDelivery, expire
       createdAt
     },
     verification: {
-      emailSent: emailDelivery.mode === "smtp",
-      emailQueued: emailDelivery.queued,
-      deliveryMode: emailDelivery.mode,
-      deliveryReason: emailDelivery.reason,
+      emailSent: emailDelivery.emailSent,
+      emailQueued: emailDelivery.emailQueued,
+      deliveryMode: emailDelivery.deliveryMode,
+      deliveryReason: emailDelivery.deliveryReason,
       expiresAt
     }
   };
@@ -309,9 +310,11 @@ export async function startRegistration({ role, payload, files }) {
     const profileData = strategy.mapProfileData(workingPayload);
 
     const otp = generateNumericOtp();
-    const otpHash = await hashValue(otp);
-    const passwordHash = await hashValue(commonData.password);
     const expiresAt = getEmailOtpExpiryDate();
+    const [otpHash, passwordHash] = await Promise.all([
+      hashValue(otp),
+      hashValue(commonData.password)
+    ]);
 
     const pendingRegistration = await createPendingRegistration(client, {
       roleId,
@@ -322,7 +325,7 @@ export async function startRegistration({ role, payload, files }) {
       expiresAt
     });
 
-    const emailDelivery = queueVerificationOtpEmail({
+    const emailDelivery = await deliverVerificationOtpEmail({
       email: commonData.email,
       otp,
       firstName: commonData.firstName
@@ -452,10 +455,17 @@ export async function completeRegistrationVerification({ email, otp }) {
 
     await client.query("COMMIT");
 
-    queueWelcomeEmail({
-      email: user.email,
-      firstName: user.first_name
-    });
+    if (strategy.roleName === "lawyer") {
+      queueLawyerPendingReviewEmail({
+        email: user.email,
+        firstName: user.first_name
+      });
+    } else {
+      queueWelcomeEmail({
+        email: user.email,
+        firstName: user.first_name
+      });
+    }
 
     return toVerifiedUserResponse({
       user,
@@ -614,7 +624,7 @@ export async function resendRegistrationVerificationOtp({ email }) {
       [otpHash, expiresAt, pendingRegistration.id]
     );
 
-    const emailDelivery = queueVerificationOtpEmail({
+    const emailDelivery = await deliverVerificationOtpEmail({
       email: pendingRegistration.email,
       otp,
       firstName: pendingRegistration.first_name
@@ -622,10 +632,10 @@ export async function resendRegistrationVerificationOtp({ email }) {
 
     return {
       email: pendingRegistration.email,
-      emailSent: emailDelivery.mode === "smtp",
-      emailQueued: emailDelivery.queued,
-      deliveryMode: emailDelivery.mode,
-      deliveryReason: emailDelivery.reason,
+      emailSent: emailDelivery.emailSent,
+      emailQueued: emailDelivery.emailQueued,
+      deliveryMode: emailDelivery.deliveryMode,
+      deliveryReason: emailDelivery.deliveryReason,
       expiresAt
     };
   } finally {

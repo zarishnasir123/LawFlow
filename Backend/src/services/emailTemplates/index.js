@@ -4,7 +4,8 @@ import { fileURLToPath } from "node:url";
 import Handlebars from "handlebars";
 
 const dir = path.dirname(fileURLToPath(import.meta.url));
-const cacheTemplates = process.env.NODE_ENV === "production";
+// Always cache compiled templates so OTP emails are not delayed by disk reads.
+const cacheTemplates = true;
 
 const brand = {
   name: "LawFlow",
@@ -25,6 +26,12 @@ function getTemplate(name) {
   const fn = compileTemplate(name);
   if (cacheTemplates) compiled.set(name, fn);
   return fn;
+}
+
+export function preloadEmailTemplates(names = ["verificationOtp"]) {
+  for (const name of names) {
+    getTemplate(name);
+  }
 }
 
 export function renderEmail(name, vars = {}) {
