@@ -340,3 +340,5 @@ ALTER TABLE password_reset_tokens          ENABLE ROW LEVEL SECURITY;
 ALTER TABLE auth_sessions                  ENABLE ROW LEVEL SECURITY;
 ALTER TABLE auth_identities                ENABLE ROW LEVEL SECURITY;
 ALTER TABLE lawyer_rejection_history       ENABLE ROW LEVEL SECURITY;
+
+

@@ -72,6 +72,7 @@ import AdminDashboardPage from "../modules/admin/pages/Dashboard";
 import AdminRegistrarsPage from "../modules/admin/pages/Registrars";
 import AdminStatisticPage from "../modules/admin/pages/Reports";
 import AdminVerificationsPage from "../modules/admin/pages/Verifications";
+import AdminRejectionHistoryPage from "../modules/admin/pages/RejectionHistory";
 import AdminProfilePage from "../modules/admin/pages/Profile";
 import AdminNotificationsPage from "../modules/admin/pages/Notifications";
 import CreateRegistrar from "../modules/admin/pages/CreateRegistrar";
@@ -467,6 +468,12 @@ const adminVerificationsRoute = createRoute({
   component: AdminVerificationsPage,
 });
 
+const adminRejectionHistoryRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "admin-rejection-history",
+  component: AdminRejectionHistoryPage,
+});
+
 const adminProfileRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "admin-profile",
@@ -547,6 +554,7 @@ const routeTree = rootRoute.addChildren([
   adminStatisticsRoute,
   adminTemplatesRoute,
   adminVerificationsRoute,
+  adminRejectionHistoryRoute,
   adminProfileRoute,
   adminNotificationsRoute,
 ]);

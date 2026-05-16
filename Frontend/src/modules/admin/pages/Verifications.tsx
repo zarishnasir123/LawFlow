@@ -1,5 +1,5 @@
 import { useMemo, useState, type ReactNode } from "react";
-import { useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
@@ -107,6 +107,7 @@ export default function Verifications() {
       });
 
       queryClient.invalidateQueries({ queryKey: ["admin", "pending-lawyers"] });
+      queryClient.invalidateQueries({ queryKey: ["admin", "lawyer-rejections"] });
     },
   });
 
@@ -208,6 +209,12 @@ export default function Verifications() {
                       license number against the uploaded card. SJP cross-check is
                       optional and available at the bottom of this page.
                     </p>
+                    <Link
+                      to="/admin-rejection-history"
+                      className="mt-3 inline-flex items-center gap-1.5 text-sm font-semibold text-rose-700 hover:underline"
+                    >
+                      View returned registration history
+                    </Link>
                   </div>
                 </div>
 

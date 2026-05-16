@@ -83,6 +83,37 @@ async function mapPendingLawyer(row) {
   };
 }
 
+function mapLawyerRejectionHistoryRow(row) {
+  return {
+    id: row.id,
+    email: row.email,
+    cnic: row.cnic,
+    barLicenseNumber: row.bar_license_number,
+    firstName: row.first_name,
+    lastName: row.last_name,
+    phone: row.phone,
+    specialization: row.specialization,
+    districtBar: row.district_bar,
+    rejectionRemarks: row.rejection_remarks,
+    rejectedByEmail: row.rejected_by_email,
+    rejectedAt: row.rejected_at,
+    storagePathsCleared: row.storage_paths_cleared
+  };
+}
+
+async function findLatestLawyerRejectionByEmail(email) {
+  const result = await pool.query(
+    `SELECT rejection_remarks, rejected_at
+    FROM lawyer_rejection_history
+    WHERE email = $1
+    ORDER BY rejected_at DESC
+    LIMIT 1`,
+    [email]
+  );
+
+  return result.rows[0] || null;
+}
+
 async function findAuthUserByEmail(email) {
   const result = await pool.query(
     `SELECT
@@ -242,6 +273,18 @@ export async function loginUser({ email, password, rememberMe = false, req }) {
   const user = await findAuthUserByEmail(normalizedEmail);
 
   if (!user) {
+    const rejection = await findLatestLawyerRejectionByEmail(normalizedEmail);
+
+    if (rejection) {
+      const remarks = rejection.rejection_remarks?.trim()
+        || "Please review your rejection email for details.";
+
+      throw new ApiError(
+        403,
+        `Your lawyer registration was returned by admin and must be submitted again. Reason: ${remarks} Register again at /register with updated documents.`
+      );
+    }
+
     throw new ApiError(401, "Invalid email or password");
   }
 
@@ -261,7 +304,10 @@ export async function loginUser({ email, password, rememberMe = false, req }) {
   }
 
   if (user.role === "lawyer" && user.lawyer_verification_status !== "approved") {
-    throw new ApiError(403, "Your lawyer account is pending admin approval");
+    throw new ApiError(
+      403,
+      "Your lawyer account is pending admin approval. You will receive an email once your registration is approved or returned."
+    );
   }
 
   if (user.account_status !== "active") {
@@ -358,6 +404,58 @@ export async function getCurrentUser(userId) {
   }
 
   return mapAuthUser(user);
+}
+
+export async function listLawyerRejectionHistory({
+  limit = 20,
+  offset = 0,
+  search = ""
+} = {}) {
+  const safeLimit = Math.min(Math.max(Number.parseInt(limit, 10) || 20, 1), 100);
+  const safeOffset = Math.max(Number.parseInt(offset, 10) || 0, 0);
+  const keyword = typeof search === "string" ? search.trim() : "";
+  const searchPattern = keyword ? `%${keyword}%` : null;
+
+  const result = await pool.query(
+    `SELECT
+      id,
+      email,
+      cnic,
+      bar_license_number,
+      first_name,
+      last_name,
+      phone,
+      specialization,
+      district_bar,
+      rejection_remarks,
+      rejected_by_email,
+      rejected_at,
+      storage_paths_cleared,
+      COUNT(*) OVER () AS total_count
+    FROM lawyer_rejection_history
+    WHERE (
+      $3::text IS NULL
+      OR email ILIKE $3
+      OR first_name ILIKE $3
+      OR last_name ILIKE $3
+      OR bar_license_number ILIKE $3
+      OR COALESCE(cnic, '') ILIKE $3
+    )
+    ORDER BY rejected_at DESC
+    LIMIT $1 OFFSET $2`,
+    [safeLimit, safeOffset, searchPattern]
+  );
+
+  const total = result.rows[0] ? Number(result.rows[0].total_count) : 0;
+
+  return {
+    items: result.rows.map(mapLawyerRejectionHistoryRow),
+    pagination: {
+      total,
+      limit: safeLimit,
+      offset: safeOffset
+    }
+  };
 }
 
 export async function listPendingLawyerVerifications({ limit = 20, offset = 0 } = {}) {

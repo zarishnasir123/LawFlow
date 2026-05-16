@@ -360,6 +360,16 @@ export const listPendingLawyersValidator = [
     .toInt()
 ];
 
+export const listLawyerRejectionHistoryValidator = [
+  ...listPendingLawyersValidator,
+
+  query("search")
+    .optional()
+    .trim()
+    .isLength({ max: 120 })
+    .withMessage("Search must be 120 characters or less")
+];
+
 export const reviewLawyerValidator = [
   body("status")
     .trim()
