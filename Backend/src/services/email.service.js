@@ -224,7 +224,7 @@ export function sendLawyerRegistrationDecisionEmail({ email, firstName, status, 
   const approved = status === "approved";
   const subject = approved
     ? "Your LawFlow lawyer account is approved"
-    : "Your LawFlow lawyer registration needs updates";
+    : "Your LawFlow lawyer registration was returned — please resubmit";
 
   if (approved) {
     return send(email, subject, "lawyerApproved", {
@@ -243,6 +243,19 @@ export function sendLawyerRegistrationDecisionEmail({ email, firstName, status, 
 export function queueLawyerRegistrationDecisionEmail({ email, firstName, status, remarks }) {
   return queueEmailTask("lawyer-registration-decision", () => (
     sendLawyerRegistrationDecisionEmail({ email, firstName, status, remarks })
+  ));
+}
+
+export function sendLawyerSuspensionEmail({ email, firstName, reason }) {
+  return send(email, "Your LawFlow lawyer account has been suspended", "lawyerSuspended", {
+    firstName,
+    reason
+  });
+}
+
+export function queueLawyerSuspensionEmail({ email, firstName, reason }) {
+  return queueEmailTask("lawyer-suspension", () => (
+    sendLawyerSuspensionEmail({ email, firstName, reason })
   ));
 }
 

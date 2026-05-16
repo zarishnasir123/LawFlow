@@ -22,10 +22,17 @@ import {
 
 import { AdminHeader } from "../components/AdminHeader";
 import LogoutConfirmationModal from "../components/modals/LogoutConfirmationModal";
+import RejectLawyerConfirmationModal from "../components/modals/RejectLawyerConfirmationModal";
+import SuspendLawyerConfirmationModal from "../components/modals/SuspendLawyerConfirmationModal";
+import ReinstateLawyerConfirmationModal from "../components/modals/ReinstateLawyerConfirmationModal";
 import { useAdminNotificationsStore } from "../store/notifications.store";
 import {
+  fetchActiveLawyers,
   fetchPendingLawyers,
+  reinstateLawyer,
   reviewLawyer,
+  suspendLawyer,
+  type ActiveLawyersResponse,
   type PendingLawyer,
   type LawyerDocumentType,
 } from "../api/lawyerVerifications";
@@ -76,14 +83,20 @@ function lawyerInitials(lawyer: PendingLawyer) {
   return ((first + last).toUpperCase() || lawyer.email[0]?.toUpperCase() || "?");
 }
 
+type VerificationsTab = "pending" | "active";
+
 export default function Verifications() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [logoutModalOpen, setLogoutModalOpen] = useState(false);
   const [search, setSearch] = useState("");
+  const [activeTab, setActiveTab] = useState<VerificationsTab>("pending");
   const [gateByLawyer, setGateByLawyer] = useState<
     Record<string, LawyerVerificationGate>
   >({});
+  const [pendingRejection, setPendingRejection] = useState<PendingLawyer | null>(null);
+  const [pendingSuspension, setPendingSuspension] = useState<PendingLawyer | null>(null);
+  const [pendingReinstatement, setPendingReinstatement] = useState<PendingLawyer | null>(null);
 
   const addLawyerVerificationNotification = useAdminNotificationsStore(
     (state) => state.addLawyerVerificationNotification,
@@ -92,6 +105,12 @@ export default function Verifications() {
   const pendingQuery = useQuery({
     queryKey: ["admin", "pending-lawyers"],
     queryFn: () => fetchPendingLawyers({ limit: 50 }),
+  });
+
+  const activeQuery = useQuery({
+    queryKey: ["admin", "active-lawyers"],
+    queryFn: () => fetchActiveLawyers({ limit: 50 }),
+    enabled: activeTab === "active",
   });
 
   const reviewMutation = useMutation({
@@ -107,7 +126,31 @@ export default function Verifications() {
       });
 
       queryClient.invalidateQueries({ queryKey: ["admin", "pending-lawyers"] });
+      queryClient.invalidateQueries({ queryKey: ["admin", "active-lawyers"] });
       queryClient.invalidateQueries({ queryKey: ["admin", "lawyer-rejections"] });
+    },
+    onSettled: () => {
+      setPendingRejection(null);
+    },
+  });
+
+  const suspendMutation = useMutation({
+    mutationFn: suspendLawyer,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin", "active-lawyers"] });
+    },
+    onSettled: () => {
+      setPendingSuspension(null);
+    },
+  });
+
+  const reinstateMutation = useMutation({
+    mutationFn: reinstateLawyer,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin", "active-lawyers"] });
+    },
+    onSettled: () => {
+      setPendingReinstatement(null);
     },
   });
 
@@ -153,17 +196,39 @@ export default function Verifications() {
 
   const handleReject = (lawyer: PendingLawyer) => {
     const gate = getGate(lawyer.lawyerProfileId);
-    if (!gate.remarks.trim()) {
-      setGate(lawyer.lawyerProfileId, { remarks: gate.remarks });
-      alert("Please add remarks before rejecting this lawyer.");
-      return;
-    }
+    if (!gate.remarks.trim()) return;
+    setPendingRejection(lawyer);
+  };
 
+  const confirmRejection = () => {
+    if (!pendingRejection) return;
+    const gate = getGate(pendingRejection.lawyerProfileId);
     reviewMutation.mutate({
-      lawyerProfileId: lawyer.lawyerProfileId,
+      lawyerProfileId: pendingRejection.lawyerProfileId,
       status: "rejected",
       remarks: gate.remarks.trim(),
     });
+  };
+
+  const handleSuspend = (lawyer: PendingLawyer) => {
+    setPendingSuspension(lawyer);
+  };
+
+  const confirmSuspension = (reason: string) => {
+    if (!pendingSuspension) return;
+    suspendMutation.mutate({
+      lawyerProfileId: pendingSuspension.lawyerProfileId,
+      reason,
+    });
+  };
+
+  const handleReinstate = (lawyer: PendingLawyer) => {
+    setPendingReinstatement(lawyer);
+  };
+
+  const confirmReinstatement = () => {
+    if (!pendingReinstatement) return;
+    reinstateMutation.mutate(pendingReinstatement.lawyerProfileId);
   };
 
   const handleLogout = () => {
@@ -181,6 +246,35 @@ export default function Verifications() {
         open={logoutModalOpen}
         onCancel={() => setLogoutModalOpen(false)}
         onConfirm={handleLogout}
+      />
+
+      <RejectLawyerConfirmationModal
+        open={pendingRejection !== null}
+        lawyerName={pendingRejection ? lawyerDisplayName(pendingRejection) : ""}
+        remarks={
+          pendingRejection
+            ? getGate(pendingRejection.lawyerProfileId).remarks.trim()
+            : ""
+        }
+        isSubmitting={isMutating}
+        onCancel={() => setPendingRejection(null)}
+        onConfirm={confirmRejection}
+      />
+
+      <SuspendLawyerConfirmationModal
+        open={pendingSuspension !== null}
+        lawyerName={pendingSuspension ? lawyerDisplayName(pendingSuspension) : ""}
+        isSubmitting={suspendMutation.isPending}
+        onCancel={() => setPendingSuspension(null)}
+        onConfirm={confirmSuspension}
+      />
+
+      <ReinstateLawyerConfirmationModal
+        open={pendingReinstatement !== null}
+        lawyerName={pendingReinstatement ? lawyerDisplayName(pendingReinstatement) : ""}
+        isSubmitting={reinstateMutation.isPending}
+        onCancel={() => setPendingReinstatement(null)}
+        onConfirm={confirmReinstatement}
       />
 
       <div className="min-h-screen bg-gray-50">
@@ -227,6 +321,42 @@ export default function Verifications() {
               </div>
             </section>
 
+            {/* Tabs */}
+            <section className="flex flex-wrap items-center gap-2 border-b border-gray-200">
+              <button
+                type="button"
+                onClick={() => setActiveTab("pending")}
+                className={`px-4 py-2 text-sm font-semibold transition ${
+                  activeTab === "pending"
+                    ? "border-b-2 border-[#01411C] text-[#01411C]"
+                    : "text-gray-500 hover:text-gray-700"
+                }`}
+              >
+                Pending Review
+                {pendingQuery.data?.pagination.total ? (
+                  <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-700">
+                    {pendingQuery.data.pagination.total}
+                  </span>
+                ) : null}
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab("active")}
+                className={`px-4 py-2 text-sm font-semibold transition ${
+                  activeTab === "active"
+                    ? "border-b-2 border-[#01411C] text-[#01411C]"
+                    : "text-gray-500 hover:text-gray-700"
+                }`}
+              >
+                Active Lawyers
+                {activeQuery.data?.pagination.total ? (
+                  <span className="ml-2 rounded-full bg-green-100 px-2 py-0.5 text-[11px] font-bold text-green-700">
+                    {activeQuery.data.pagination.total}
+                  </span>
+                ) : null}
+              </button>
+            </section>
+
             {/* Search */}
             <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
               <label htmlFor="lawyerSearch" className="sr-only">
@@ -244,14 +374,29 @@ export default function Verifications() {
               </div>
             </section>
 
-            {reviewMutation.isError ? (
+            {(reviewMutation.isError || suspendMutation.isError || reinstateMutation.isError) ? (
               <div className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
                 <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-                <span>{getAuthErrorMessage(reviewMutation.error)}</span>
+                <span>
+                  {getAuthErrorMessage(
+                    reviewMutation.error ??
+                      suspendMutation.error ??
+                      reinstateMutation.error
+                  )}
+                </span>
               </div>
             ) : null}
 
-            {/* List */}
+            {activeTab === "active" ? (
+              <ActiveLawyersSection
+                query={activeQuery}
+                search={search}
+                isMutating={suspendMutation.isPending || reinstateMutation.isPending}
+                onSuspend={handleSuspend}
+                onReinstate={handleReinstate}
+              />
+            ) : (
+            /* Pending List */
             <section className="space-y-5">
               {pendingQuery.isLoading ? (
                 <div className="rounded-xl border border-dashed border-gray-300 bg-white p-10 text-center text-gray-600">
@@ -270,7 +415,7 @@ export default function Verifications() {
                   const gate = getGate(lawyer.lawyerProfileId);
                   const fullName = lawyerDisplayName(lawyer);
                   const approveAllowed = canApprove(gate) && !isMutating;
-                  const rejectAllowed = !isMutating;
+                  const rejectAllowed = gate.remarks.trim() !== "" && !isMutating;
 
                   return (
                     <article
@@ -563,6 +708,7 @@ export default function Verifications() {
                 })
               )}
             </section>
+            )}
 
             {/* Optional SJP cross-check */}
             <section className="rounded-2xl border border-dashed border-gray-300 bg-white p-5 shadow-sm">
@@ -626,5 +772,136 @@ function DetailRow({ icon, label, value, mono = false }: DetailRowProps) {
         </dd>
       </div>
     </div>
+  );
+}
+
+type ActiveLawyersQuery = {
+  data?: ActiveLawyersResponse;
+  isLoading: boolean;
+  isError: boolean;
+  error: unknown;
+};
+
+type ActiveLawyersSectionProps = {
+  query: ActiveLawyersQuery;
+  search: string;
+  isMutating: boolean;
+  onSuspend: (lawyer: PendingLawyer) => void;
+  onReinstate: (lawyer: PendingLawyer) => void;
+};
+
+function ActiveLawyersSection({
+  query,
+  search,
+  isMutating,
+  onSuspend,
+  onReinstate,
+}: ActiveLawyersSectionProps) {
+  const items = query.data?.items ?? [];
+  const keyword = search.trim().toLowerCase();
+  const filtered = keyword
+    ? items.filter((lawyer) => {
+        const name = lawyerDisplayName(lawyer).toLowerCase();
+        return (
+          name.includes(keyword) ||
+          lawyer.email.toLowerCase().includes(keyword) ||
+          lawyer.barLicenseNumber.toLowerCase().includes(keyword)
+        );
+      })
+    : items;
+
+  if (query.isLoading) {
+    return (
+      <div className="rounded-xl border border-dashed border-gray-300 bg-white p-10 text-center text-gray-600">
+        Loading active lawyers…
+      </div>
+    );
+  }
+
+  if (query.isError) {
+    return (
+      <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-sm text-red-700">
+        Could not load active lawyers: {getAuthErrorMessage(query.error)}
+      </div>
+    );
+  }
+
+  if (filtered.length === 0) {
+    return (
+      <div className="rounded-xl border border-dashed border-gray-300 bg-white p-10 text-center text-gray-600">
+        No active lawyer accounts found.
+      </div>
+    );
+  }
+
+  return (
+    <section className="space-y-3">
+      {filtered.map((lawyer) => {
+        const fullName = lawyerDisplayName(lawyer);
+        const suspended = lawyer.verificationStatus === "suspended";
+        return (
+          <article
+            key={lawyer.lawyerProfileId}
+            className="flex flex-col gap-4 rounded-2xl border border-gray-200 bg-white p-5 shadow-sm md:flex-row md:items-center md:justify-between"
+          >
+            <div className="flex items-start gap-3">
+              <div
+                className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-sm font-bold text-white ${
+                  suspended ? "bg-amber-600" : "bg-[#01411C]"
+                }`}
+              >
+                {lawyerInitials(lawyer)}
+              </div>
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h3 className="truncate text-sm font-semibold text-gray-900">
+                    {fullName}
+                  </h3>
+                  <span
+                    className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                      suspended
+                        ? "bg-amber-100 text-amber-700"
+                        : "bg-green-100 text-green-700"
+                    }`}
+                  >
+                    {suspended ? "Suspended" : "Active"}
+                  </span>
+                </div>
+                <p className="truncate text-xs text-gray-500">{lawyer.email}</p>
+                <p className="truncate text-xs text-gray-500">
+                  License: <span className="font-mono">{lawyer.barLicenseNumber}</span>
+                </p>
+                {suspended && lawyer.verificationRemarks ? (
+                  <p className="mt-1 max-w-md truncate text-xs text-amber-700" title={lawyer.verificationRemarks}>
+                    Reason: {lawyer.verificationRemarks}
+                  </p>
+                ) : null}
+              </div>
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              {suspended ? (
+                <button
+                  type="button"
+                  disabled={isMutating}
+                  onClick={() => onReinstate(lawyer)}
+                  className="inline-flex items-center gap-2 rounded-lg bg-[#01411C] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#025227] disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  Reinstate
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  disabled={isMutating}
+                  onClick={() => onSuspend(lawyer)}
+                  className="inline-flex items-center gap-2 rounded-lg border border-amber-400 bg-white px-4 py-2 text-sm font-semibold text-amber-700 transition hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  Suspend
+                </button>
+              )}
+            </div>
+          </article>
+        );
+      })}
+    </section>
   );
 }

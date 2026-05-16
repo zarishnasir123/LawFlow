@@ -115,6 +115,15 @@ export default function LoginForm({ onForgotPassword }: LoginFormProps) {
     adminLoginMutation.isPending ||
     lawyerLoginMutation.isPending;
 
+  // Wrap setRole so stale error banners from a previous role's mutation don't
+  // stack when the user toggles between Client / Lawyer / Admin tabs.
+  const changeRole = (next: LoginRole) => {
+    clientLoginMutation.reset();
+    lawyerLoginMutation.reset();
+    adminLoginMutation.reset();
+    setRole(next);
+  };
+
   const submit = (values: LoginPayload) => {
     setEmail(values.email);
 
@@ -182,7 +191,7 @@ export default function LoginForm({ onForgotPassword }: LoginFormProps) {
     <form onSubmit={handleSubmit(submit)} className="space-y-6" autoComplete="off">
       <RoleSelector<LoginRole>
         value={role}
-        onChange={setRole}
+        onChange={changeRole}
         options={roleOptions}
         label="Select Role"
         id="login-role"

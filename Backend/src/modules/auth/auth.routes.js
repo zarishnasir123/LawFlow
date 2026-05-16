@@ -3,6 +3,7 @@ import {
   googleLogin,
   googleSession,
   forgotPassword,
+  listActiveLawyers,
   listLawyerRejections,
   listPendingLawyers,
   login,
@@ -11,9 +12,11 @@ import {
   refresh,
   registerClient,
   registerLawyer,
+  reinstateLawyer,
   resendVerificationOtp,
   resetPassword,
   reviewLawyer,
+  suspendLawyer,
   supabaseAuthWebhook,
   verifyEmail
 } from "./auth.controller.js";
@@ -22,7 +25,14 @@ import { authenticate } from "../../middleware/authenticate.js";
 import { authorizeRoles } from "../../middleware/authorizeRoles.js";
 import { uploadLawyerDocs } from "../../middleware/uploadLawyerDocs.js";
 import { validateRequest } from "../../middleware/validateRequest.js";
-import { forgotPasswordLimiter, resetPasswordLimiter } from "../../middleware/rateLimiter.js";
+import {
+  forgotPasswordLimiter,
+  lawyerReviewLimiter,
+  loginLimiter,
+  otpResendLimiter,
+  registerLimiter,
+  resetPasswordLimiter
+} from "../../middleware/rateLimiter.js";
 import {
   listLawyerRejectionHistoryValidator,
   listPendingLawyersValidator,
@@ -31,6 +41,7 @@ import {
   registerLawyerValidator,
   resendVerificationOtpValidator,
   reviewLawyerValidator,
+  suspendLawyerValidator,
   verifyEmailValidator,
   forgotPasswordValidator,
   resetPasswordValidator
@@ -40,6 +51,7 @@ const router = Router();
 
 router.post(
   "/register/client",
+  registerLimiter,
   registerClientValidator,
   validateRequest,
   asyncHandler(registerClient)
@@ -47,6 +59,7 @@ router.post(
 
 router.post(
   "/register/lawyer",
+  registerLimiter,
   uploadLawyerDocs,
   registerLawyerValidator,
   validateRequest,
@@ -63,6 +76,15 @@ router.get(
 );
 
 router.get(
+  "/lawyers/active",
+  authenticate,
+  authorizeRoles("admin"),
+  listPendingLawyersValidator,
+  validateRequest,
+  asyncHandler(listActiveLawyers)
+);
+
+router.get(
   "/lawyers/rejections",
   authenticate,
   authorizeRoles("admin"),
@@ -75,13 +97,33 @@ router.patch(
   "/lawyers/:lawyerProfileId/review",
   authenticate,
   authorizeRoles("admin"),
+  lawyerReviewLimiter,
   reviewLawyerValidator,
   validateRequest,
   asyncHandler(reviewLawyer)
 );
 
+router.patch(
+  "/lawyers/:lawyerProfileId/suspend",
+  authenticate,
+  authorizeRoles("admin"),
+  lawyerReviewLimiter,
+  suspendLawyerValidator,
+  validateRequest,
+  asyncHandler(suspendLawyer)
+);
+
+router.patch(
+  "/lawyers/:lawyerProfileId/reinstate",
+  authenticate,
+  authorizeRoles("admin"),
+  lawyerReviewLimiter,
+  asyncHandler(reinstateLawyer)
+);
+
 router.post(
   "/login",
+  loginLimiter,
   loginValidator,
   validateRequest,
   asyncHandler(login)
@@ -95,6 +137,7 @@ router.post(
 );
 router.post(
   "/resend-verification-otp",
+  otpResendLimiter,
   resendVerificationOtpValidator,
   validateRequest,
   asyncHandler(resendVerificationOtp)

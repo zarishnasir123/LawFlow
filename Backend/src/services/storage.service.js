@@ -48,6 +48,15 @@ export function getLawyerStorageRoot(lawyerKey) {
   return `lawyers/${lawyerKey}`;
 }
 
+// Recover the lawyerKey from any storage path produced by buildStoragePath.
+// Lives here (not in auth.service.js) so the prefix convention has one owner —
+// if buildStoragePath ever changes its shape, this helper changes alongside it.
+export function parseLawyerKeyFromStoragePath(storagePath) {
+  if (typeof storagePath !== "string") return null;
+  const match = /^lawyers\/([^/]+)\//.exec(storagePath);
+  return match ? match[1] : null;
+}
+
 export async function uploadLawyerDocument({ documentType, file, lawyerKey }) {
   if (!file || !file.buffer) {
     throw new ApiError(400, `Missing file for ${documentType}`);
@@ -133,13 +142,22 @@ export async function deleteLawyerDocuments({ storagePaths }) {
   }
 
   const config = getSupabaseStorageConfig();
+  const paths = storagePaths.filter(Boolean);
 
-  await supabase.storage
+  const { error } = await supabase.storage
     .from(config.bucket)
-    .remove(storagePaths.filter(Boolean))
-    .catch(() => {
-      // Best-effort cleanup; swallow errors so the original failure surfaces to the caller.
+    .remove(paths);
+
+  if (error) {
+    // Surface storage-cleanup failures to operational logs so orphaned files
+    // can be reconciled. Log path count, not full paths, per AGENTS.md.
+    console.error("[STORAGE CLEANUP FAILED]", {
+      task: "delete-lawyer-documents",
+      bucket: config.bucket,
+      pathCount: paths.length,
+      message: error.message
     });
+  }
 }
 
 // Recursively lists every object under lawyers/{lawyerKey}/ and removes them.
@@ -157,28 +175,48 @@ export async function deleteLawyerStorageFolder({ lawyerKey }) {
   const config = getSupabaseStorageConfig();
   const root = getLawyerStorageRoot(lawyerKey);
 
+  const listPageSize = 100;
+
   async function collectPaths(prefix) {
     const collected = [];
-    const { data, error } = await supabase.storage
-      .from(config.bucket)
-      .list(prefix, { limit: 100 });
+    let offset = 0;
 
-    if (error || !Array.isArray(data)) {
-      return collected;
-    }
+    while (true) {
+      const { data, error } = await supabase.storage
+        .from(config.bucket)
+        .list(prefix, { limit: listPageSize, offset });
 
-    for (const entry of data) {
-      const fullPath = `${prefix}/${entry.name}`;
-      const isFolder = !entry.id && !entry.metadata;
-      if (isFolder) {
-        const children = await collectPaths(fullPath);
-        collected.push(...children);
-      } else {
-        collected.push(fullPath);
+      if (error) {
+        console.error("[STORAGE CLEANUP FAILED]", {
+          task: "list-lawyer-storage-folder",
+          bucket: config.bucket,
+          lawyerKey,
+          message: error.message
+        });
+        return collected;
       }
-    }
 
-    return collected;
+      if (!Array.isArray(data) || data.length === 0) {
+        return collected;
+      }
+
+      for (const entry of data) {
+        const fullPath = `${prefix}/${entry.name}`;
+        const isFolder = !entry.id && !entry.metadata;
+        if (isFolder) {
+          const children = await collectPaths(fullPath);
+          collected.push(...children);
+        } else {
+          collected.push(fullPath);
+        }
+      }
+
+      if (data.length < listPageSize) {
+        return collected;
+      }
+
+      offset += listPageSize;
+    }
   }
 
   const allPaths = await collectPaths(root);
@@ -186,10 +224,20 @@ export async function deleteLawyerStorageFolder({ lawyerKey }) {
     return;
   }
 
-  await supabase.storage
+  const { error } = await supabase.storage
     .from(config.bucket)
-    .remove(allPaths)
-    .catch(() => {
-      // Best-effort.
+    .remove(allPaths);
+
+  if (error) {
+    // Surface storage-cleanup failures so orphans can be reconciled. We log
+    // the lawyerKey + path count, not the storage paths themselves, per
+    // AGENTS.md's "private document URLs are not logged" rule.
+    console.error("[STORAGE CLEANUP FAILED]", {
+      task: "delete-lawyer-storage-folder",
+      bucket: config.bucket,
+      lawyerKey,
+      pathCount: allPaths.length,
+      message: error.message
     });
+  }
 }

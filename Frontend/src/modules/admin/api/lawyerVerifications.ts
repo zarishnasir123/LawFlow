@@ -34,7 +34,9 @@ export type PendingLawyer = {
   consultationFee: number | null;
   cnicMatch: boolean;
   cnicMatchRemarks: string | null;
-  verificationStatus: "pending" | "approved" | "rejected";
+  verificationStatus: "pending" | "approved" | "rejected" | "suspended";
+  verificationRemarks?: string | null;
+  verifiedAt?: string | null;
   submittedAt: string;
   documents: PendingLawyerDocument[];
 };
@@ -47,6 +49,8 @@ export type PendingLawyersResponse = {
     offset: number;
   };
 };
+
+export type ActiveLawyersResponse = PendingLawyersResponse;
 
 export type ReviewLawyerPayload = {
   lawyerProfileId: string;
@@ -62,8 +66,9 @@ export type ReviewLawyerResponse = {
     firstName: string;
     lastName: string;
     email: string;
-    emailVerified: boolean;
-    accountStatus: string;
+    emailVerified?: boolean;
+    accountStatus?: string;
+    userDeleted?: boolean;
     verificationStatus: "approved" | "rejected";
     verificationRemarks: string | null;
     verifiedBy: string | null;
@@ -81,6 +86,16 @@ export async function fetchPendingLawyers(
   return data;
 }
 
+export async function fetchActiveLawyers(
+  params: { limit?: number; offset?: number } = {}
+): Promise<ActiveLawyersResponse> {
+  const { data } = await apiClient.get<ActiveLawyersResponse>(
+    "/auth/lawyers/active",
+    { params }
+  );
+  return data;
+}
+
 export async function reviewLawyer(
   payload: ReviewLawyerPayload
 ): Promise<ReviewLawyerResponse> {
@@ -90,6 +105,30 @@ export async function reviewLawyer(
       status: payload.status,
       remarks: payload.remarks ?? null,
     }
+  );
+  return data;
+}
+
+export type SuspendLawyerPayload = {
+  lawyerProfileId: string;
+  reason: string;
+};
+
+export async function suspendLawyer(
+  payload: SuspendLawyerPayload
+): Promise<ReviewLawyerResponse> {
+  const { data } = await apiClient.patch<ReviewLawyerResponse>(
+    `/auth/lawyers/${payload.lawyerProfileId}/suspend`,
+    { reason: payload.reason }
+  );
+  return data;
+}
+
+export async function reinstateLawyer(
+  lawyerProfileId: string
+): Promise<ReviewLawyerResponse> {
+  const { data } = await apiClient.patch<ReviewLawyerResponse>(
+    `/auth/lawyers/${lawyerProfileId}/reinstate`
   );
   return data;
 }

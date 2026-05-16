@@ -343,7 +343,16 @@ export const loginValidator = [
     .optional()
     .isBoolean()
     .withMessage("Remember me must be true or false")
-    .toBoolean()
+    .toBoolean(),
+
+  // The frontend role tabs pass the expected role so wrong-tab attempts get
+  // a generic "invalid credentials" instead of leaking role-specific status
+  // (e.g. "your lawyer account is pending approval") to someone who's signed
+  // in via the Client / Admin tab.
+  body("expectedRole")
+    .optional({ nullable: true, checkFalsy: true })
+    .isIn(["client", "lawyer", "admin", "registrar"])
+    .withMessage("Invalid expected role")
 ];
 
 export const listPendingLawyersValidator = [
@@ -387,6 +396,15 @@ export const reviewLawyerValidator = [
     .trim()
     .notEmpty()
     .withMessage("Remarks are required when rejecting a lawyer registration")
+];
+
+export const suspendLawyerValidator = [
+  body("reason")
+    .trim()
+    .notEmpty()
+    .withMessage("Suspension reason is required")
+    .isLength({ max: 1000 })
+    .withMessage("Suspension reason must be 1000 characters or less")
 ];
 
 export const forgotPasswordValidator = [

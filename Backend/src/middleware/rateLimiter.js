@@ -56,3 +56,36 @@ export const resetPasswordLimiter = rateLimiter({
   max: 10,
   message: "Too many password reset attempts from this IP. Please try again after 15 minutes."
 });
+
+// Credential-stuffing defence on top of the per-account lockout. Per-account
+// lockout stops a single email from being brute-forced; this stops one IP
+// from trying many emails in quick succession.
+export const loginLimiter = rateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  message: "Too many login attempts from this IP. Please try again after 15 minutes."
+});
+
+// Registration sends a verification email per attempt — abusable as a spam
+// vector and as an account-enumeration probe. Tighter than login.
+export const registerLimiter = rateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: "Too many registration attempts from this IP. Please try again after 15 minutes."
+});
+
+// OTP resend triggers an email send each time. Keep tight.
+export const otpResendLimiter = rateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  message: "Too many verification code requests from this IP. Please try again after 15 minutes."
+});
+
+// Admin lawyer-review endpoint is authenticated + admin-only, but the
+// per-IP cap helps contain accidental client loops and any compromised
+// admin token.
+export const lawyerReviewLimiter = rateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 60,
+  message: "Too many review requests. Please try again after 15 minutes."
+});

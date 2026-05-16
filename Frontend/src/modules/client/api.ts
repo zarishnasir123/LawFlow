@@ -18,7 +18,10 @@ export async function registerClient(
 }
 
 export async function loginClient(payload: ClientLoginPayload): Promise<AuthResponse> {
-  const { data } = await apiClient.post<AuthResponse>("/auth/login", payload);
+  const { data } = await apiClient.post<AuthResponse>("/auth/login", {
+    ...payload,
+    expectedRole: "client",
+  });
   return data;
 }
 

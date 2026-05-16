@@ -166,7 +166,7 @@ CREATE TABLE lawyer_profiles (
   updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
 
   CONSTRAINT valid_lawyer_verification_status
-    CHECK (verification_status IN ('pending', 'approved', 'rejected'))
+    CHECK (verification_status IN ('pending', 'approved', 'rejected', 'suspended'))
 );
 
 -- File metadata only; actual files live in Supabase private storage.
