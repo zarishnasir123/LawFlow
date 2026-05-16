@@ -4,14 +4,17 @@ import { pool } from "../../config/db.js";
 import {
   getCurrentUser,
   issueOAuthSession,
+  listActiveLawyerVerifications,
   listLawyerRejectionHistory,
   listPendingLawyerVerifications,
   loginUser,
   logoutUser,
   refreshAuthSession,
+  reinstateLawyerRegistration,
   requestPasswordReset,
   resetPassword as resetUserPassword,
-  reviewLawyerRegistration
+  reviewLawyerRegistration,
+  suspendLawyerRegistration
 } from "./auth.service.js";
 import {
   completeOAuthRegistration,
@@ -120,6 +123,7 @@ export async function login(req, res) {
     email: req.body.email,
     password: req.body.password,
     rememberMe: req.body.rememberMe === true,
+    expectedRole: req.body.expectedRole || null,
     req
   });
 
@@ -214,8 +218,42 @@ export async function reviewLawyer(req, res) {
   });
 }
 
+export async function suspendLawyer(req, res) {
+  const result = await suspendLawyerRegistration({
+    lawyerProfileId: req.params.lawyerProfileId,
+    adminUserId: req.user.sub,
+    reason: req.body.reason
+  });
+
+  return res.status(200).json({
+    message: "Lawyer account suspended successfully",
+    lawyer: result
+  });
+}
+
+export async function reinstateLawyer(req, res) {
+  const result = await reinstateLawyerRegistration({
+    lawyerProfileId: req.params.lawyerProfileId,
+    adminUserId: req.user.sub
+  });
+
+  return res.status(200).json({
+    message: "Lawyer account reinstated successfully",
+    lawyer: result
+  });
+}
+
 export async function listPendingLawyers(req, res) {
   const result = await listPendingLawyerVerifications({
+    limit: req.query.limit,
+    offset: req.query.offset
+  });
+
+  return res.status(200).json(result);
+}
+
+export async function listActiveLawyers(req, res) {
+  const result = await listActiveLawyerVerifications({
     limit: req.query.limit,
     offset: req.query.offset
   });

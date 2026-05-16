@@ -5,6 +5,8 @@ import {
   Outlet,
 } from "@tanstack/react-router";
 
+import { requireAuth } from "./routeGuards";
+
 /* =====================================================
    MARKETING & AUTHENTICATION IMPORTS
    ===================================================== */
@@ -87,11 +89,7 @@ const rootRoute = createRootRoute({
 });
 
 /* =====================================================
-   MARKETING & AUTHENTICATION ROUTES
-   1. Landing page
-   2. User registration
-   3. User login
-   4. Password recovery
+   MARKETING & AUTHENTICATION ROUTES — PUBLIC
    ===================================================== */
 
 const indexRoute = createRoute({
@@ -142,347 +140,376 @@ const resetPasswordRoute = createRoute({
 });
 
 /* =====================================================
-   CLIENT ROUTES
-   1. Dashboard - Main client hub
-   2. Profile - View/edit client profile
-   3. Messages - Client messaging interface
-   4. Chat Detail - Individual chat thread
-   5. Hearings - Client hearing schedules
-   6. Find Lawyer - Search and browse lawyers
-   7. Case Tracking - Track case progress
+   CLIENT ROUTES — requires role "client"
    ===================================================== */
+
+const clientBeforeLoad = requireAuth(["client"]);
 
 const clientDashboardRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "client-dashboard",
+  beforeLoad: clientBeforeLoad,
   component: ClientDashboard,
 });
 
 const clientProfileRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "client-profile",
+  beforeLoad: clientBeforeLoad,
   component: ClientProfile,
 });
 
 const clientEditProfileRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "client-profile-edit",
+  beforeLoad: clientBeforeLoad,
   component: ClientEditProfile,
 });
 
 export const findLawyerRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "FindLawyer",
+  beforeLoad: clientBeforeLoad,
   component: FindLawyer,
 });
 
 const clientLawyerProfileRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "client-lawyer/$lawyerId",
+  beforeLoad: clientBeforeLoad,
   component: LawyerProfileView,
 });
 
 export const casetrackingRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "case-tracking",
+  beforeLoad: clientBeforeLoad,
   component: CaseTracking,
 });
 
 const clientMessagesRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "client-messages",
+  beforeLoad: clientBeforeLoad,
   component: ClientMessages,
 });
 
 const clientChatDetailRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "client-chat/$threadId",
+  beforeLoad: clientBeforeLoad,
   component: ClientChatDetail,
 });
 
 const clientHearingsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "client-hearings",
+  beforeLoad: clientBeforeLoad,
   component: ClientHearings,
 });
 
 const clientSignatureViewerRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "client-signatures/$requestId",
+  beforeLoad: clientBeforeLoad,
   component: ClientSignatureViewer,
 });
 
 const clientPaymentsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "client-payments",
+  beforeLoad: clientBeforeLoad,
   component: ClientCasePayments,
 });
 
 const clientPaymentsDetailRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "client-payments/$caseId",
+  beforeLoad: clientBeforeLoad,
   component: ClientCasePayments,
 });
 
 const clientMyCasesRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "client-my-cases",
+  beforeLoad: clientBeforeLoad,
   component: ClientMyCases,
 });
 
 /* =====================================================
-   LAWYER ROUTES
-   1. Dashboard - Main lawyer hub
-   2. Cases - Manage lawyer cases
-   3. Hearings - Lawyer hearing schedules
-   4. Messages - Lawyer messaging interface
-   5. Chat Detail - Individual chat thread
-   6. AI Legal Guidance - AI assistance tool
-   7. Service Charges - Manage service fees
+   LAWYER ROUTES — requires role "lawyer"
    ===================================================== */
+
+const lawyerBeforeLoad = requireAuth(["lawyer"]);
 
 const lawyerDashboardRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "Lawyer-dashboard",
+  beforeLoad: lawyerBeforeLoad,
   component: LawyerDashboard,
 });
 
 const lawyerCasesRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "lawyer-cases",
+  beforeLoad: lawyerBeforeLoad,
   component: LawyerCases,
 });
 
 const lawyerCreateCaseRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "lawyer-create-case",
+  beforeLoad: lawyerBeforeLoad,
   component: CreateCase,
 });
 
 const lawyerNewCaseRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "lawyer-new-case",
+  beforeLoad: lawyerBeforeLoad,
   component: LawyerNewCase,
 });
 
 const lawyerReturnedCasesRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "lawyer-returned-cases",
+  beforeLoad: lawyerBeforeLoad,
   component: ReturnedCases,
 });
 
 const lawyerReturnedCaseDetailRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "lawyer-case-detail/$caseId",
+  beforeLoad: lawyerBeforeLoad,
   component: ReturnedCaseDetail,
 });
 
 const lawyerHearingsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "lawyer-hearings",
+  beforeLoad: lawyerBeforeLoad,
   component: LawyerHearings,
 });
 
 const lawyerMessagesRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "lawyer-messages",
+  beforeLoad: lawyerBeforeLoad,
   component: LawyerMessages,
 });
 
 const lawyerChatDetailRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "lawyer-chat/$threadId",
+  beforeLoad: lawyerBeforeLoad,
   component: ChatDetail,
 });
 
 const lawyerSignaturesRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "lawyer-signatures",
+  beforeLoad: lawyerBeforeLoad,
   component: Signatures,
 });
 
 const lawyerSignatureViewerRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "lawyer-signatures/$requestId",
+  beforeLoad: lawyerBeforeLoad,
   component: LawyerSignatureViewer,
 });
 
 const lawyerAiGuidanceRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "lawyer-ai-guidance",
+  beforeLoad: lawyerBeforeLoad,
   component: AiLegalGuidance,
 });
 
 const serviceChargesRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "lawyer-service-charges",
+  beforeLoad: lawyerBeforeLoad,
   component: ServiceCharges,
 });
 
 const lawyerProfileRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "lawyer-profile",
+  beforeLoad: lawyerBeforeLoad,
   component: LawyerProfile,
 });
 
 const lawyerProfileEditRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "lawyer-profile/edit",
+  beforeLoad: lawyerBeforeLoad,
   component: LawyerProfileEdit,
 });
 
 const caseDocumentEditorRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "lawyer-case-editor",
+  beforeLoad: lawyerBeforeLoad,
   component: CaseDocumentEditor,
 });
 
 const caseDocumentEditorDetailRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "lawyer-case-editor/$caseId",
+  beforeLoad: lawyerBeforeLoad,
   component: CaseDocumentEditor,
 });
 
 const lawyerCasePaymentsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "lawyer-case-payments",
+  beforeLoad: lawyerBeforeLoad,
   component: CasePaymentPlan,
 });
 
 const lawyerCasePaymentsDetailRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "lawyer-case-payments/$caseId",
+  beforeLoad: lawyerBeforeLoad,
   component: CasePaymentPlan,
 });
 
 const lawyerSubmitCaseRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "lawyer-submit-case",
+  beforeLoad: lawyerBeforeLoad,
   component: SubmitCase,
 });
 
 const lawyerSubmitCaseDetailRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "lawyer-submit-case/$caseId",
+  beforeLoad: lawyerBeforeLoad,
   component: SubmitCase,
 });
 
 /* =====================================================
-   REGISTRAR ROUTES
-   1. Dashboard - Main registrar hub
-   2. View Cases - Browse all cases
-   3. Review Cases - Review pending cases (dynamic: caseId)
-   4. Approved Cases - View approved cases
-   5. Return Case - Handle case returns
+   REGISTRAR ROUTES — requires role "registrar"
    ===================================================== */
+
+const registrarBeforeLoad = requireAuth(["registrar"]);
 
 const viewCasesRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "view-cases",
+  beforeLoad: registrarBeforeLoad,
   component: ViewCases,
 });
 
 const registrarDashboardRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "registrar-dashboard",
+  beforeLoad: registrarBeforeLoad,
   component: RegistrarDashboard,
 });
 
 const reviewCasesRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "review-cases/$caseId",
+  beforeLoad: registrarBeforeLoad,
   component: ReviewCases,
 });
 
 const approvedCasesRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "approved-cases",
+  beforeLoad: registrarBeforeLoad,
   component: ApprovedCases,
 });
 
 const returnCaseRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "return-case",
+  beforeLoad: registrarBeforeLoad,
   component: ReturnCase,
 });
 
 const scheduleHearingRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "schedule-hearing/$caseId",
+  beforeLoad: registrarBeforeLoad,
   component: ScheduleHearing,
 });
 
 /* =====================================================
-   ADMIN ROUTES
-   1. Dashboard - Main admin hub
-   2. Registrars - Manage registrar accounts
-      a. Create Registrar - Add new registrar
-      b. Edit Registrar - Update registrar details
-   3. Statistics - View system reports & analytics
-   4. Verifications - Handle user verifications
-   5. Profile - Admin profile management
-   6. Notifications - System notifications
+   ADMIN ROUTES — requires role "admin"
    ===================================================== */
+
+const adminBeforeLoad = requireAuth(["admin"]);
 
 const adminDashboardRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "admin-dashboard",
+  beforeLoad: adminBeforeLoad,
   component: AdminDashboardPage,
 });
 
 const adminRegistrarsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "admin-registrars",
+  beforeLoad: adminBeforeLoad,
   component: AdminRegistrarsPage,
 });
 
-// Admin Sub-route: Create Registrar
 const adminCreateRegistrarRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "admin-registrars/create",
+  beforeLoad: adminBeforeLoad,
   component: CreateRegistrar,
 });
 
-// Admin Sub-route: Edit Registrar (dynamic: id)
 const adminEditRegistrarRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "admin-registrars/edit/$id",
+  beforeLoad: adminBeforeLoad,
   component: EditRegistrar,
 });
 
 const adminStatisticsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "admin-statistics",
+  beforeLoad: adminBeforeLoad,
   component: AdminStatisticPage,
 });
 
 const adminTemplatesRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "admin-templates",
+  beforeLoad: adminBeforeLoad,
   component: AdminTemplatesPage,
 });
 
 const adminVerificationsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "admin-verifications",
+  beforeLoad: adminBeforeLoad,
   component: AdminVerificationsPage,
 });
 
 const adminRejectionHistoryRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "admin-rejection-history",
+  beforeLoad: adminBeforeLoad,
   component: AdminRejectionHistoryPage,
 });
 
 const adminProfileRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "admin-profile",
+  beforeLoad: adminBeforeLoad,
   component: AdminProfilePage,
 });
 
 const adminNotificationsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "admin-notifications",
+  beforeLoad: adminBeforeLoad,
   component: AdminNotificationsPage,
 });
 

@@ -1,12 +1,14 @@
-import axios, { AxiosError, InternalAxiosRequestConfig } from "axios";
+import axios, { AxiosError } from "axios";
+import type { InternalAxiosRequestConfig } from "axios";
+
 import {
   clearStoredAuth,
-  getStoredAccessToken,
+  getInMemoryAccessToken,
   getStoredAuthUser,
+  setInMemoryAccessToken,
 } from "../../modules/auth/utils/authStorage";
 
 const BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:5000/api";
-const ACCESS_TOKEN_STORAGE_KEY = "lawflow_access_token";
 
 export const apiClient = axios.create({
   baseURL: BASE_URL,
@@ -45,13 +47,7 @@ async function performRefresh(): Promise<string | null> {
     const newToken = data?.accessToken;
     if (!newToken) return null;
 
-    // Persist into whichever storage already holds the access token so that
-    // the user's rememberMe preference is preserved across the refresh.
-    if (localStorage.getItem(ACCESS_TOKEN_STORAGE_KEY) !== null) {
-      localStorage.setItem(ACCESS_TOKEN_STORAGE_KEY, newToken);
-    } else {
-      sessionStorage.setItem(ACCESS_TOKEN_STORAGE_KEY, newToken);
-    }
+    setInMemoryAccessToken(newToken);
     return newToken;
   } catch {
     return null;
@@ -68,7 +64,7 @@ function ensureRefresh(): Promise<string | null> {
 }
 
 apiClient.interceptors.request.use((config) => {
-  const accessToken = getStoredAccessToken();
+  const accessToken = getInMemoryAccessToken();
 
   if (accessToken) {
     config.headers.Authorization = `Bearer ${accessToken}`;

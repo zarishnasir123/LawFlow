@@ -1,10 +1,14 @@
 import { createHash, randomBytes } from "node:crypto";
 import { pool } from "../../config/db.js";
-import { queueLawyerRegistrationDecisionEmail } from "../../services/email.service.js";
+import {
+  queueLawyerRegistrationDecisionEmail,
+  queueLawyerSuspensionEmail
+} from "../../services/email.service.js";
 import {
   deleteLawyerDocuments,
   deleteLawyerStorageFolder,
-  getLawyerDocumentSignedUrl
+  getLawyerDocumentSignedUrl,
+  parseLawyerKeyFromStoragePath
 } from "../../services/storage.service.js";
 import { ApiError } from "../../utils/apiError.js";
 import { compareHash, hashValue } from "../../utils/hash.js";
@@ -268,7 +272,7 @@ async function revokeAuthSession(sessionId) {
   );
 }
 
-export async function loginUser({ email, password, rememberMe = false, req }) {
+export async function loginUser({ email, password, rememberMe = false, expectedRole = null, req }) {
   const normalizedEmail = email.trim().toLowerCase();
   const user = await findAuthUserByEmail(normalizedEmail);
 
@@ -292,11 +296,35 @@ export async function loginUser({ email, password, rememberMe = false, req }) {
     throw new ApiError(423, "Account is temporarily locked. Please try again later");
   }
 
+  // Block login before the password check for non-active accounts so a
+  // suspended user can't even confirm their credentials are valid.
+  if (user.account_status === "suspended") {
+    throw new ApiError(403, "Your account has been suspended. Contact support.");
+  }
+
+  // A freshly registered lawyer awaiting admin approval has
+  // account_status='inactive' (set in registration.service.js). For lawyers
+  // we let the flow fall through so the dedicated "pending admin approval"
+  // message below fires — much friendlier than the generic inactive one.
+  // For non-lawyers, account_status='inactive' is a real deactivation.
+  if (user.account_status === "inactive" && user.role !== "lawyer") {
+    throw new ApiError(403, "Your account is inactive. Contact support.");
+  }
+
   const passwordMatches = await compareHash(password, user.password_hash);
 
   if (!passwordMatches) {
     await recordFailedLogin(user);
     throw new ApiError(401, "Invalid password. Please try again.");
+  }
+
+  // Frontend role tabs pass expectedRole. A correct-credentials wrong-tab
+  // attempt is folded into the generic invalid-credentials response so the
+  // backend doesn't leak which role the email actually belongs to (e.g. the
+  // "lawyer pending approval" message below would otherwise tell a Client-tab
+  // user that they have a lawyer account in this system).
+  if (expectedRole && user.role !== expectedRole) {
+    throw new ApiError(401, "Invalid email or password");
   }
 
   if (!user.email_verified) {
@@ -458,7 +486,7 @@ export async function listLawyerRejectionHistory({
   };
 }
 
-export async function listPendingLawyerVerifications({ limit = 20, offset = 0 } = {}) {
+async function listLawyerVerificationsByStatus({ statuses, limit, offset }) {
   const safeLimit = Math.min(Math.max(Number.parseInt(limit, 10) || 20, 1), 100);
   const safeOffset = Math.max(Number.parseInt(offset, 10) || 0, 0);
 
@@ -481,6 +509,8 @@ export async function listPendingLawyerVerifications({ limit = 20, offset = 0 } 
       lawyer_profiles.cnic_match,
       lawyer_profiles.cnic_match_remarks,
       lawyer_profiles.verification_status,
+      lawyer_profiles.verification_remarks,
+      lawyer_profiles.verified_at,
       lawyer_profiles.created_at AS submitted_at,
       COUNT(*) OVER () AS total_count,
       COALESCE(
@@ -504,10 +534,10 @@ export async function listPendingLawyerVerifications({ limit = 20, offset = 0 } 
       ) AS documents
     FROM lawyer_profiles
     JOIN users ON users.id = lawyer_profiles.user_id
-    WHERE lawyer_profiles.verification_status = 'pending'
+    WHERE lawyer_profiles.verification_status = ANY($3::text[])
     ORDER BY lawyer_profiles.created_at ASC
     LIMIT $1 OFFSET $2`,
-    [safeLimit, safeOffset]
+    [safeLimit, safeOffset, statuses]
   );
 
   const total = result.rows[0] ? Number(result.rows[0].total_count) : 0;
@@ -521,6 +551,18 @@ export async function listPendingLawyerVerifications({ limit = 20, offset = 0 } 
       offset: safeOffset
     }
   };
+}
+
+export function listPendingLawyerVerifications({ limit = 20, offset = 0 } = {}) {
+  return listLawyerVerificationsByStatus({ statuses: ["pending"], limit, offset });
+}
+
+export function listActiveLawyerVerifications({ limit = 20, offset = 0 } = {}) {
+  return listLawyerVerificationsByStatus({
+    statuses: ["approved", "suspended"],
+    limit,
+    offset
+  });
 }
 
 // Approve path: keep the user, flip lawyer_profiles.verification_status to
@@ -618,17 +660,6 @@ async function rejectLawyerRegistrationTx(client, {
   return { storagePaths };
 }
 
-// Best-effort folder-level cleanup: parses one of the storage_paths to
-// extract the {lawyerKey} segment and removes the whole lawyers/{key}/
-// folder. Falls back to the explicit list if parsing fails.
-function deriveLawyerKey(storagePaths) {
-  for (const p of storagePaths) {
-    const match = /^lawyers\/([^/]+)\//.exec(p);
-    if (match) return match[1];
-  }
-  return null;
-}
-
 export async function reviewLawyerRegistration({
   lawyerProfileId,
   adminUserId,
@@ -648,22 +679,18 @@ export async function reviewLawyerRegistration({
   try {
     await client.query("BEGIN");
 
+    // The route enforces authenticate + authorizeRoles('admin'), so the role
+    // is already proven. We still need the admin's email for the audit row.
     const adminResult = await client.query(
-      `SELECT users.id, users.email, roles.name AS role
-      FROM users
-      JOIN roles ON roles.id = users.role_id
-      WHERE users.id = $1`,
+      `SELECT email FROM users WHERE id = $1`,
       [adminUserId]
     );
+    const adminEmail = adminResult.rows[0]?.email || null;
 
-    if (adminResult.rowCount === 0) {
-      throw new ApiError(404, "Admin user not found");
-    }
-
-    if (adminResult.rows[0].role !== "admin") {
-      throw new ApiError(403, "Only admin can review lawyer registrations");
-    }
-
+    // FOR UPDATE OF lawyer_profiles serialises concurrent reviewers — a second
+    // admin clicking Approve/Reject on the same lawyer at the same instant
+    // blocks here until this transaction commits, then re-reads the row and
+    // hits the already-reviewed guard below.
     const lawyerProfileResult = await client.query(
       `SELECT
         lawyer_profiles.id,
@@ -680,7 +707,8 @@ export async function reviewLawyerRegistration({
         users.account_status
       FROM lawyer_profiles
       JOIN users ON users.id = lawyer_profiles.user_id
-      WHERE lawyer_profiles.id = $1`,
+      WHERE lawyer_profiles.id = $1
+      FOR UPDATE OF lawyer_profiles`,
       [lawyerProfileId]
     );
 
@@ -689,7 +717,10 @@ export async function reviewLawyerRegistration({
     }
 
     const lawyerProfile = lawyerProfileResult.rows[0];
-    const adminEmail = adminResult.rows[0].email;
+
+    if (lawyerProfile.verification_status !== "pending") {
+      throw new ApiError(409, "Lawyer registration has already been reviewed");
+    }
 
     if (status === "approved") {
       const { updatedProfile, updatedUser } = await approveLawyerRegistrationTx(client, {
@@ -734,7 +765,9 @@ export async function reviewLawyerRegistration({
 
     // Best-effort storage cleanup (post-commit so a storage failure cannot
     // leave the DB in a half-rolled-back state).
-    const lawyerKey = deriveLawyerKey(storagePaths);
+    const lawyerKey = storagePaths
+      .map(parseLawyerKeyFromStoragePath)
+      .find(Boolean) ?? null;
     if (lawyerKey) {
       await deleteLawyerStorageFolder({ lawyerKey });
     } else if (storagePaths.length > 0) {
@@ -754,10 +787,183 @@ export async function reviewLawyerRegistration({
       firstName: lawyerProfile.first_name,
       lastName: lawyerProfile.last_name,
       email: lawyerProfile.email,
-      emailVerified: true,
-      accountStatus: "deleted",
+      userDeleted: true,
       verificationStatus: "rejected",
       verificationRemarks: remarks?.trim() || null,
+      verifiedBy: adminUserId,
+      verifiedAt: new Date().toISOString()
+    };
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+// Suspend an already-approved lawyer. Non-destructive: keep the user row and
+// all their data, just block login (users.account_status='suspended') and
+// flip lawyer_profiles.verification_status. Reuses verification_remarks /
+// verified_by / verified_at to record the actor + reason — last-write-wins
+// is acceptable for an FYP audit trail.
+export async function suspendLawyerRegistration({ lawyerProfileId, adminUserId, reason }) {
+  if (!reason?.trim()) {
+    throw new ApiError(400, "Suspension reason is required");
+  }
+
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    const adminResult = await client.query(
+      `SELECT email FROM users WHERE id = $1`,
+      [adminUserId]
+    );
+    const adminEmail = adminResult.rows[0]?.email || null;
+
+    const lookup = await client.query(
+      `SELECT
+        lawyer_profiles.id,
+        lawyer_profiles.user_id,
+        lawyer_profiles.verification_status,
+        users.email,
+        users.first_name,
+        users.last_name
+      FROM lawyer_profiles
+      JOIN users ON users.id = lawyer_profiles.user_id
+      WHERE lawyer_profiles.id = $1
+      FOR UPDATE OF lawyer_profiles`,
+      [lawyerProfileId]
+    );
+
+    if (lookup.rowCount === 0) {
+      throw new ApiError(404, "Lawyer registration request not found");
+    }
+
+    const lawyerProfile = lookup.rows[0];
+
+    if (lawyerProfile.verification_status !== "approved") {
+      throw new ApiError(409, "Only approved lawyers can be suspended");
+    }
+
+    await client.query(
+      `UPDATE lawyer_profiles
+      SET verification_status = 'suspended',
+          verification_remarks = $1,
+          verified_by = $2,
+          verified_at = NOW(),
+          updated_at = NOW()
+      WHERE id = $3`,
+      [reason.trim(), adminUserId, lawyerProfile.id]
+    );
+
+    await client.query(
+      `UPDATE users
+      SET account_status = 'suspended',
+          updated_at = NOW()
+      WHERE id = $1`,
+      [lawyerProfile.user_id]
+    );
+
+    // Revoke any active refresh sessions so an already-logged-in suspended
+    // lawyer is force-logged-out on next refresh.
+    await client.query(
+      `UPDATE auth_sessions
+      SET is_revoked = true,
+          revoked_at = NOW()
+      WHERE user_id = $1 AND is_revoked = false`,
+      [lawyerProfile.user_id]
+    );
+
+    await client.query("COMMIT");
+
+    queueLawyerSuspensionEmail({
+      email: lawyerProfile.email,
+      firstName: lawyerProfile.first_name,
+      reason: reason.trim()
+    });
+
+    return {
+      lawyerProfileId: lawyerProfile.id,
+      userId: lawyerProfile.user_id,
+      firstName: lawyerProfile.first_name,
+      lastName: lawyerProfile.last_name,
+      email: lawyerProfile.email,
+      verificationStatus: "suspended",
+      verificationRemarks: reason.trim(),
+      verifiedBy: adminUserId,
+      verifiedByEmail: adminEmail,
+      verifiedAt: new Date().toISOString()
+    };
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+// Reinstate a suspended lawyer back to approved + active.
+export async function reinstateLawyerRegistration({ lawyerProfileId, adminUserId }) {
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    const lookup = await client.query(
+      `SELECT
+        lawyer_profiles.id,
+        lawyer_profiles.user_id,
+        lawyer_profiles.verification_status,
+        users.email,
+        users.first_name,
+        users.last_name
+      FROM lawyer_profiles
+      JOIN users ON users.id = lawyer_profiles.user_id
+      WHERE lawyer_profiles.id = $1
+      FOR UPDATE OF lawyer_profiles`,
+      [lawyerProfileId]
+    );
+
+    if (lookup.rowCount === 0) {
+      throw new ApiError(404, "Lawyer registration request not found");
+    }
+
+    const lawyerProfile = lookup.rows[0];
+
+    if (lawyerProfile.verification_status !== "suspended") {
+      throw new ApiError(409, "Only suspended lawyers can be reinstated");
+    }
+
+    await client.query(
+      `UPDATE lawyer_profiles
+      SET verification_status = 'approved',
+          verification_remarks = NULL,
+          verified_by = $1,
+          verified_at = NOW(),
+          updated_at = NOW()
+      WHERE id = $2`,
+      [adminUserId, lawyerProfile.id]
+    );
+
+    await client.query(
+      `UPDATE users
+      SET account_status = 'active',
+          updated_at = NOW()
+      WHERE id = $1`,
+      [lawyerProfile.user_id]
+    );
+
+    await client.query("COMMIT");
+
+    return {
+      lawyerProfileId: lawyerProfile.id,
+      userId: lawyerProfile.user_id,
+      firstName: lawyerProfile.first_name,
+      lastName: lawyerProfile.last_name,
+      email: lawyerProfile.email,
+      verificationStatus: "approved",
       verifiedBy: adminUserId,
       verifiedAt: new Date().toISOString()
     };

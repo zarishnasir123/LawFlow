@@ -4,4 +4,7 @@
 export { default as LogoutConfirmationModal } from "./LogoutConfirmationModal";
 export { default as StatusToast } from "./StatusToast";
 export { default as DeleteRegistrarModal } from "./DeleteRegistrarModal";
+export { default as RejectLawyerConfirmationModal } from "./RejectLawyerConfirmationModal";
+export { default as SuspendLawyerConfirmationModal } from "./SuspendLawyerConfirmationModal";
+export { default as ReinstateLawyerConfirmationModal } from "./ReinstateLawyerConfirmationModal";
 
