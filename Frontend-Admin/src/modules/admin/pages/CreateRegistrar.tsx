@@ -49,7 +49,7 @@ export default function CreateRegistrar() {
         title: "Credentials email sent",
         message: `Registrar account for ${created.name} created and credentials sent to ${created.email}.`,
       });
-      window.setTimeout(() => navigate({ to: "/admin-registrars" }), 1200);
+      window.setTimeout(() => navigate({ to: "/registrars" }), 1200);
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Unable to create registrar.";
@@ -81,7 +81,7 @@ export default function CreateRegistrar() {
         <AdminHeader
           title="Registrar Accounts"
           subtitle="Admin-Provisioned Registrar Credentials"
-          onOpenNotifications={() => navigate({ to: "/admin-notifications" })}
+          onOpenNotifications={() => navigate({ to: "/notifications" })}
           onLogout={() => setLogoutModalOpen(true)}
         />
 
@@ -92,7 +92,7 @@ export default function CreateRegistrar() {
               subtitle="Create registrar account and issue login credentials"
               showPasswordFields
               submitText="Create Registrar"
-              onCancel={() => navigate({ to: "/admin-registrars" })}
+              onCancel={() => navigate({ to: "/registrars" })}
               onSubmit={handleSubmit}
             />
           </div>

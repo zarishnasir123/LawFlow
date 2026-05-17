@@ -68,20 +68,6 @@ import ScheduleHearing from "../modules/registrar/pages/ScheduleHearing";
 
 
 /* =====================================================
-   ADMIN MODULE IMPORTS
-   ===================================================== */
-import AdminDashboardPage from "../modules/admin/pages/Dashboard";
-import AdminRegistrarsPage from "../modules/admin/pages/Registrars";
-import AdminStatisticPage from "../modules/admin/pages/Reports";
-import AdminVerificationsPage from "../modules/admin/pages/Verifications";
-import AdminRejectionHistoryPage from "../modules/admin/pages/RejectionHistory";
-import AdminProfilePage from "../modules/admin/pages/Profile";
-import AdminNotificationsPage from "../modules/admin/pages/Notifications";
-import CreateRegistrar from "../modules/admin/pages/CreateRegistrar";
-import EditRegistrar from "../modules/admin/pages/EditRegistrar";
-import AdminTemplatesPage from "../modules/admin/pages/Templates";
-
-/* =====================================================
    ROOT ROUTE - Base layout wrapper for all routes
    ===================================================== */
 const rootRoute = createRootRoute({
@@ -438,82 +424,6 @@ const scheduleHearingRoute = createRoute({
 });
 
 /* =====================================================
-   ADMIN ROUTES — requires role "admin"
-   ===================================================== */
-
-const adminBeforeLoad = requireAuth(["admin"]);
-
-const adminDashboardRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "admin-dashboard",
-  beforeLoad: adminBeforeLoad,
-  component: AdminDashboardPage,
-});
-
-const adminRegistrarsRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "admin-registrars",
-  beforeLoad: adminBeforeLoad,
-  component: AdminRegistrarsPage,
-});
-
-const adminCreateRegistrarRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "admin-registrars/create",
-  beforeLoad: adminBeforeLoad,
-  component: CreateRegistrar,
-});
-
-const adminEditRegistrarRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "admin-registrars/edit/$id",
-  beforeLoad: adminBeforeLoad,
-  component: EditRegistrar,
-});
-
-const adminStatisticsRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "admin-statistics",
-  beforeLoad: adminBeforeLoad,
-  component: AdminStatisticPage,
-});
-
-const adminTemplatesRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "admin-templates",
-  beforeLoad: adminBeforeLoad,
-  component: AdminTemplatesPage,
-});
-
-const adminVerificationsRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "admin-verifications",
-  beforeLoad: adminBeforeLoad,
-  component: AdminVerificationsPage,
-});
-
-const adminRejectionHistoryRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "admin-rejection-history",
-  beforeLoad: adminBeforeLoad,
-  component: AdminRejectionHistoryPage,
-});
-
-const adminProfileRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "admin-profile",
-  beforeLoad: adminBeforeLoad,
-  component: AdminProfilePage,
-});
-
-const adminNotificationsRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "admin-notifications",
-  beforeLoad: adminBeforeLoad,
-  component: AdminNotificationsPage,
-});
-
-/* =====================================================
    ROUTE TREE - Combines all routes into hierarchy
    ===================================================== */
 
@@ -572,18 +482,6 @@ const routeTree = rootRoute.addChildren([
   approvedCasesRoute,
   returnCaseRoute,
   scheduleHearingRoute,
-
-  // Admin Routes
-  adminDashboardRoute,
-  adminRegistrarsRoute,
-  adminCreateRegistrarRoute,
-  adminEditRegistrarRoute,
-  adminStatisticsRoute,
-  adminTemplatesRoute,
-  adminVerificationsRoute,
-  adminRejectionHistoryRoute,
-  adminProfileRoute,
-  adminNotificationsRoute,
 ]);
 
 export const router = createRouter({ routeTree });

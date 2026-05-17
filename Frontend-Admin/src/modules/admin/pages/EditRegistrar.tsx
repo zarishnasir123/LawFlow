@@ -8,7 +8,7 @@ import LogoutConfirmationModal from "../components/modals/LogoutConfirmationModa
 export default function EditRegistrar() {
   const navigate = useNavigate();
   const [logoutModalOpen, setLogoutModalOpen] = useState(false);
-  const { id } = useParams({ from: "/admin-registrars/edit/$id" });
+  const { id } = useParams({ from: "/registrars/edit/$id" });
 
   const registrar = useRegistrarAccountsStore((state) => state.getRegistrarById(id));
   const updateRegistrar = useRegistrarAccountsStore((state) => state.updateRegistrar);
@@ -42,7 +42,7 @@ export default function EditRegistrar() {
       });
 
       alert(`Registrar "${values.name}" updated successfully.`);
-      navigate({ to: "/admin-registrars" });
+      navigate({ to: "/registrars" });
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Unable to update registrar.";
@@ -63,7 +63,7 @@ export default function EditRegistrar() {
           <AdminHeader
             title="Registrar Accounts"
             subtitle="Admin-Provisioned Registrar Credentials"
-            onOpenNotifications={() => navigate({ to: "/admin-notifications" })}
+            onOpenNotifications={() => navigate({ to: "/notifications" })}
             onLogout={() => setLogoutModalOpen(true)}
           />
 
@@ -72,7 +72,7 @@ export default function EditRegistrar() {
               Registrar not found.
               <button
                 type="button"
-                onClick={() => navigate({ to: "/admin-registrars" })}
+                onClick={() => navigate({ to: "/registrars" })}
                 className="ml-3 rounded-lg border border-rose-300 px-3 py-1 text-sm"
               >
                 Back to Registrars
@@ -96,7 +96,7 @@ export default function EditRegistrar() {
         <AdminHeader
           title="Registrar Accounts"
           subtitle="Admin-Provisioned Registrar Credentials"
-          onOpenNotifications={() => navigate({ to: "/admin-notifications" })}
+          onOpenNotifications={() => navigate({ to: "/notifications" })}
           onLogout={() => setLogoutModalOpen(true)}
         />
 
@@ -108,7 +108,7 @@ export default function EditRegistrar() {
               initialValues={initialValues}
               showPasswordFields={false}
               submitText="Update Registrar"
-              onCancel={() => navigate({ to: "/admin-registrars" })}
+              onCancel={() => navigate({ to: "/registrars" })}
               onSubmit={handleSubmit}
             />
           </div>

@@ -281,7 +281,7 @@ export default function Verifications() {
         <AdminHeader
           title="Verify Lawyers"
           subtitle="Lawyer Verification"
-          onOpenNotifications={() => navigate({ to: "/admin-notifications" })}
+          onOpenNotifications={() => navigate({ to: "/notifications" })}
           onLogout={() => setLogoutModalOpen(true)}
         />
 
@@ -304,7 +304,7 @@ export default function Verifications() {
                       optional and available at the bottom of this page.
                     </p>
                     <Link
-                      to="/admin-rejection-history"
+                      to="/rejection-history"
                       className="mt-3 inline-flex items-center gap-1.5 text-sm font-semibold text-rose-700 hover:underline"
                     >
                       View returned registration history

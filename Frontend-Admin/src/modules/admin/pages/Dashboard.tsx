@@ -13,7 +13,7 @@ import {
   adminRecentActivity,
 } from "../dashboard.mock";
 
-import LogoutConfirmationModal from "../../admin/components/modals/LogoutConfirmationModal";
+import LogoutConfirmationModal from "../components/modals/LogoutConfirmationModal";
 import { useAdminNotificationsStore } from "../store/notifications.store";
 
 export default function AdminDashboardPage() {
@@ -44,7 +44,7 @@ export default function AdminDashboardPage() {
         <AdminHeader
           title="Admin Dashboard"
           subtitle="LawFlow Management Portal"
-          onOpenNotifications={() => navigate({ to: "/admin-notifications" })}
+          onOpenNotifications={() => navigate({ to: "/notifications" })}
           onLogout={() => setLogoutModalOpen(true)}
         />
 
@@ -101,7 +101,7 @@ export default function AdminDashboardPage() {
                 iconBgClass="bg-emerald-100"
                 iconTextClass="text-emerald-700"
                 badgeClassName="bg-emerald-100 text-emerald-700"
-                onClick={() => navigate({ to: "/admin-registrars" })}
+                onClick={() => navigate({ to: "/registrars" })}
               />
 
               <ActionCard
@@ -112,7 +112,7 @@ export default function AdminDashboardPage() {
                 iconBgClass="bg-cyan-100"
                 iconTextClass="text-cyan-700"
                 badgeClassName="bg-cyan-100 text-cyan-700"
-                onClick={() => navigate({ to: "/admin-templates" })}
+                onClick={() => navigate({ to: "/templates" })}
               />
 
               <ActionCard
@@ -130,7 +130,7 @@ export default function AdminDashboardPage() {
                       "Admin opened the system statistics dashboard for latest metrics.",
                     severity: "info",
                   });
-                  navigate({ to: "/admin-statistics" });
+                  navigate({ to: "/statistics" });
                 }}
               />
 
@@ -142,7 +142,7 @@ export default function AdminDashboardPage() {
                 iconBgClass="bg-amber-100"
                 iconTextClass="text-amber-700"
                 badgeClassName="bg-amber-100 text-amber-700"
-                onClick={() => navigate({ to: "/admin-verifications" })}
+                onClick={() => navigate({ to: "/verifications" })}
               />
 
               <ActionCard
@@ -153,7 +153,7 @@ export default function AdminDashboardPage() {
                 iconBgClass="bg-rose-100"
                 iconTextClass="text-rose-700"
                 badgeClassName="bg-rose-100 text-rose-700"
-                onClick={() => navigate({ to: "/admin-rejection-history" })}
+                onClick={() => navigate({ to: "/rejection-history" })}
               />
             </div>
           </div>
@@ -162,8 +162,8 @@ export default function AdminDashboardPage() {
             <PendingVerificationList
               title="Recent Lawyer Verification Requests"
               items={lawyerVerificationItems}
-              onViewAll={() => navigate({ to: "/admin-verifications" })}
-              onReview={() => navigate({ to: "/admin-verifications" })}
+              onViewAll={() => navigate({ to: "/verifications" })}
+              onReview={() => navigate({ to: "/verifications" })}
             />
 
             <RecentActivityList items={adminRecentActivity} />

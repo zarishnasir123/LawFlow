@@ -153,7 +153,7 @@ export default function AdminStatisticPage() {
         <AdminHeader
           title="System Statistics"
           subtitle="Comprehensive Analytics and Insights"
-          onOpenNotifications={() => navigate({ to: "/admin-notifications" })}
+          onOpenNotifications={() => navigate({ to: "/notifications" })}
           onLogout={() => setLogoutModalOpen(true)}
         />
 
