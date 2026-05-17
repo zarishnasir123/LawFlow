@@ -259,6 +259,31 @@ export function queueLawyerSuspensionEmail({ email, firstName, reason }) {
   ));
 }
 
+export function sendRegistrarCredentialsEmail({ email, firstName, temporaryPassword }) {
+  return send(email, "Your LawFlow registrar credentials", "registrarCredentials", {
+    firstName,
+    email,
+    temporaryPassword,
+    loginUrl: `${getFrontendUrl()}/login`
+  });
+}
+
+function toCredentialsEmailDeliveryStatus(result) {
+  return {
+    emailSent: result.mode === "smtp",
+    deliveryMode: result.mode,
+    deliveryReason: result.reason
+  };
+}
+
+// Synchronous delivery so the admin endpoint can surface SMTP failures back
+// to the admin UI instead of silently fire-and-forgetting the password email.
+// Mirrors the OTP delivery pattern.
+export async function deliverRegistrarCredentialsEmail({ email, firstName, temporaryPassword }) {
+  const result = await sendRegistrarCredentialsEmail({ email, firstName, temporaryPassword });
+  return toCredentialsEmailDeliveryStatus(result);
+}
+
 export function sendPasswordResetEmail({ email, firstName, resetUrl }) {
   return send(email, "Reset your LawFlow password", "passwordReset", {
     firstName,

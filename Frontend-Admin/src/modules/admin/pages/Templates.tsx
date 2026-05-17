@@ -1,16 +1,11 @@
 import { useMemo, useState } from "react";
-import { useNavigate } from "@tanstack/react-router";
 import { BookOpenCheck, FileUp, PencilLine, Plus, Trash2 } from "lucide-react";
 
 import type { CaseDomain } from "../types";
-import { AdminHeader } from "../components/AdminHeader";
-import LogoutConfirmationModal from "../components/modals/LogoutConfirmationModal";
 import StatusToast from "../components/modals/StatusToast";
 import { useTemplateCasesStore } from "../store/templateCases.store";
 
 export default function TemplatesPage() {
-  const navigate = useNavigate();
-  const [logoutModalOpen, setLogoutModalOpen] = useState(false);
   const [selectedDomain, setSelectedDomain] = useState<CaseDomain>("civil");
   const [selectedCaseId, setSelectedCaseId] = useState<string>("");
 
@@ -41,12 +36,6 @@ export default function TemplatesPage() {
   const updateDocument = useTemplateCasesStore((state) => state.updateDocument);
   const deleteDocument = useTemplateCasesStore((state) => state.deleteDocument);
   const toggleDocumentStatus = useTemplateCasesStore((state) => state.toggleDocumentStatus);
-
-  const handleLogout = () => {
-    localStorage.clear();
-    setLogoutModalOpen(false);
-    navigate({ to: "/login" });
-  };
 
   const domainCases = useMemo(
     () => caseCategories.filter((item) => item.domain === selectedDomain),
@@ -136,11 +125,6 @@ export default function TemplatesPage() {
 
   return (
     <>
-      <LogoutConfirmationModal
-        open={logoutModalOpen}
-        onCancel={() => setLogoutModalOpen(false)}
-        onConfirm={handleLogout}
-      />
       <StatusToast
         open={toast.open}
         type={toast.type}
@@ -149,15 +133,7 @@ export default function TemplatesPage() {
         onClose={() => setToast((prev) => ({ ...prev, open: false }))}
       />
 
-      <div className="min-h-screen bg-gray-50">
-        <AdminHeader
-          title="Template Documents"
-          subtitle="Civil and Family Case Template Management"
-          onOpenNotifications={() => navigate({ to: "/notifications" })}
-          onLogout={() => setLogoutModalOpen(true)}
-        />
-
-        <div className="w-full px-6 lg:px-8 xl:px-10 py-8 space-y-6">
+      <div className="w-full px-6 lg:px-8 xl:px-10 py-8 space-y-6">
           <section className="rounded-xl border border-green-100 bg-white p-6 shadow-sm">
             <h1 className="text-2xl font-bold text-[#01411C]">Manage Document Templates</h1>
             <p className="mt-1 text-sm text-gray-600">
@@ -521,7 +497,6 @@ export default function TemplatesPage() {
               </>
             )}
           </section>
-        </div>
       </div>
     </>
   );

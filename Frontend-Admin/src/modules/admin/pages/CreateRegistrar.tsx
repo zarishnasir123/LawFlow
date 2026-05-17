@@ -1,15 +1,26 @@
 import { useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
+
 import RegistrarForm from "../components/RegistrarForm";
 import type { RegistrarFormValues } from "../components/RegistrarForm";
-import { useRegistrarAccountsStore } from "../store/registrars.store";
-import { AdminHeader } from "../components/AdminHeader";
-import LogoutConfirmationModal from "../components/modals/LogoutConfirmationModal";
+import { createRegistrar } from "../api/registrars";
 import StatusToast from "../components/modals/StatusToast";
+import { extractApiErrorMessage } from "../../../shared/api/extractApiErrorMessage";
+
+function splitFullName(fullName: string): { firstName: string; lastName: string } | null {
+  const parts = fullName.trim().split(/\s+/);
+  if (parts.length < 2 || !parts[0] || !parts[parts.length - 1]) {
+    return null;
+  }
+  return {
+    firstName: parts[0],
+    lastName: parts.slice(1).join(" "),
+  };
+}
 
 export default function CreateRegistrar() {
   const navigate = useNavigate();
-  const [logoutModalOpen, setLogoutModalOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [toast, setToast] = useState<{
     open: boolean;
     type: "success" | "error";
@@ -20,55 +31,63 @@ export default function CreateRegistrar() {
     type: "success",
     title: "",
   });
-  const createRegistrar = useRegistrarAccountsStore((state) => state.createRegistrar);
-  const sendCredentialsByEmail = useRegistrarAccountsStore(
-    (state) => state.sendCredentialsByEmail,
-  );
 
-  const handleLogout = () => {
-    localStorage.clear();
-    setLogoutModalOpen(false);
-    navigate({ to: "/login" });
-  };
-
-  const handleSubmit = (values: RegistrarFormValues) => {
-    try {
-      const created = createRegistrar({
-        name: values.name,
-        email: values.email,
-        phone: values.phone,
-        cnic: values.cnic,
-        role: values.role,
-        password: values.password ?? "",
-      });
-      sendCredentialsByEmail(created.id);
-
-      setToast({
-        open: true,
-        type: "success",
-        title: "Credentials email sent",
-        message: `Registrar account for ${created.name} created and credentials sent to ${created.email}.`,
-      });
-      window.setTimeout(() => navigate({ to: "/registrars" }), 1200);
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Unable to create registrar.";
+  const handleSubmit = async (values: RegistrarFormValues) => {
+    const nameParts = splitFullName(values.name);
+    if (!nameParts) {
       setToast({
         open: true,
         type: "error",
         title: "Registrar creation failed",
-        message,
+        message: "Please enter first name and last name (e.g. \"Muhammad Asif\").",
       });
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const { registrar, emailDelivery } = await createRegistrar({
+        firstName: nameParts.firstName,
+        lastName: nameParts.lastName,
+        email: values.email,
+        phone: values.phone,
+        cnic: values.cnic,
+      });
+
+      // Account creation succeeded server-side regardless of email outcome.
+      // Distinguish "credentials emailed" from "account created but SMTP
+      // could not deliver" so the admin knows whether to re-issue
+      // credentials manually.
+      if (emailDelivery.emailSent) {
+        setToast({
+          open: true,
+          type: "success",
+          title: "Credentials email sent",
+          message: `Registrar account for ${registrar.firstName} ${registrar.lastName} created and credentials sent to ${registrar.email}.`,
+        });
+      } else {
+        setToast({
+          open: true,
+          type: "error",
+          title: "Account created — email NOT delivered",
+          message: `Registrar account for ${registrar.firstName} ${registrar.lastName} was created, but the credentials email could not be delivered (${emailDelivery.deliveryReason ?? "SMTP unavailable"}). Use the "Send" action on the registrar list once email is configured.`,
+        });
+      }
+      window.setTimeout(() => navigate({ to: "/registrars" }), 1800);
+    } catch (error) {
+      setToast({
+        open: true,
+        type: "error",
+        title: "Registrar creation failed",
+        message: extractApiErrorMessage(error, "Unable to create registrar."),
+      });
+    } finally {
+      setSubmitting(false);
     }
   };
 
   return (
     <>
-      <LogoutConfirmationModal
-        open={logoutModalOpen}
-        onCancel={() => setLogoutModalOpen(false)}
-        onConfirm={handleLogout}
-      />
       <StatusToast
         open={toast.open}
         type={toast.type}
@@ -77,25 +96,16 @@ export default function CreateRegistrar() {
         onClose={() => setToast((prev) => ({ ...prev, open: false }))}
       />
 
-      <div className="min-h-screen bg-gray-50">
-        <AdminHeader
-          title="Registrar Accounts"
-          subtitle="Admin-Provisioned Registrar Credentials"
-          onOpenNotifications={() => navigate({ to: "/notifications" })}
-          onLogout={() => setLogoutModalOpen(true)}
-        />
-
-        <div className="w-full px-6 lg:px-8 xl:px-10 py-8">
-          <div className="mx-auto max-w-4xl">
-            <RegistrarForm
-              title="Create New Registrar"
-              subtitle="Create registrar account and issue login credentials"
-              showPasswordFields
-              submitText="Create Registrar"
-              onCancel={() => navigate({ to: "/registrars" })}
-              onSubmit={handleSubmit}
-            />
-          </div>
+      <div className="w-full px-6 lg:px-8 xl:px-10 py-8">
+        <div className="mx-auto max-w-4xl">
+          <RegistrarForm
+            title="Create New Registrar"
+            subtitle="A secure temporary password will be generated and emailed to the registrar."
+            submitText={submitting ? "Creating..." : "Create Registrar"}
+            submitting={submitting}
+            onCancel={() => navigate({ to: "/registrars" })}
+            onSubmit={handleSubmit}
+          />
         </div>
       </div>
     </>

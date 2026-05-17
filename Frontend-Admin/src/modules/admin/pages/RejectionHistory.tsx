@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from "react";
-import { Link, useNavigate } from "@tanstack/react-router";
+import { Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import {
   AlertTriangle,
@@ -15,10 +15,7 @@ import {
   UserX,
 } from "lucide-react";
 
-import { AdminHeader } from "../components/AdminHeader";
-import LogoutConfirmationModal from "../components/modals/LogoutConfirmationModal";
 import { fetchLawyerRejectionHistory, type LawyerRejectionRecord } from "../api/lawyerRejections";
-import { clearStoredAuth } from "../../auth/utils/authStorage";
 import { getAuthErrorMessage } from "../../auth/api";
 
 function formatRejectedAt(value: string) {
@@ -34,8 +31,6 @@ function displayName(record: LawyerRejectionRecord) {
 }
 
 export default function RejectionHistory() {
-  const navigate = useNavigate();
-  const [logoutModalOpen, setLogoutModalOpen] = useState(false);
   const [search, setSearch] = useState("");
 
   const historyQuery = useQuery({
@@ -46,30 +41,9 @@ export default function RejectionHistory() {
   const records = historyQuery.data?.items ?? [];
   const total = historyQuery.data?.pagination.total ?? 0;
 
-  const handleLogout = () => {
-    clearStoredAuth();
-    setLogoutModalOpen(false);
-    navigate({ to: "/login" });
-  };
-
   return (
-    <>
-      <LogoutConfirmationModal
-        open={logoutModalOpen}
-        onCancel={() => setLogoutModalOpen(false)}
-        onConfirm={handleLogout}
-      />
-
-      <div className="min-h-screen bg-gray-50">
-        <AdminHeader
-          title="Returned Registrations"
-          subtitle="Lawyer rejection audit trail"
-          onOpenNotifications={() => navigate({ to: "/notifications" })}
-          onLogout={() => setLogoutModalOpen(true)}
-        />
-
-        <div className="w-full px-6 lg:px-8 xl:px-10 py-8">
-          <div className="mx-auto w-full max-w-6xl space-y-6">
+    <div className="w-full px-6 lg:px-8 xl:px-10 py-8">
+      <div className="mx-auto w-full max-w-6xl space-y-6">
             <section className="rounded-2xl border border-rose-100 bg-gradient-to-br from-white via-white to-rose-50/40 p-6 shadow-sm">
               <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
                 <div className="flex items-start gap-3">
@@ -201,10 +175,8 @@ export default function RejectionHistory() {
                 ))
               )}
             </section>
-          </div>
-        </div>
       </div>
-    </>
+    </div>
   );
 }
 

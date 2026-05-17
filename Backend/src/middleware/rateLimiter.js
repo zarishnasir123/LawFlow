@@ -89,3 +89,19 @@ export const lawyerReviewLimiter = rateLimiter({
   max: 60,
   message: "Too many review requests. Please try again after 15 minutes."
 });
+
+// Admin-only registrar CRUD endpoints. Mirrors lawyerReviewLimiter: tight
+// enough to contain runaway loops and stolen admin tokens, loose enough
+// not to bother a real admin doing normal management.
+export const registrarManagementLimiter = rateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 60,
+  message: "Too many registrar management requests. Please try again after 15 minutes."
+});
+
+// Resending credentials triggers an email + password reset, so cap tighter.
+export const registrarCredentialsLimiter = rateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: "Too many credentials emails requested. Please try again after 15 minutes."
+});

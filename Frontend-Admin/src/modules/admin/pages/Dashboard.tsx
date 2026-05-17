@@ -1,8 +1,6 @@
-import { useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { BadgeCheck, BarChart3, FileText, Shield, UserCheck, UserX } from "lucide-react";
 
-import { AdminHeader } from "../components/AdminHeader";
 import { ActionCard } from "../components/ActionCard";
 import { PendingVerificationList } from "../components/PendingVerificationList";
 import { RecentActivityList } from "../components/RecentActivity";
@@ -13,12 +11,10 @@ import {
   adminRecentActivity,
 } from "../dashboard.mock";
 
-import LogoutConfirmationModal from "../components/modals/LogoutConfirmationModal";
 import { useAdminNotificationsStore } from "../store/notifications.store";
 
 export default function AdminDashboardPage() {
   const navigate = useNavigate();
-  const [logoutModalOpen, setLogoutModalOpen] = useState(false);
   const addSystemStatisticsNotification = useAdminNotificationsStore(
     (state) => state.addSystemStatisticsNotification,
   );
@@ -26,29 +22,8 @@ export default function AdminDashboardPage() {
     (request) => request.type === "Lawyer",
   );
 
-  const handleLogout = () => {
-    localStorage.clear();
-    setLogoutModalOpen(false);
-    navigate({ to: "/login" });
-  };
-
   return (
-    <>
-      <LogoutConfirmationModal
-        open={logoutModalOpen}
-        onCancel={() => setLogoutModalOpen(false)}
-        onConfirm={handleLogout}
-      />
-
-      <div className="min-h-screen bg-gray-50">
-        <AdminHeader
-          title="Admin Dashboard"
-          subtitle="LawFlow Management Portal"
-          onOpenNotifications={() => navigate({ to: "/notifications" })}
-          onLogout={() => setLogoutModalOpen(true)}
-        />
-
-        <div className="w-full px-6 lg:px-8 xl:px-10 py-8">
+    <div className="w-full px-6 lg:px-8 xl:px-10 py-8">
           <div className="bg-white rounded-xl shadow-sm p-6 mb-8 border border-green-100">
             <div className="flex items-center justify-between">
               <div>
@@ -168,8 +143,6 @@ export default function AdminDashboardPage() {
 
             <RecentActivityList items={adminRecentActivity} />
           </div>
-        </div>
-      </div>
-    </>
+    </div>
   );
 }
