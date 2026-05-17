@@ -153,7 +153,7 @@ export default function TemplatesPage() {
         <AdminHeader
           title="Template Documents"
           subtitle="Civil and Family Case Template Management"
-          onOpenNotifications={() => navigate({ to: "/admin-notifications" })}
+          onOpenNotifications={() => navigate({ to: "/notifications" })}
           onLogout={() => setLogoutModalOpen(true)}
         />
 

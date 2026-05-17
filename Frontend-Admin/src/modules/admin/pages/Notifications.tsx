@@ -92,7 +92,7 @@ export default function Notifications() {
         <AdminHeader
           title="Notifications"
           subtitle="Admin Alerts and Verification Updates"
-          onOpenNotifications={() => navigate({ to: "/admin-notifications" })}
+          onOpenNotifications={() => navigate({ to: "/notifications" })}
           onLogout={() => setLogoutModalOpen(true)}
         />
 

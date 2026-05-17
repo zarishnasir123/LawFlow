@@ -3,11 +3,13 @@ import { redirect } from "@tanstack/react-router";
 import type { LoginRole } from "../modules/auth/types";
 import { getStoredAuthUser } from "../modules/auth/utils/authStorage";
 
-const roleHomePath: Record<LoginRole, string> = {
+// Admin is intentionally excluded — admins log in on the dedicated admin
+// panel (separate Vite app), not on this main app. If a stored user somehow
+// has role "admin" here, the lookup falls back to "/login".
+const roleHomePath: Partial<Record<LoginRole, string>> = {
   client: "/client-dashboard",
   lawyer: "/Lawyer-dashboard",
   registrar: "/registrar-dashboard",
-  admin: "/admin-dashboard",
 };
 
 // Frontend RBAC is defence-in-depth. The real authorisation boundary is the

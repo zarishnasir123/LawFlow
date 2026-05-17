@@ -64,7 +64,7 @@ export default function RejectionHistory() {
         <AdminHeader
           title="Returned Registrations"
           subtitle="Lawyer rejection audit trail"
-          onOpenNotifications={() => navigate({ to: "/admin-notifications" })}
+          onOpenNotifications={() => navigate({ to: "/notifications" })}
           onLogout={() => setLogoutModalOpen(true)}
         />
 
@@ -85,7 +85,7 @@ export default function RejectionHistory() {
                       removed so the lawyer can register again with the same email.
                     </p>
                     <Link
-                      to="/admin-verifications"
+                      to="/verifications"
                       className="mt-3 inline-flex items-center gap-1.5 text-sm font-semibold text-[#01411C] hover:underline"
                     >
                       <ArrowLeft className="h-4 w-4" />

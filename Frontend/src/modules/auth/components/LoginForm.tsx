@@ -9,8 +9,7 @@ import GoogleAuthButton from "./GoogleAuthButton";
 import PasswordField from "./PasswordField";
 import RoleSelector from "./RoleSelector";
 import TextField from "./TextField";
-import { useRegistrarAccountsStore } from "../../admin/store/registrars.store";
-import { loginAdmin } from "../../admin/api";
+import { useRegistrarAccountsStore } from "../../registrar/store/registrars.store";
 import { loginClient } from "../../client/api";
 import { loginLawyer } from "../../lawyer/api";
 
@@ -57,32 +56,6 @@ export default function LoginForm({ onForgotPassword }: LoginFormProps) {
     },
   });
 
-  const adminLoginMutation = useMutation({
-    mutationFn: loginAdmin,
-    onSuccess: (data, variables) => {
-      if (data.user.role !== "admin") {
-        alert("These credentials do not belong to an admin account.");
-        return;
-      }
-
-      const fullName = [data.user.firstName, data.user.lastName].filter(Boolean).join(" ");
-
-      setEmail(data.user.email);
-      saveStoredAuthUser(
-        {
-          id: data.user.id,
-          email: data.user.email,
-          role: data.user.role,
-          name: fullName || data.user.email,
-          refreshTokenExpiresAt: data.refreshTokenExpiresAt,
-        },
-        Boolean(variables.rememberMe),
-        data.accessToken
-      );
-      navigate({ to: "/admin-dashboard" });
-    },
-  });
-
   const lawyerLoginMutation = useMutation({
     mutationFn: loginLawyer,
     onSuccess: (data, variables) => {
@@ -112,15 +85,13 @@ export default function LoginForm({ onForgotPassword }: LoginFormProps) {
   const disabled =
     isSubmitting ||
     clientLoginMutation.isPending ||
-    adminLoginMutation.isPending ||
     lawyerLoginMutation.isPending;
 
   // Wrap setRole so stale error banners from a previous role's mutation don't
-  // stack when the user toggles between Client / Lawyer / Admin tabs.
+  // stack when the user toggles between Client / Lawyer / Registrar tabs.
   const changeRole = (next: LoginRole) => {
     clientLoginMutation.reset();
     lawyerLoginMutation.reset();
-    adminLoginMutation.reset();
     setRole(next);
   };
 
@@ -167,14 +138,6 @@ export default function LoginForm({ onForgotPassword }: LoginFormProps) {
         break;
       }
 
-      case "admin":
-        adminLoginMutation.mutate({
-          email: values.email,
-          password: values.password,
-          rememberMe: Boolean(values.rememberMe),
-        });
-        break;
-
       default:
         navigate({ to: "/login" });
     }
@@ -184,7 +147,6 @@ export default function LoginForm({ onForgotPassword }: LoginFormProps) {
     { value: "client", label: "Client" },
     { value: "lawyer", label: "Lawyer" },
     { value: "registrar", label: "Registrar" },
-    { value: "admin", label: "Admin" },
   ];
 
   return (
@@ -257,12 +219,6 @@ export default function LoginForm({ onForgotPassword }: LoginFormProps) {
       {clientLoginMutation.isError ? (
         <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
           {getAuthErrorMessage(clientLoginMutation.error)}
-        </div>
-      ) : null}
-
-      {adminLoginMutation.isError ? (
-        <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          {getAuthErrorMessage(adminLoginMutation.error)}
         </div>
       ) : null}
 

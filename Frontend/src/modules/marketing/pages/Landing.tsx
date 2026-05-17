@@ -163,7 +163,6 @@ export default function Landing() {
             { role: "client", icon: <FileText className="h-9 w-9 text-[#01411C]" />, title: "Client", desc: "Access your cases and connect with lawyers" },
             { role: "lawyer", icon: <Gavel className="h-9 w-9 text-[#01411C]" />, title: "Lawyer", desc: "Manage cases and represent clients" },
             { role: "registrar", icon: <Scale className="h-9 w-9 text-[#01411C]" />, title: "Registrar", desc: "Review and approve case submissions" },
-            { role: "admin", icon: <Shield className="h-9 w-9 text-[#01411C]" />, title: "Admin", desc: "System administration and oversight" },
           ].map((r) => (
             <button
               key={r.role}

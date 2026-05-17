@@ -86,7 +86,7 @@ export default function Registrars() {
         <AdminHeader
           title="Registrar Accounts"
           subtitle="Admin-Provisioned Registrar Credentials"
-          onOpenNotifications={() => navigate({ to: "/admin-notifications" })}
+          onOpenNotifications={() => navigate({ to: "/notifications" })}
           onLogout={() => setLogoutModalOpen(true)}
         />
 
@@ -101,7 +101,7 @@ export default function Registrars() {
               </div>
 
               <button
-                onClick={() => navigate({ to: "/admin-registrars/create" })}
+                onClick={() => navigate({ to: "/registrars/create" })}
                 className="inline-flex items-center gap-2 rounded-xl bg-[#01411C] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#024a23]"
               >
                 <UserPlus className="h-4 w-4" />
@@ -167,7 +167,7 @@ export default function Registrars() {
                 <div className="col-span-2">
                   <div className="flex flex-wrap justify-end gap-2">
                   <button
-                    onClick={() => navigate({ to: `/admin-registrars/edit/${r.id}` })}
+                    onClick={() => navigate({ to: `/registrars/edit/${r.id}` })}
                     className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50"
                   >
                     <PenSquare className="h-3.5 w-3.5" />

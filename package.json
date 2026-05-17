@@ -1,0 +1,16 @@
+{
+  "name": "lawflow-monorepo",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently -n be,fe,admin -c blue,green,magenta \"npm:dev:be\" \"npm:dev:fe\" \"npm:dev:admin\"",
+    "dev:be": "npm --prefix Backend run dev",
+    "dev:fe": "npm --prefix Frontend run dev",
+    "dev:admin": "npm --prefix Frontend-Admin run dev",
+    "install:all": "npm --prefix Backend install && npm --prefix Frontend install && npm --prefix Frontend-Admin install",
+    "typecheck:fe": "npm --prefix Frontend run build",
+    "typecheck:admin": "npm --prefix Frontend-Admin run build"
+  },
+  "devDependencies": {
+    "concurrently": "^9.0.0"
+  }
+}
