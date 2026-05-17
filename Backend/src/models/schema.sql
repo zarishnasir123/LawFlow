@@ -20,6 +20,7 @@ DROP TABLE IF EXISTS password_reset_tokens          CASCADE;
 DROP TABLE IF EXISTS email_verification_otps        CASCADE;
 DROP TABLE IF EXISTS lawyer_verification_documents  CASCADE;
 DROP TABLE IF EXISTS lawyer_profiles                CASCADE;
+DROP TABLE IF EXISTS registrar_profiles             CASCADE;
 DROP TABLE IF EXISTS client_profiles                CASCADE;
 DROP TABLE IF EXISTS pending_registrations          CASCADE;
 DROP TABLE IF EXISTS users                          CASCADE;
@@ -64,6 +65,12 @@ CREATE TABLE users (
 
   email_verified        BOOLEAN     NOT NULL DEFAULT false,
   account_status        VARCHAR(30) NOT NULL DEFAULT 'pending_verification',
+  -- Set true when the password was provisioned by someone other than the user
+  -- (e.g. admin-created registrar accounts where the temporary password was
+  -- emailed). Login still works but the user must rotate the password via
+  -- /api/auth/change-password before any other authenticated request will
+  -- be honoured by the frontend.
+  must_change_password  BOOLEAN     NOT NULL DEFAULT false,
   failed_login_attempts INTEGER     NOT NULL DEFAULT 0,
   locked_until          TIMESTAMP,
 
@@ -139,6 +146,30 @@ CREATE TABLE client_profiles (
   address TEXT,
   city    VARCHAR(100),
   tehsil  VARCHAR(100),
+
+  created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+-- Registrars are admin-provisioned: no self-registration, no OTP flow.
+-- Identity (name/email/phone/cnic/password_hash/account_status) stays in
+-- users; court-side fields and the audit pointer to the creating admin live
+-- here, mirroring client_profiles / lawyer_profiles.
+CREATE TABLE registrar_profiles (
+  id      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID UNIQUE NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+
+  assigned_court  VARCHAR(150),
+  assigned_tehsil VARCHAR(100),
+
+  -- Tracks the most recent automatic/manual credentials email. NULL until the
+  -- first send. We never store the temporary password itself — only the bcrypt
+  -- hash in users.password_hash — so re-sending generates a fresh password.
+  credentials_email_sent_at TIMESTAMP,
+
+  -- Audit pointer to the admin who provisioned the account. ON DELETE SET NULL
+  -- so removing an admin user does not cascade-delete their registrars.
+  created_by_admin_id UUID REFERENCES users(id) ON DELETE SET NULL,
 
   created_at TIMESTAMP NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMP NOT NULL DEFAULT NOW()
@@ -333,6 +364,7 @@ ALTER TABLE roles                          ENABLE ROW LEVEL SECURITY;
 ALTER TABLE users                          ENABLE ROW LEVEL SECURITY;
 ALTER TABLE pending_registrations          ENABLE ROW LEVEL SECURITY;
 ALTER TABLE client_profiles                ENABLE ROW LEVEL SECURITY;
+ALTER TABLE registrar_profiles             ENABLE ROW LEVEL SECURITY;
 ALTER TABLE lawyer_profiles                ENABLE ROW LEVEL SECURITY;
 ALTER TABLE lawyer_verification_documents  ENABLE ROW LEVEL SECURITY;
 ALTER TABLE email_verification_otps        ENABLE ROW LEVEL SECURITY;

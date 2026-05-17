@@ -1,5 +1,4 @@
 import { useMemo, useState } from "react";
-import { useNavigate } from "@tanstack/react-router";
 import {
   Activity,
   BarChart3,
@@ -27,8 +26,6 @@ import {
   YAxis,
 } from "recharts";
 
-import { AdminHeader } from "../components/AdminHeader";
-import LogoutConfirmationModal from "../components/modals/LogoutConfirmationModal";
 import StatusToast from "../components/modals/StatusToast";
 import { useAdminNotificationsStore } from "../store/notifications.store";
 import { systemStatisticsByRange } from "../data/systemStatistics.mock";
@@ -78,8 +75,6 @@ const rangeOptions: Array<{ value: StatisticsRange; label: string }> = [
 const formatCurrency = (value: number) => `Rs${(value / 1000).toFixed(0)}k`;
 
 export default function AdminStatisticPage() {
-  const navigate = useNavigate();
-  const [logoutModalOpen, setLogoutModalOpen] = useState(false);
   const [toastOpen, setToastOpen] = useState(false);
   const [selectedRange, setSelectedRange] = useState<StatisticsRange>("month");
 
@@ -91,12 +86,6 @@ export default function AdminStatisticPage() {
     () => systemStatisticsByRange[selectedRange],
     [selectedRange],
   );
-
-  const handleLogout = () => {
-    localStorage.clear();
-    setLogoutModalOpen(false);
-    navigate({ to: "/login" });
-  };
 
   const handlePublishStatisticsUpdate = () => {
     addSystemStatisticsNotification({
@@ -136,11 +125,6 @@ export default function AdminStatisticPage() {
 
   return (
     <>
-      <LogoutConfirmationModal
-        open={logoutModalOpen}
-        onCancel={() => setLogoutModalOpen(false)}
-        onConfirm={handleLogout}
-      />
       <StatusToast
         open={toastOpen}
         type="success"
@@ -149,15 +133,7 @@ export default function AdminStatisticPage() {
         onClose={() => setToastOpen(false)}
       />
 
-      <div className="min-h-screen bg-gray-50">
-        <AdminHeader
-          title="System Statistics"
-          subtitle="Comprehensive Analytics and Insights"
-          onOpenNotifications={() => navigate({ to: "/notifications" })}
-          onLogout={() => setLogoutModalOpen(true)}
-        />
-
-        <div className="w-full px-6 lg:px-8 xl:px-10 py-8 space-y-6">
+      <div className="w-full px-6 lg:px-8 xl:px-10 py-8 space-y-6">
           <section className="rounded-2xl border border-green-100 bg-white p-6 shadow-sm">
             <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
               <div>
@@ -500,7 +476,6 @@ export default function AdminStatisticPage() {
               ))}
             </div>
           </section>
-        </div>
       </div>
     </>
   );

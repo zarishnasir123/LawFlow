@@ -1,5 +1,6 @@
 import { Router } from "express";
 import {
+  changePassword,
   googleLogin,
   googleSession,
   forgotPassword,
@@ -34,6 +35,7 @@ import {
   resetPasswordLimiter
 } from "../../middleware/rateLimiter.js";
 import {
+  changePasswordValidator,
   listLawyerRejectionHistoryValidator,
   listPendingLawyersValidator,
   loginValidator,
@@ -157,6 +159,14 @@ router.post(
   asyncHandler(resetPassword)
 );
 router.post("/logout", asyncHandler(logout));
+router.post(
+  "/change-password",
+  authenticate,
+  resetPasswordLimiter,
+  changePasswordValidator,
+  validateRequest,
+  asyncHandler(changePassword)
+);
 router.get("/me", authenticate, asyncHandler(me));
 router.get("/google", asyncHandler(googleLogin));
 router.post("/google/session", asyncHandler(googleSession));

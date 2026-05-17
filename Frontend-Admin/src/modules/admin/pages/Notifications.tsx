@@ -1,5 +1,4 @@
 import { useMemo, useState } from "react";
-import { useNavigate } from "@tanstack/react-router";
 import {
   BarChart3,
   Bell,
@@ -9,8 +8,6 @@ import {
   UserCheck,
 } from "lucide-react";
 
-import { AdminHeader } from "../components/AdminHeader";
-import LogoutConfirmationModal from "../components/modals/LogoutConfirmationModal";
 import type { AdminNotification } from "../types";
 import { useAdminNotificationsStore } from "../store/notifications.store";
 
@@ -45,8 +42,6 @@ const CategoryIcon = ({ category }: { category: AdminNotification["category"] })
 };
 
 export default function Notifications() {
-  const navigate = useNavigate();
-  const [logoutModalOpen, setLogoutModalOpen] = useState(false);
   const [filter, setFilter] = useState<NotificationFilter>("all");
 
   const notifications = useAdminNotificationsStore((state) => state.notifications);
@@ -74,29 +69,8 @@ export default function Notifications() {
     return notifications;
   }, [notifications, filter]);
 
-  const handleLogout = () => {
-    localStorage.clear();
-    setLogoutModalOpen(false);
-    navigate({ to: "/login" });
-  };
-
   return (
-    <>
-      <LogoutConfirmationModal
-        open={logoutModalOpen}
-        onCancel={() => setLogoutModalOpen(false)}
-        onConfirm={handleLogout}
-      />
-
-      <div className="min-h-screen bg-gray-50">
-        <AdminHeader
-          title="Notifications"
-          subtitle="Admin Alerts and Verification Updates"
-          onOpenNotifications={() => navigate({ to: "/notifications" })}
-          onLogout={() => setLogoutModalOpen(true)}
-        />
-
-        <div className="w-full px-6 lg:px-8 xl:px-10 py-8 space-y-6">
+    <div className="w-full px-6 lg:px-8 xl:px-10 py-8 space-y-6">
           <section className="rounded-xl border border-green-100 bg-white p-6 shadow-sm">
             <h1 className="text-2xl font-bold text-[#01411C]">Admin Notification Center</h1>
             <p className="mt-1 text-sm text-gray-600">
@@ -252,8 +226,6 @@ export default function Notifications() {
               )}
             </div>
           </section>
-        </div>
-      </div>
-    </>
+    </div>
   );
 }

@@ -1,17 +1,26 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { PenSquare, Send, Trash2, UserPlus, UserX, UserCheck } from "lucide-react";
 
-import { AdminHeader } from "../components/AdminHeader";
-import LogoutConfirmationModal from "../components/modals/LogoutConfirmationModal";
 import StatusToast from "../components/modals/StatusToast";
 import DeleteRegistrarModal from "../components/modals/DeleteRegistrarModal";
-import { useRegistrarAccountsStore } from "../store/registrars.store";
+import {
+  deleteRegistrar,
+  fetchRegistrars,
+  resendRegistrarCredentials,
+  setRegistrarStatus,
+  type Registrar,
+} from "../api/registrars";
+import { extractApiErrorMessage } from "../../../shared/api/extractApiErrorMessage";
 
 export default function Registrars() {
   const navigate = useNavigate();
-  const [logoutModalOpen, setLogoutModalOpen] = useState(false);
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
+  const [registrars, setRegistrars] = useState<Registrar[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [reloadToken, setReloadToken] = useState(0);
   const [toast, setToast] = useState<{
     open: boolean;
     type: "success" | "error";
@@ -23,28 +32,136 @@ export default function Registrars() {
     title: "",
   });
 
-  const registrars = useRegistrarAccountsStore((state) => state.registrars);
-  const setRegistrarStatus = useRegistrarAccountsStore((state) => state.setRegistrarStatus);
-  const deleteRegistrar = useRegistrarAccountsStore((state) => state.deleteRegistrar);
-  const sendCredentialsByEmail = useRegistrarAccountsStore(
-    (state) => state.sendCredentialsByEmail,
-  );
+  // Fetch loop driven by reloadToken. The retry button just bumps the token
+  // instead of calling a callback that mutates state directly — keeps the
+  // effect the single owner of fetch lifecycle and avoids the
+  // set-state-in-effect lint warning.
+  useEffect(() => {
+    let cancelled = false;
 
-  const deleteTarget = registrars.find((reg) => reg.id === deleteTargetId);
+    async function load() {
+      setLoading(true);
+      setLoadError(null);
+      try {
+        const response = await fetchRegistrars({ limit: 100, offset: 0 });
+        if (cancelled) return;
+        setRegistrars(response.items);
+      } catch (error) {
+        if (!cancelled) {
+          setLoadError(extractApiErrorMessage(error, "Unable to load registrars."));
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
 
-  const handleLogout = () => {
-    localStorage.clear();
-    setLogoutModalOpen(false);
-    navigate({ to: "/login" });
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [reloadToken]);
+
+  const deleteTarget = registrars.find((reg) => reg.registrarProfileId === deleteTargetId);
+
+  const handleToggleStatus = async (registrar: Registrar) => {
+    const nextStatus = registrar.accountStatus === "active" ? "inactive" : "active";
+    setBusyId(registrar.registrarProfileId);
+    try {
+      const updated = await setRegistrarStatus(registrar.registrarProfileId, nextStatus);
+      setRegistrars((prev) =>
+        prev.map((reg) =>
+          reg.registrarProfileId === updated.registrarProfileId ? updated : reg,
+        ),
+      );
+      setToast({
+        open: true,
+        type: "success",
+        title: nextStatus === "active" ? "Registrar activated" : "Registrar deactivated",
+        message: `${updated.firstName} ${updated.lastName} is now ${nextStatus}.`,
+      });
+    } catch (error) {
+      setToast({
+        open: true,
+        type: "error",
+        title: "Status change failed",
+        message: extractApiErrorMessage(error, "Unable to update status."),
+      });
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const handleResendCredentials = async (registrar: Registrar) => {
+    setBusyId(registrar.registrarProfileId);
+    try {
+      const { registrar: updated, emailDelivery } = await resendRegistrarCredentials(
+        registrar.registrarProfileId,
+      );
+      setRegistrars((prev) =>
+        prev.map((reg) =>
+          reg.registrarProfileId === updated.registrarProfileId ? updated : reg,
+        ),
+      );
+      // The password is rotated on the server even when SMTP fails. Tell
+      // the admin the truth so they don't think nothing changed and try
+      // again, locking out the registrar further.
+      if (emailDelivery.emailSent) {
+        setToast({
+          open: true,
+          type: "success",
+          title: "Credentials email sent",
+          message: `A new temporary password was sent to ${updated.email}. The previous password no longer works.`,
+        });
+      } else {
+        setToast({
+          open: true,
+          type: "error",
+          title: "Password rotated — email NOT delivered",
+          message: `The registrar's temporary password was rotated, but the email could not be delivered (${emailDelivery.deliveryReason ?? "SMTP unavailable"}). The old password is invalidated regardless. Configure SMTP and try again.`,
+        });
+      }
+    } catch (error) {
+      setToast({
+        open: true,
+        type: "error",
+        title: "Send failed",
+        message: extractApiErrorMessage(error, "Unable to send credentials email."),
+      });
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!deleteTargetId) return;
+    const target = registrars.find((reg) => reg.registrarProfileId === deleteTargetId);
+    setBusyId(deleteTargetId);
+    try {
+      await deleteRegistrar(deleteTargetId);
+      setRegistrars((prev) =>
+        prev.filter((reg) => reg.registrarProfileId !== deleteTargetId),
+      );
+      setToast({
+        open: true,
+        type: "success",
+        title: "Registrar deleted",
+        message: `${target ? `${target.firstName} ${target.lastName}` : "Registrar"} account was deleted successfully.`,
+      });
+    } catch (error) {
+      setToast({
+        open: true,
+        type: "error",
+        title: "Delete failed",
+        message: extractApiErrorMessage(error, "Unable to delete registrar."),
+      });
+    } finally {
+      setDeleteTargetId(null);
+      setBusyId(null);
+    }
   };
 
   return (
     <>
-      <LogoutConfirmationModal
-        open={logoutModalOpen}
-        onCancel={() => setLogoutModalOpen(false)}
-        onConfirm={handleLogout}
-      />
       <StatusToast
         open={toast.open}
         type={toast.type}
@@ -54,43 +171,14 @@ export default function Registrars() {
       />
       <DeleteRegistrarModal
         open={Boolean(deleteTargetId)}
-        registrarName={deleteTarget?.name}
+        registrarName={
+          deleteTarget ? `${deleteTarget.firstName} ${deleteTarget.lastName}` : undefined
+        }
         onCancel={() => setDeleteTargetId(null)}
-        onConfirm={() => {
-          if (!deleteTargetId) return;
-          try {
-            const target = registrars.find((reg) => reg.id === deleteTargetId);
-            deleteRegistrar(deleteTargetId);
-            setToast({
-              open: true,
-              type: "success",
-              title: "Registrar deleted",
-              message: `${target?.name ?? "Registrar"} account was deleted successfully.`,
-            });
-            setDeleteTargetId(null);
-          } catch (error) {
-            const message =
-              error instanceof Error ? error.message : "Unable to delete registrar.";
-            setToast({
-              open: true,
-              type: "error",
-              title: "Delete failed",
-              message,
-            });
-            setDeleteTargetId(null);
-          }
-        }}
+        onConfirm={handleConfirmDelete}
       />
 
-      <div className="min-h-screen bg-gray-50">
-        <AdminHeader
-          title="Registrar Accounts"
-          subtitle="Admin-Provisioned Registrar Credentials"
-          onOpenNotifications={() => navigate({ to: "/notifications" })}
-          onLogout={() => setLogoutModalOpen(true)}
-        />
-
-        <div className="w-full px-6 lg:px-8 xl:px-10 py-8 space-y-6">
+      <div className="w-full px-6 lg:px-8 xl:px-10 py-8 space-y-6">
           <section className="rounded-xl border border-green-100 bg-white p-6 shadow-sm">
             <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
               <div>
@@ -110,6 +198,19 @@ export default function Registrars() {
             </div>
           </section>
 
+          {loadError ? (
+            <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
+              {loadError}
+              <button
+                type="button"
+                onClick={() => setReloadToken((t) => t + 1)}
+                className="ml-3 rounded-lg border border-rose-300 px-3 py-1 text-xs"
+              >
+                Retry
+              </button>
+            </div>
+          ) : null}
+
           <section className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
             <div className="grid grid-cols-12 gap-3 px-5 py-3 text-xs font-semibold text-gray-500 border-b border-gray-200 uppercase tracking-wide">
               <div className="col-span-3">Name</div>
@@ -120,111 +221,115 @@ export default function Registrars() {
               <div className="col-span-2 text-right">Actions</div>
             </div>
 
-            {registrars.map((r) => (
-              <div
-                key={r.id}
-                className="grid grid-cols-12 gap-3 px-5 py-4 items-center border-b border-gray-100"
-              >
-                <div className="col-span-3">
-                  <div className="font-semibold text-gray-900">{r.name}</div>
-                  <div className="text-sm text-gray-500">{r.phone}</div>
-                </div>
-
-                <div className="col-span-3 text-sm text-gray-700">{r.email}</div>
-                <div className="col-span-1 text-sm text-gray-700">{r.role}</div>
-
-                <div className="col-span-2">
-                  <span
-                    className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${
-                      r.credentialsEmailStatus === "sent"
-                        ? "bg-emerald-100 text-emerald-700"
-                        : "bg-amber-100 text-amber-700"
-                    }`}
-                  >
-                    {r.credentialsEmailStatus === "sent"
-                      ? "Sent"
-                      : "Not Sent"}
-                  </span>
-                  {r.credentialsEmailSentAt ? (
-                    <div className="mt-1 text-xs text-gray-500">
-                      {new Date(r.credentialsEmailSentAt).toLocaleString()}
+            {registrars.map((r) => {
+              const isBusy = busyId === r.registrarProfileId;
+              return (
+                <div
+                  key={r.registrarProfileId}
+                  className="grid grid-cols-12 gap-3 px-5 py-4 items-center border-b border-gray-100"
+                >
+                  <div className="col-span-3">
+                    <div className="font-semibold text-gray-900">
+                      {r.firstName} {r.lastName}
                     </div>
-                  ) : null}
-                </div>
+                    <div className="text-sm text-gray-500">{r.phone}</div>
+                  </div>
 
-                <div className="col-span-1">
-                  <span
-                    className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${
-                      r.status === "active"
-                        ? "bg-green-100 text-green-700"
-                        : "bg-gray-200 text-gray-600"
-                    }`}
-                  >
-                    {r.status === "active" ? "Active" : "Inactive"}
-                  </span>
-                </div>
+                  <div className="col-span-3 text-sm text-gray-700">{r.email}</div>
+                  <div className="col-span-1 text-sm text-gray-700">Registrar</div>
 
-                <div className="col-span-2">
-                  <div className="flex flex-wrap justify-end gap-2">
-                  <button
-                    onClick={() => navigate({ to: `/registrars/edit/${r.id}` })}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50"
-                  >
-                    <PenSquare className="h-3.5 w-3.5" />
-                    Edit
-                  </button>
-                  <button
-                    onClick={() => {
-                      sendCredentialsByEmail(r.id);
-                      setToast({
-                        open: true,
-                        type: "success",
-                        title: "Credentials email sent",
-                        message: `Credentials were sent to ${r.email}.`,
-                      });
-                    }}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-300 px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-50"
-                  >
-                    <Send className="h-3.5 w-3.5" />
-                    Send
-                  </button>
-                  <button
-                    onClick={() =>
-                      setRegistrarStatus(
-                        r.id,
-                        r.status === "active" ? "inactive" : "active",
-                      )
-                    }
-                    className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold ${
-                      r.status === "active"
-                        ? "border border-rose-300 text-rose-700 hover:bg-rose-50"
-                        : "border border-green-300 text-green-700 hover:bg-green-50"
-                    }`}
-                  >
-                    {r.status === "active" ? (
-                      <UserX className="h-3.5 w-3.5" />
-                    ) : (
-                      <UserCheck className="h-3.5 w-3.5" />
-                    )}
-                    {r.status === "active" ? "Deactivate" : "Activate"}
-                  </button>
-                  <button
-                    onClick={() => setDeleteTargetId(r.id)}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-rose-300 px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-50"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                    Delete
-                  </button>
+                  <div className="col-span-2">
+                    <span
+                      className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${
+                        r.credentialsEmailSentAt
+                          ? "bg-emerald-100 text-emerald-700"
+                          : "bg-amber-100 text-amber-700"
+                      }`}
+                    >
+                      {r.credentialsEmailSentAt ? "Sent" : "Not Sent"}
+                    </span>
+                    {r.credentialsEmailSentAt ? (
+                      <div className="mt-1 text-xs text-gray-500">
+                        {new Date(r.credentialsEmailSentAt).toLocaleString()}
+                      </div>
+                    ) : null}
+                  </div>
+
+                  <div className="col-span-1">
+                    <span
+                      className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${
+                        r.accountStatus === "active"
+                          ? "bg-green-100 text-green-700"
+                          : "bg-gray-200 text-gray-600"
+                      }`}
+                    >
+                      {r.accountStatus === "active" ? "Active" : "Inactive"}
+                    </span>
+                  </div>
+
+                  <div className="col-span-2">
+                    <div className="flex flex-wrap justify-end gap-2">
+                      <button
+                        onClick={() =>
+                          navigate({
+                            to: `/registrars/edit/${r.registrarProfileId}`,
+                          })
+                        }
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                        disabled={isBusy}
+                      >
+                        <PenSquare className="h-3.5 w-3.5" />
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => handleResendCredentials(r)}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-300 px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
+                        disabled={isBusy || r.accountStatus !== "active"}
+                        title={
+                          r.accountStatus !== "active"
+                            ? "Activate the registrar before sending credentials"
+                            : "Send a fresh temporary password"
+                        }
+                      >
+                        <Send className="h-3.5 w-3.5" />
+                        Send
+                      </button>
+                      <button
+                        onClick={() => handleToggleStatus(r)}
+                        className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold disabled:opacity-50 ${
+                          r.accountStatus === "active"
+                            ? "border border-rose-300 text-rose-700 hover:bg-rose-50"
+                            : "border border-green-300 text-green-700 hover:bg-green-50"
+                        }`}
+                        disabled={isBusy}
+                      >
+                        {r.accountStatus === "active" ? (
+                          <UserX className="h-3.5 w-3.5" />
+                        ) : (
+                          <UserCheck className="h-3.5 w-3.5" />
+                        )}
+                        {r.accountStatus === "active" ? "Deactivate" : "Activate"}
+                      </button>
+                      <button
+                        onClick={() => setDeleteTargetId(r.registrarProfileId)}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-rose-300 px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-50"
+                        disabled={isBusy}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                        Delete
+                      </button>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
 
-            {registrars.length === 0 ? (
+            {loading ? (
+              <div className="p-6 text-sm text-gray-600">Loading registrars...</div>
+            ) : !loadError && registrars.length === 0 ? (
               <div className="p-6 text-sm text-gray-600">No registrar accounts found.</div>
             ) : null}
           </section>
-        </div>
       </div>
     </>
   );

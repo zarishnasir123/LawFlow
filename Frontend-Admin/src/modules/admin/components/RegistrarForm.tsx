@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
-import type { RegistrarRole } from "../store/registrars.store";
+
+export type RegistrarRole = "Registrar";
 
 export type RegistrarFormValues = {
   name: string;
@@ -7,26 +8,31 @@ export type RegistrarFormValues = {
   phone: string;
   cnic: string;
   role: RegistrarRole;
-  password?: string;
-  confirmPassword?: string;
 };
 
 type RegistrarFormProps = {
   title: string;
   subtitle?: string;
   initialValues?: Partial<RegistrarFormValues>;
-  showPasswordFields?: boolean;
+  /**
+   * In edit mode the email and CNIC are read-only because the backend update
+   * endpoint does not accept changes to either (changing identity columns
+   * after creation would invalidate audit trails and unique constraints).
+   */
+  editMode?: boolean;
   submitText: string;
+  submitting?: boolean;
   onCancel: () => void;
-  onSubmit: (values: RegistrarFormValues) => void;
+  onSubmit: (values: RegistrarFormValues) => void | Promise<void>;
 };
 
 export default function RegistrarForm({
   title,
   subtitle,
   initialValues,
-  showPasswordFields = false,
+  editMode = false,
   submitText,
+  submitting = false,
   onCancel,
   onSubmit,
 }: RegistrarFormProps) {
@@ -37,8 +43,6 @@ export default function RegistrarForm({
       phone: initialValues?.phone ?? "",
       cnic: initialValues?.cnic ?? "",
       role: initialValues?.role ?? "Registrar",
-      password: "",
-      confirmPassword: "",
     }),
     [initialValues],
   );
@@ -55,19 +59,15 @@ export default function RegistrarForm({
     setError("");
 
     if (!values.name.trim()) return setError("Name is required.");
+    if (values.name.trim().split(/\s+/).length < 2) {
+      return setError("Please enter first name and last name.");
+    }
     if (!values.email.trim()) return setError("Email is required.");
     if (!values.phone.trim()) return setError("Phone is required.");
     if (!values.cnic.trim()) return setError("CNIC is required.");
 
-    if (showPasswordFields) {
-      if (!values.password) return setError("Password is required.");
-      if (values.password.length < 8) {
-        return setError("Password must be at least 8 characters.");
-      }
-      if (values.password !== values.confirmPassword) {
-        return setError("Passwords do not match.");
-      }
-    }
+    // No password validation here — the backend generates a temporary
+    // password server-side on create and emails it to the registrar.
 
     onSubmit(values);
   };
@@ -80,7 +80,9 @@ export default function RegistrarForm({
       </section>
 
       <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
-        Registrar accounts are created by admin only. After account creation, credentials are sent to the registrar email automatically.
+        {editMode
+          ? "Email and CNIC cannot be changed after the account is created. Use the registrar list to deactivate or delete the account if a different identity is needed."
+          : "A secure temporary password is generated automatically and emailed to the registrar. They will be required to change it on first login."}
       </div>
 
       {error ? (
@@ -102,6 +104,7 @@ export default function RegistrarForm({
               value={values.name}
               onChange={(e) => setValues({ ...values, name: e.target.value })}
               placeholder="Muhammad Asif"
+              disabled={submitting}
             />
           </div>
 
@@ -110,10 +113,12 @@ export default function RegistrarForm({
               <label className="text-sm font-medium">Email Address *</label>
               <input
                 type="email"
-                className="w-full rounded-lg border border-gray-300 px-4 py-2 focus:outline-none focus:ring-2 focus:ring-[#01411C]"
+                className="w-full rounded-lg border border-gray-300 px-4 py-2 focus:outline-none focus:ring-2 focus:ring-[#01411C] disabled:bg-gray-100"
                 value={values.email}
                 onChange={(e) => setValues({ ...values, email: e.target.value })}
                 placeholder="asif.registrar@lawflow.pk"
+                disabled={submitting || editMode}
+                readOnly={editMode}
               />
             </div>
 
@@ -124,6 +129,7 @@ export default function RegistrarForm({
                 value={values.phone}
                 onChange={(e) => setValues({ ...values, phone: e.target.value })}
                 placeholder="+92 300 1234567"
+                disabled={submitting}
               />
             </div>
           </div>
@@ -132,10 +138,12 @@ export default function RegistrarForm({
             <div className="space-y-2">
               <label className="text-sm font-medium">CNIC Number *</label>
               <input
-                className="w-full rounded-lg border border-gray-300 px-4 py-2 focus:outline-none focus:ring-2 focus:ring-[#01411C]"
+                className="w-full rounded-lg border border-gray-300 px-4 py-2 focus:outline-none focus:ring-2 focus:ring-[#01411C] disabled:bg-gray-100"
                 value={values.cnic}
                 onChange={(e) => setValues({ ...values, cnic: e.target.value })}
                 placeholder="12345-1234567-1"
+                disabled={submitting || editMode}
+                readOnly={editMode}
               />
             </div>
 
@@ -148,35 +156,6 @@ export default function RegistrarForm({
               />
             </div>
           </div>
-
-          {showPasswordFields ? (
-            <div className="grid md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Temporary Password *</label>
-                <input
-                  type="password"
-                  className="w-full rounded-lg border border-gray-300 px-4 py-2 focus:outline-none focus:ring-2 focus:ring-[#01411C]"
-                  value={values.password ?? ""}
-                  onChange={(e) =>
-                    setValues({ ...values, password: e.target.value })
-                  }
-                  placeholder="Create temporary password"
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Confirm Password *</label>
-                <input
-                  type="password"
-                  className="w-full rounded-lg border border-gray-300 px-4 py-2 focus:outline-none focus:ring-2 focus:ring-[#01411C]"
-                  value={values.confirmPassword ?? ""}
-                  onChange={(e) =>
-                    setValues({ ...values, confirmPassword: e.target.value })
-                  }
-                  placeholder="Re-enter password"
-                />
-              </div>
-            </div>
-          ) : null}
         </div>
       </section>
 
@@ -185,13 +164,15 @@ export default function RegistrarForm({
           type="button"
           onClick={onCancel}
           className="flex-1 rounded-xl border border-gray-300 bg-white px-4 py-3 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+          disabled={submitting}
         >
           Cancel
         </button>
 
         <button
           type="submit"
-          className="flex-1 rounded-xl bg-[#01411C] px-4 py-3 text-sm font-semibold text-white hover:bg-[#024a23]"
+          className="flex-1 rounded-xl bg-[#01411C] px-4 py-3 text-sm font-semibold text-white hover:bg-[#024a23] disabled:opacity-60"
+          disabled={submitting}
         >
           {submitText}
         </button>

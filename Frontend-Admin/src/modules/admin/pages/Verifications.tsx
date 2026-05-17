@@ -1,5 +1,4 @@
 import { useMemo, useState, type ReactNode } from "react";
-import { Link, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
@@ -20,8 +19,6 @@ import {
   XCircle,
 } from "lucide-react";
 
-import { AdminHeader } from "../components/AdminHeader";
-import LogoutConfirmationModal from "../components/modals/LogoutConfirmationModal";
 import RejectLawyerConfirmationModal from "../components/modals/RejectLawyerConfirmationModal";
 import SuspendLawyerConfirmationModal from "../components/modals/SuspendLawyerConfirmationModal";
 import ReinstateLawyerConfirmationModal from "../components/modals/ReinstateLawyerConfirmationModal";
@@ -36,7 +33,6 @@ import {
   type PendingLawyer,
   type LawyerDocumentType,
 } from "../api/lawyerVerifications";
-import { clearStoredAuth } from "../../auth/utils/authStorage";
 import { getAuthErrorMessage } from "../../auth/api";
 
 type LawyerVerificationGate = {
@@ -86,9 +82,7 @@ function lawyerInitials(lawyer: PendingLawyer) {
 type VerificationsTab = "pending" | "active";
 
 export default function Verifications() {
-  const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const [logoutModalOpen, setLogoutModalOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [activeTab, setActiveTab] = useState<VerificationsTab>("pending");
   const [gateByLawyer, setGateByLawyer] = useState<
@@ -231,23 +225,11 @@ export default function Verifications() {
     reinstateMutation.mutate(pendingReinstatement.lawyerProfileId);
   };
 
-  const handleLogout = () => {
-    clearStoredAuth();
-    setLogoutModalOpen(false);
-    navigate({ to: "/login" });
-  };
-
   const isMutating = reviewMutation.isPending;
   const pendingCount = filteredLawyers.length;
 
   return (
     <>
-      <LogoutConfirmationModal
-        open={logoutModalOpen}
-        onCancel={() => setLogoutModalOpen(false)}
-        onConfirm={handleLogout}
-      />
-
       <RejectLawyerConfirmationModal
         open={pendingRejection !== null}
         lawyerName={pendingRejection ? lawyerDisplayName(pendingRejection) : ""}
@@ -277,16 +259,8 @@ export default function Verifications() {
         onConfirm={confirmReinstatement}
       />
 
-      <div className="min-h-screen bg-gray-50">
-        <AdminHeader
-          title="Verify Lawyers"
-          subtitle="Lawyer Verification"
-          onOpenNotifications={() => navigate({ to: "/notifications" })}
-          onLogout={() => setLogoutModalOpen(true)}
-        />
-
-        <div className="w-full px-6 lg:px-8 xl:px-10 py-8">
-          <div className="mx-auto w-full max-w-6xl space-y-6">
+      <div className="w-full px-6 lg:px-8 xl:px-10 py-8">
+        <div className="mx-auto w-full max-w-6xl space-y-6">
             {/* Hero / Intro */}
             <section className="rounded-2xl border border-green-100 bg-gradient-to-br from-white via-white to-green-50/40 p-6 shadow-sm">
               <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
@@ -303,12 +277,6 @@ export default function Verifications() {
                       license number against the uploaded card. SJP cross-check is
                       optional and available at the bottom of this page.
                     </p>
-                    <Link
-                      to="/rejection-history"
-                      className="mt-3 inline-flex items-center gap-1.5 text-sm font-semibold text-rose-700 hover:underline"
-                    >
-                      View returned registration history
-                    </Link>
                   </div>
                 </div>
 
@@ -742,7 +710,6 @@ export default function Verifications() {
                 </button>
               </div>
             </section>
-          </div>
         </div>
       </div>
     </>

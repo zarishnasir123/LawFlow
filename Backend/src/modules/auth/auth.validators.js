@@ -432,3 +432,33 @@ export const resetPasswordValidator = [
 
   body().custom(validatePasswordConfirmation)
 ];
+
+// Confirm-new-password is checked against newPassword (not the unrelated
+// `password` field used by /reset-password). Kept inline because it's the
+// only place these field names appear.
+function validateNewPasswordConfirmation(_, { req }) {
+  const newPassword = req.body.newPassword;
+  const confirm = req.body.confirmNewPassword ?? req.body.confirm_new_password;
+
+  if (confirm === undefined) {
+    return true;
+  }
+
+  if (confirm !== newPassword) {
+    throw new Error("New password and confirm password do not match");
+  }
+
+  return true;
+}
+
+export const changePasswordValidator = [
+  body("currentPassword")
+    .notEmpty()
+    .withMessage("Current password is required"),
+
+  body("newPassword")
+    .matches(passwordRule)
+    .withMessage("New password must be at least 8 characters and include one number and one special character"),
+
+  body().custom(validateNewPasswordConfirmation)
+];

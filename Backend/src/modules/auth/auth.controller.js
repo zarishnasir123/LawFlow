@@ -2,6 +2,7 @@ import { randomUUID, timingSafeEqual } from "node:crypto";
 
 import { pool } from "../../config/db.js";
 import {
+  changeAuthenticatedPassword,
   getCurrentUser,
   issueOAuthSession,
   listActiveLawyerVerifications,
@@ -437,5 +438,22 @@ export async function resetPassword(req, res) {
 
   return res.status(200).json({
     message: "Password has been reset successfully. Please log in with your new password."
+  });
+}
+
+export async function changePassword(req, res) {
+  await changeAuthenticatedPassword({
+    userId: req.user.sub,
+    currentPassword: req.body.currentPassword,
+    newPassword: req.body.newPassword
+  });
+
+  // Clear the refresh cookie. The user's old session was revoked inside the
+  // service to invalidate any stolen refresh tokens; the frontend should
+  // re-authenticate with the new password to get a fresh session.
+  clearRefreshTokenCookie(res);
+
+  return res.status(200).json({
+    message: "Password changed successfully. Please sign in again with your new password."
   });
 }

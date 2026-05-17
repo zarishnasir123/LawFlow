@@ -10,6 +10,7 @@ import { requireAdmin } from "./routeGuards";
 import { getStoredAuthUser } from "../modules/auth/utils/authStorage";
 
 import Login from "../modules/auth/pages/Login";
+import AdminLayout from "../modules/admin/components/AdminLayout";
 import AdminDashboardPage from "../modules/admin/pages/Dashboard";
 import AdminRegistrarsPage from "../modules/admin/pages/Registrars";
 import CreateRegistrar from "../modules/admin/pages/CreateRegistrar";
@@ -45,91 +46,95 @@ const loginRoute = createRoute({
   component: Login,
 });
 
-const adminBeforeLoad = requireAdmin();
+// Pathless layout route: renders the persistent sidebar + top bar via
+// AdminLayout's <Outlet />, and gates every admin page behind requireAdmin().
+// Adding a new admin page = add a child route here; the layout chrome stays
+// owned in exactly one place.
+const adminLayoutRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  // Underscore prefix is TanStack's convention for pathless layout routes —
+  // signals "not a URL segment" at a glance, and the prefix is the only
+  // part that leaks into typed `from` strings (see EditRegistrar.tsx).
+  id: "_admin",
+  beforeLoad: requireAdmin(),
+  component: AdminLayout,
+});
 
 const dashboardRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => adminLayoutRoute,
   path: "dashboard",
-  beforeLoad: adminBeforeLoad,
   component: AdminDashboardPage,
 });
 
 const registrarsRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => adminLayoutRoute,
   path: "registrars",
-  beforeLoad: adminBeforeLoad,
   component: AdminRegistrarsPage,
 });
 
 const createRegistrarRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => adminLayoutRoute,
   path: "registrars/create",
-  beforeLoad: adminBeforeLoad,
   component: CreateRegistrar,
 });
 
 const editRegistrarRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => adminLayoutRoute,
   path: "registrars/edit/$id",
-  beforeLoad: adminBeforeLoad,
   component: EditRegistrar,
 });
 
 const statisticsRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => adminLayoutRoute,
   path: "statistics",
-  beforeLoad: adminBeforeLoad,
   component: AdminStatisticPage,
 });
 
 const templatesRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => adminLayoutRoute,
   path: "templates",
-  beforeLoad: adminBeforeLoad,
   component: AdminTemplatesPage,
 });
 
 const verificationsRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => adminLayoutRoute,
   path: "verifications",
-  beforeLoad: adminBeforeLoad,
   component: AdminVerificationsPage,
 });
 
 const rejectionHistoryRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => adminLayoutRoute,
   path: "rejection-history",
-  beforeLoad: adminBeforeLoad,
   component: AdminRejectionHistoryPage,
 });
 
 const profileRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => adminLayoutRoute,
   path: "profile",
-  beforeLoad: adminBeforeLoad,
   component: AdminProfilePage,
 });
 
 const notificationsRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => adminLayoutRoute,
   path: "notifications",
-  beforeLoad: adminBeforeLoad,
   component: AdminNotificationsPage,
 });
 
 const routeTree = rootRoute.addChildren([
   indexRoute,
   loginRoute,
-  dashboardRoute,
-  registrarsRoute,
-  createRegistrarRoute,
-  editRegistrarRoute,
-  statisticsRoute,
-  templatesRoute,
-  verificationsRoute,
-  rejectionHistoryRoute,
-  profileRoute,
-  notificationsRoute,
+  adminLayoutRoute.addChildren([
+    dashboardRoute,
+    registrarsRoute,
+    createRegistrarRoute,
+    editRegistrarRoute,
+    statisticsRoute,
+    templatesRoute,
+    verificationsRoute,
+    rejectionHistoryRoute,
+    profileRoute,
+    notificationsRoute,
+  ]),
 ]);
 
 export const router = createRouter({ routeTree });

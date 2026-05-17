@@ -34,6 +34,11 @@ function mapAuthUser(row) {
     role: row.role,
     emailVerified: row.email_verified,
     accountStatus: row.account_status,
+    // Surfaced so the frontend can gate every authenticated screen behind a
+    // password-change prompt for admin-provisioned accounts. Defaults to
+    // false for users who registered themselves (and so chose their own
+    // password). Set true by the registrar create/resend-credentials flow.
+    mustChangePassword: row.must_change_password === true,
     lawyerVerificationStatus: row.lawyer_verification_status || null
   };
 }
@@ -131,6 +136,7 @@ async function findAuthUserByEmail(email) {
       users.auth_provider,
       users.email_verified,
       users.account_status,
+      users.must_change_password,
       users.failed_login_attempts,
       users.locked_until,
       roles.name AS role,
@@ -156,6 +162,7 @@ async function findAuthUserById(userId) {
       users.cnic,
       users.email_verified,
       users.account_status,
+      users.must_change_password,
       roles.name AS role,
       lawyer_profiles.verification_status AS lawyer_verification_status
     FROM users
@@ -1054,6 +1061,88 @@ export async function requestPasswordReset(email) {
     token,
     user: mapAuthUser(user)
   };
+}
+
+// Authenticated password change: the caller already proved possession of
+// the current password (and a valid JWT). Distinct from /reset-password
+// which uses an email-delivered token for forgotten-password recovery.
+//
+// Also clears must_change_password, which is the gate that lets the
+// admin-provisioned-registrar flow trust subsequent authenticated requests.
+export async function changeAuthenticatedPassword({ userId, currentPassword, newPassword }) {
+  if (!newPassword) {
+    throw new ApiError(400, "New password is required");
+  }
+
+  if (currentPassword && currentPassword === newPassword) {
+    throw new ApiError(400, "New password must differ from the current password");
+  }
+
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    const lookup = await client.query(
+      `SELECT id, password_hash, auth_provider
+      FROM users
+      WHERE id = $1
+      FOR UPDATE`,
+      [userId]
+    );
+
+    if (lookup.rowCount === 0) {
+      throw new ApiError(404, "User not found");
+    }
+
+    const user = lookup.rows[0];
+
+    // Google-only accounts have no local password to change here. They'd
+    // manage credentials at the OAuth provider.
+    if (user.auth_provider !== "local" || !user.password_hash) {
+      throw new ApiError(
+        403,
+        "This account does not use a local password."
+      );
+    }
+
+    const currentMatches = await compareHash(currentPassword || "", user.password_hash);
+    if (!currentMatches) {
+      throw new ApiError(401, "Current password is incorrect");
+    }
+
+    const newPasswordHash = await hashValue(newPassword);
+
+    await client.query(
+      `UPDATE users
+      SET password_hash = $1,
+          must_change_password = false,
+          failed_login_attempts = 0,
+          locked_until = NULL,
+          updated_at = NOW()
+      WHERE id = $2`,
+      [newPasswordHash, userId]
+    );
+
+    // Revoke every other active session so a stolen refresh cookie can no
+    // longer impersonate the user after they rotate. The caller's current
+    // session also gets revoked — the controller re-issues fresh tokens so
+    // the legitimate user stays signed in seamlessly.
+    await client.query(
+      `UPDATE auth_sessions
+      SET is_revoked = true,
+          revoked_at = NOW()
+      WHERE user_id = $1 AND is_revoked = false`,
+      [userId]
+    );
+
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 export async function resetPassword({ token, password }) {
