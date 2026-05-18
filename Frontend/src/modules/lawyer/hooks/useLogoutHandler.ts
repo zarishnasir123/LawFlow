@@ -1,13 +1,14 @@
 import { useState } from "react";
-import { useNavigate } from "@tanstack/react-router";
+
+import { useLogout } from "../../auth/hooks/useLogout";
 
 export function useLogoutHandler() {
-  const navigate = useNavigate();
+  const performLogout = useLogout();
   const [logoutModalOpen, setLogoutModalOpen] = useState(false);
 
   const handleLogout = () => {
     setLogoutModalOpen(false);
-    navigate({ to: "/login" });
+    performLogout();
   };
 
   const openLogoutModal = () => {

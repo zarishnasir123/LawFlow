@@ -5,7 +5,7 @@ import {
   Outlet,
 } from "@tanstack/react-router";
 
-import { requireAuth } from "./routeGuards";
+import { redirectIfAuthenticated, requireAuth } from "./routeGuards";
 
 /* =====================================================
    MARKETING & AUTHENTICATION IMPORTS
@@ -87,18 +87,21 @@ const indexRoute = createRoute({
 const registerRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "register",
+  beforeLoad: redirectIfAuthenticated(),
   component: Register,
 });
 
 const loginRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "login",
+  beforeLoad: redirectIfAuthenticated(),
   component: Login,
 });
 
 const forgotPasswordRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "forgot-password",
+  beforeLoad: redirectIfAuthenticated(),
   component: ForgotPassword,
 });
 

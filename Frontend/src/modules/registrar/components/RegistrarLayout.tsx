@@ -3,6 +3,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { Bell, LogOut } from "lucide-react";
 import DashboardLayout from "../../../shared/components/dashboard/DashboardLayout";
 import type { HeaderAction } from "../../../shared/types/dashboard";
+import { useLogout } from "../../auth/hooks/useLogout";
 import LogoutConfirmationModal from "../pages/components/modals/LogoutConfirmationModal";
 
 type RegistrarLayoutProps = {
@@ -17,6 +18,7 @@ export default function RegistrarLayout({
   children,
 }: RegistrarLayoutProps) {
   const navigate = useNavigate();
+  const performLogout = useLogout();
   const [logoutModalOpen, setLogoutModalOpen] = useState(false);
 
   const actions: HeaderAction[] = [
@@ -40,8 +42,7 @@ export default function RegistrarLayout({
         onCancel={() => setLogoutModalOpen(false)}
         onConfirm={() => {
           setLogoutModalOpen(false);
-          localStorage.clear();
-          navigate({ to: "/login" });
+          performLogout();
         }}
       />
       <DashboardLayout

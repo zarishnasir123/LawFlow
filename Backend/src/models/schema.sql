@@ -260,8 +260,13 @@ CREATE TABLE auth_sessions (
   id      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
 
-  -- Refresh tokens are hashed before storage so leaked DB rows cannot be replayed.
-  refresh_token_hash TEXT NOT NULL,
+  -- Refresh tokens are SHA-256-hashed before storage so leaked DB rows cannot
+  -- be replayed. SHA-256 (not bcrypt) is the correct choice here: refresh
+  -- tokens are 256-bit signed JWTs, so preimage resistance is what matters,
+  -- not the brute-force cost a slow KDF buys you against low-entropy
+  -- passwords. UNIQUE gives an O(1) indexed lookup at logout/refresh time —
+  -- bcrypt previously forced a linear scan + compare per active session.
+  refresh_token_hash TEXT NOT NULL UNIQUE,
   user_agent         TEXT,
   ip_address         VARCHAR(100),
   is_revoked         BOOLEAN NOT NULL DEFAULT false,

@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { pool } from "../../config/db.js";
 import {
   queueLawyerPendingReviewEmail,
-  deliverVerificationOtpEmail,
+  queueVerificationOtpEmail,
   queueWelcomeEmail
 } from "../../services/email.service.js";
 import {
@@ -325,7 +325,12 @@ export async function startRegistration({ role, payload, files }) {
       expiresAt
     });
 
-    const emailDelivery = await deliverVerificationOtpEmail({
+    // Fire-and-forget: SMTP no longer blocks the register response. The
+    // handshake still starts in this same event-loop turn (via setImmediate),
+    // so the email is on its way by the time the client gets the response —
+    // but the OTP countdown the frontend renders is no longer eaten by SMTP
+    // latency.
+    const emailDelivery = queueVerificationOtpEmail({
       email: commonData.email,
       otp,
       firstName: commonData.firstName
@@ -624,7 +629,7 @@ export async function resendRegistrationVerificationOtp({ email }) {
       [otpHash, expiresAt, pendingRegistration.id]
     );
 
-    const emailDelivery = await deliverVerificationOtpEmail({
+    const emailDelivery = queueVerificationOtpEmail({
       email: pendingRegistration.email,
       otp,
       firstName: pendingRegistration.first_name

@@ -203,8 +203,18 @@ async function resetLoginLock(userId) {
   );
 }
 
+// SHA-256 of the signed refresh JWT gives an O(1) UNIQUE-indexed lookup at
+// logout / refresh time. bcrypt's slowness only matters for low-entropy
+// secrets (passwords); applying it to a high-entropy session token forced a
+// linear scan + bcrypt-compare per active session, so a user with 5–10 stale
+// sessions paid ~0.5–1s on every logout. The same reasoning is already
+// applied to password-reset tokens via hashResetToken further down this file.
+function hashRefreshToken(token) {
+  return createHash("sha256").update(token).digest("hex");
+}
+
 async function createAuthSession({ userId, refreshToken, refreshTokenDuration, req }) {
-  const refreshTokenHash = await hashValue(refreshToken);
+  const refreshTokenHash = hashRefreshToken(refreshToken);
   const expiresAt = getRefreshTokenExpiryDate(refreshTokenDuration);
 
   await pool.query(
@@ -248,25 +258,20 @@ async function issueSessionTokens({ user, rememberMe, req }) {
 }
 
 async function findMatchingRefreshSession({ userId, refreshToken }) {
+  const tokenHash = hashRefreshToken(refreshToken);
+
   const result = await pool.query(
-    `SELECT id, refresh_token_hash, expires_at, is_revoked
+    `SELECT id, expires_at, is_revoked
     FROM auth_sessions
     WHERE user_id = $1
+      AND refresh_token_hash = $2
       AND is_revoked = false
       AND expires_at > NOW()
-    ORDER BY created_at DESC`,
-    [userId]
+    LIMIT 1`,
+    [userId, tokenHash]
   );
 
-  for (const session of result.rows) {
-    const matches = await compareHash(refreshToken, session.refresh_token_hash);
-
-    if (matches) {
-      return session;
-    }
-  }
-
-  return null;
+  return result.rows[0] || null;
 }
 
 async function revokeAuthSession(sessionId) {
@@ -1022,8 +1027,15 @@ export async function requestPasswordReset(email) {
     return null;
   }
 
+  // Google-signed-up clients have no local password to reset. Surface a flag
+  // so the controller can email them a "continue with Google" notice instead
+  // of a reset link — keeping the response shape identical to non-existent
+  // users so enumeration is not possible from the outside.
   if (user.auth_provider === "google") {
-    throw new ApiError(403, "This account uses Google Sign-In. Please continue with Google authentication.");
+    return {
+      isGoogleUser: true,
+      user: mapAuthUser(user)
+    };
   }
 
   const token = randomBytes(32).toString("hex");
