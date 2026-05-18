@@ -23,7 +23,10 @@ import {
   resendRegistrationVerificationOtp,
   startRegistration
 } from "./registration.service.js";
-import { queuePasswordResetEmail } from "../../services/email.service.js";
+import {
+  queuePasswordResetEmail,
+  queuePasswordResetGoogleUserEmail
+} from "../../services/email.service.js";
 import { parseDurationToMilliseconds } from "../../utils/tokens.js";
 import { ApiError } from "../../utils/apiError.js";
 import { requireSupabaseClient } from "../../config/supabase.js";
@@ -85,7 +88,15 @@ function getOAuthStateCookieOptions() {
 }
 
 function clearOAuthStateCookie(res) {
-  res.clearCookie(oauthStateCookieName, getOAuthStateCookieOptions());
+  // clearCookie only needs the cookie identity (name + path + domain) to match
+  // the set cookie; Express auto-sets the expiry. Passing maxAge through the
+  // set-options helper triggers an Express 5 deprecation warning.
+  res.clearCookie(oauthStateCookieName, {
+    httpOnly: true,
+    secure: shouldUseSecureCookies(),
+    sameSite: process.env.COOKIE_SAME_SITE || "lax",
+    path: refreshTokenCookiePath
+  });
 }
 
 function getFrontendUrl() {
@@ -412,8 +423,14 @@ export async function googleSession(req, res) {
 export async function forgotPassword(req, res) {
   const result = await requestPasswordReset(req.body.email);
 
-  // result will be null if user doesn't exist (user enumeration protection)
-  if (result) {
+  // result is null when the user does not exist — silent no-op so an attacker
+  // cannot enumerate registered emails via response shape or timing.
+  if (result?.isGoogleUser) {
+    queuePasswordResetGoogleUserEmail({
+      email: result.user.email,
+      firstName: result.user.firstName
+    });
+  } else if (result) {
     const { token, user } = result;
     const resetUrl = `${getFrontendUrl()}/reset-password?token=${token}`;
 
@@ -424,7 +441,8 @@ export async function forgotPassword(req, res) {
     });
   }
 
-  // Always return the same generic message for security
+  // Always return the same generic message regardless of whether the email
+  // exists, is local, or is Google — preserves enumeration protection.
   return res.status(200).json({
     message: "If an account exists, a reset link has been sent."
   });

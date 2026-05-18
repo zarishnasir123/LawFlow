@@ -186,15 +186,50 @@ function toOtpEmailDeliveryStatus(result) {
   };
 }
 
-// OTP is time-sensitive: send during the request instead of deferring with
-// setImmediate so the SMTP handshake starts before the HTTP response finishes.
+// Synchronous variant — kept for any caller that still needs to surface SMTP
+// success/failure inside the HTTP response. Registration no longer uses it
+// because awaiting SMTP delayed the register button by the full send time and
+// shrank the OTP countdown the frontend showed (see queueVerificationOtpEmail).
 export async function deliverVerificationOtpEmail({ email, otp, firstName }) {
   const result = await sendVerificationOtpEmail({ email, otp, firstName });
   return toOtpEmailDeliveryStatus(result);
 }
 
+// Non-blocking OTP send. setImmediate fires the SMTP handshake in the same
+// event-loop turn, before the HTTP response is flushed, so the email is in
+// flight by the time the client receives the registration response — but the
+// response no longer waits for SMTP to finish. This restores the full
+// expires_at window the frontend shows on the OTP page.
 export function queueVerificationOtpEmail({ email, otp, firstName }) {
-  return deliverVerificationOtpEmail({ email, otp, firstName });
+  const emailConfig = getEmailDeliveryConfig();
+
+  setImmediate(() => {
+    sendVerificationOtpEmail({ email, otp, firstName })
+      .then((result) => {
+        if (result.mode === "smtp" && shouldLogEmailDebug()) {
+          console.log("[EMAIL SENT]", {
+            task: "verification-otp",
+            messageId: result.messageId
+          });
+        }
+      })
+      .catch((error) => {
+        console.error("[EMAIL QUEUE FAILED]", {
+          task: "verification-otp",
+          message: error.message
+        });
+      });
+  });
+
+  return {
+    queued: true,
+    emailSent: false,
+    emailQueued: true,
+    deliveryMode: emailConfig.mode,
+    deliveryReason: emailConfig.issues.length > 0
+      ? `SMTP is not configured. Missing or placeholder values: ${emailConfig.issues.join(", ")}`
+      : undefined
+  };
 }
 
 export function sendWelcomeEmail({ email, firstName }) {
@@ -295,6 +330,19 @@ export function sendPasswordResetEmail({ email, firstName, resetUrl }) {
 export function queuePasswordResetEmail({ email, firstName, resetUrl }) {
   return queueEmailTask("password-reset", () => (
     sendPasswordResetEmail({ email, firstName, resetUrl })
+  ));
+}
+
+export function sendPasswordResetGoogleUserEmail({ email, firstName }) {
+  return send(email, "Your LawFlow account uses Google Sign-In", "passwordResetGoogleUser", {
+    firstName,
+    loginUrl: `${getFrontendUrl()}/login`
+  });
+}
+
+export function queuePasswordResetGoogleUserEmail({ email, firstName }) {
+  return queueEmailTask("password-reset-google-user", () => (
+    sendPasswordResetGoogleUserEmail({ email, firstName })
   ));
 }
 

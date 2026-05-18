@@ -31,3 +31,26 @@ export function requireAuth(allowedRoles?: LoginRole[]) {
     }
   };
 }
+
+// Reverse guard for the public auth pages (/login, /register, /forgot-password).
+// If a client already has a stored session, send them straight to their
+// dashboard — keeps the UX in line with every modern SSO app where a logged-in
+// user can't accidentally land back on the login screen.
+//
+// localStorage is the cheap check; if the underlying refresh cookie is stale
+// (revoked or expired), the dashboard's first API call 401s and the axios
+// interceptor bounces them back here anyway. Worst case is a brief flicker.
+export function redirectIfAuthenticated() {
+  return () => {
+    const user = getStoredAuthUser();
+
+    if (!user) {
+      return;
+    }
+
+    const destination = roleHomePath[user.role];
+    if (destination) {
+      throw redirect({ to: destination });
+    }
+  };
+}

@@ -2,6 +2,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Bell, LogOut, User } from "lucide-react";
 import DashboardLayout from "../../../shared/components/dashboard/DashboardLayout";
+import { useLogout } from "../../auth/hooks/useLogout";
 import { LogoutConfirmationModal, NotificationModal } from "./modals";
 import ClientLayoutContext from "./ClientLayoutContext";
 
@@ -25,6 +26,7 @@ export default function ClientLayout({
   children,
 }: ClientLayoutProps) {
   const navigate = useNavigate();
+  const performLogout = useLogout();
   const [notificationModalOpen, setNotificationModalOpen] = useState(false);
   const [logoutModalOpen, setLogoutModalOpen] = useState(false);
 
@@ -79,7 +81,7 @@ export default function ClientLayout({
         onCancel={closeLogoutModal}
         onConfirm={() => {
           closeLogoutModal();
-          navigate({ to: "/login" });
+          performLogout();
         }}
       />
       <NotificationModal
