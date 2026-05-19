@@ -1,7 +1,26 @@
 @import "tailwindcss";
 
+/* Tailwind v4: extend the default font stack with Plus Jakarta Sans (loaded
+   in index.html). Matches the main LawFlow Frontend so admin + public app
+   share one typeface. */
+@theme {
+  --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif,
+    "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+}
+
 :root {
   --primary: #01411C;
+}
+
+html {
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  letter-spacing: -0.015em;
 }
 
 /* Hide scrollbar but keep scroll functionality */

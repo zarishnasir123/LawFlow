@@ -16,7 +16,7 @@ import type { DashboardStat, QuickActionItem } from "../../../shared/types/dashb
 import { getCaseDisplayTitle } from "../../../shared/utils/caseDisplay";
 import RegistrarLayout from "../components/RegistrarLayout";
 import { useCaseFilingStore } from "../../lawyer/store/caseFiling.store";
-import { useLoginStore } from "../../auth/store";
+import { useCurrentUser, displayFullName } from "../../auth/hooks/useCurrentUser";
 import {
   getFcfsSubmissionQueue,
   getProcessedCaseIdsForLatestSubmission,
@@ -38,7 +38,7 @@ export function RegistrarDashboard() {
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState("");
   const [filterType, setFilterType] = useState("all");
-  const email = useLoginStore((state) => state.email);
+  const { data: currentUser } = useCurrentUser();
   const liveSubmittedCases = useCaseFilingStore((state) =>
     state.getSubmittedCasesForRegistrar()
   );
@@ -48,18 +48,8 @@ export function RegistrarDashboard() {
   const returnedCasesCount = useRegistrarReviewDecisionStore(
     (state) => state.returnedCases.length
   );
-  const displayName = (() => {
-    if (!email) return "Registrar";
-    const handle = email.split("@")[0] ?? "";
-    if (!handle) return "Registrar";
-    return handle
-      .replace(/[._-]+/g, " ")
-      .trim()
-      .split(" ")
-      .filter(Boolean)
-      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-      .join(" ");
-  })();
+  const displayName = displayFullName(currentUser) || "Registrar";
+  const greeting = currentUser?.firstLoginCompleted ? "Welcome back" : "Welcome";
 
   const queue = useMemo(
     () => getFcfsSubmissionQueue(liveSubmittedCases),
@@ -173,11 +163,14 @@ export function RegistrarDashboard() {
       <header className="mb-8 flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-gray-900">
-            Welcome back, <span className="text-[var(--primary)]">{displayName}</span>
+            {greeting}, <span className="text-[var(--primary)]">{displayName}</span>
           </h1>
           <p className="mt-2 text-[15px] leading-relaxed text-gray-600">
             Review submitted case bundles and process registrar actions.
           </p>
+          {currentUser?.email && (
+            <p className="mt-1 text-xs text-gray-500">Signed in as {currentUser.email}</p>
+          )}
         </div>
         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">
           {new Date().toLocaleDateString()}

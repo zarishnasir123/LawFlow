@@ -436,14 +436,37 @@ export async function logoutUser(refreshToken) {
   }
 }
 
+// Atomically marks the user's first dashboard view and exposes a
+// `firstLoginCompleted` flag the frontend uses to switch between
+// "Welcome, X" (first ever visit) and "Welcome back, X" (every visit after).
+// The flag is true for any user whose first_login_at is already set; the
+// UPDATE...RETURNING below also returns rows where it was already set, so
+// we can distinguish on the result of an atomic compare-and-set.
 export async function getCurrentUser(userId) {
+  // CAS on first_login_at: set it to NOW() only if it was null. The
+  // RETURNING xmin trick isn't portable; instead we run an UPDATE that
+  // restricts to the null case and check whether any row was actually
+  // modified. If rowCount === 1, this is the user's first dashboard view.
+  const claimResult = await pool.query(
+    `UPDATE users
+     SET first_login_at = NOW()
+     WHERE id = $1 AND first_login_at IS NULL
+     RETURNING id`,
+    [userId]
+  );
+
+  const isFirstLogin = claimResult.rowCount === 1;
+
   const user = await findAuthUserById(userId);
 
   if (!user) {
     throw new ApiError(404, "User not found");
   }
 
-  return mapAuthUser(user);
+  return {
+    ...mapAuthUser(user),
+    firstLoginCompleted: !isFirstLogin
+  };
 }
 
 export async function listLawyerRejectionHistory({

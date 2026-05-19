@@ -7,7 +7,7 @@ import RecentCases from "../../../shared/components/dashboard/RecentCases";
 import UpcomingHearings from "../../../shared/components/dashboard/UpcomingHearings";
 import QuickActions from "../../../shared/components/dashboard/QuickActions";
 import type { ActivityItem, CaseItem } from "../../../shared/types/dashboard";
-import { useLoginStore } from "../../auth/store";
+import { useCurrentUser, displayFullName } from "../../auth/hooks/useCurrentUser";
 import { useSignatureRequestsStore } from "../signatures/store/signatureRequests.store";
 import {
   lawyerDashboardActivity,
@@ -19,7 +19,7 @@ import {
 
 export default function LawyerDashboard() {
   const navigate = useNavigate();
-  const email = useLoginStore((state) => state.email);
+  const { data: currentUser } = useCurrentUser();
   const { requests } = useSignatureRequestsStore();
   const signedCount = requests.filter(
     (req) => req.clientSigned && req.sentToLawyerAt
@@ -40,18 +40,8 @@ export default function LawyerDashboard() {
     ...lawyerDashboardActivity,
   ];
 
-  const displayName = (() => {
-    if (!email) return "Lawyer";
-    const handle = email.split("@")[0] ?? "";
-    if (!handle) return "Lawyer";
-    return handle
-      .replace(/[._-]+/g, " ")
-      .trim()
-      .split(" ")
-      .filter(Boolean)
-      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-      .join(" ");
-  })();
+  const displayName = displayFullName(currentUser) || "Lawyer";
+  const greeting = currentUser?.firstLoginCompleted ? "Welcome back" : "Welcome";
 
   return (
     <LawyerLayout
@@ -62,11 +52,14 @@ export default function LawyerDashboard() {
         {/* HEADER */}
         <header className="mb-8">
           <h1 className="text-3xl font-bold tracking-tight text-gray-900">
-            Welcome back, <span className="text-[var(--primary)]">{displayName}</span>
+            {greeting}, <span className="text-[var(--primary)]">{displayName}</span>
           </h1>
           <p className="mt-2 text-[15px] leading-relaxed text-gray-600">
             Manage your cases, clients, and hearings efficiently.
           </p>
+          {currentUser?.email && (
+            <p className="mt-1 text-xs text-gray-500">Signed in as {currentUser.email}</p>
+          )}
         </header>
 
         {/* STATS */}

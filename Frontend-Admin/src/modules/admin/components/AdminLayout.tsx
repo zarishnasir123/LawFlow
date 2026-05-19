@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 
 import { useAdminNotificationsStore } from "../store/notifications.store";
+import { usePendingLawyerCount } from "../hooks/usePendingLawyerCount";
 import LogoutConfirmationModal from "./modals/LogoutConfirmationModal";
 
 type NavItem = {
@@ -93,6 +94,7 @@ export default function AdminLayout() {
   const unreadCount = useAdminNotificationsStore(
     (state) => state.notifications.filter((item) => !item.isRead).length,
   );
+  const pendingLawyerCount = usePendingLawyerCount();
 
   const handleLogout = () => {
     localStorage.clear();
@@ -185,7 +187,17 @@ export default function AdminLayout() {
               {navItems.map((item) => {
                 const active = isItemActive(location.pathname, item);
                 const Icon = item.icon;
-                const showBadge = item.to === "/notifications" && unreadCount > 0;
+                // Two badges share the sidebar: unread notifications (red)
+                // and pending lawyer verifications (amber). Both follow the
+                // same dot-on-collapsed / number-on-expanded pattern.
+                const badgeCount = (() => {
+                  if (item.to === "/notifications") return unreadCount;
+                  if (item.to === "/verifications") return pendingLawyerCount;
+                  return 0;
+                })();
+                const badgeColorClass =
+                  item.to === "/verifications" ? "bg-amber-500" : "bg-red-500";
+                const showBadge = badgeCount > 0;
                 return (
                   <li key={item.to}>
                     <Link
@@ -212,11 +224,11 @@ export default function AdminLayout() {
                       </span>
                       {showBadge ? (
                         showLabels ? (
-                          <span className="inline-flex min-w-[20px] items-center justify-center rounded-full bg-red-500 px-1.5 py-0.5 text-[11px] font-semibold text-white">
-                            {unreadCount}
+                          <span className={`inline-flex min-w-[20px] items-center justify-center rounded-full px-1.5 py-0.5 text-[11px] font-semibold text-white ${badgeColorClass}`}>
+                            {badgeCount}
                           </span>
                         ) : (
-                          <span className="absolute top-1 right-1 inline-flex h-2 w-2 rounded-full bg-red-500" />
+                          <span className={`absolute top-1 right-1 inline-flex h-2 w-2 rounded-full ${badgeColorClass}`} />
                         )
                       ) : null}
                     </Link>
