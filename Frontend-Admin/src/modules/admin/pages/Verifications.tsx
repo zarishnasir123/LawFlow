@@ -174,13 +174,12 @@ export default function Verifications() {
     }));
   };
 
-  const canApprove = (gate: LawyerVerificationGate) =>
-    gate.licenseNumberChecked && gate.licenseCardMatched;
-
+  // The verification checklist (license-number-verified-manually + license-
+  // card-matches-records) is purely advisory — it does NOT gate approval.
+  // Reviewers may still tick the boxes to record their own sign-off, but the
+  // Approve button is enabled regardless. Reject still requires remarks.
   const handleApprove = (lawyer: PendingLawyer) => {
     const gate = getGate(lawyer.lawyerProfileId);
-    if (!canApprove(gate)) return;
-
     reviewMutation.mutate({
       lawyerProfileId: lawyer.lawyerProfileId,
       status: "approved",
@@ -382,7 +381,7 @@ export default function Verifications() {
                 filteredLawyers.map((lawyer) => {
                   const gate = getGate(lawyer.lawyerProfileId);
                   const fullName = lawyerDisplayName(lawyer);
-                  const approveAllowed = canApprove(gate) && !isMutating;
+                  const approveAllowed = !isMutating;
                   const rejectAllowed = gate.remarks.trim() !== "" && !isMutating;
 
                   return (
@@ -484,10 +483,10 @@ export default function Verifications() {
                             <div className="rounded-xl border border-gray-200 bg-white p-4">
                               <h3 className="flex items-center gap-2 text-sm font-semibold text-gray-900">
                                 <IdCard className="h-4 w-4 text-[#01411C]" />
-                                Verification Checklist
+                                Verification Checklist <span className="text-xs font-normal text-gray-500">(optional)</span>
                               </h3>
                               <p className="mt-1 text-xs text-gray-600">
-                                Confirm both items before approving.
+                                Tick items you've manually verified. Not required to approve.
                               </p>
                               <div className="mt-3 flex flex-col gap-2.5">
                                 <label className="flex cursor-pointer items-start gap-2.5 rounded-lg border border-gray-200 bg-gray-50 p-2.5 text-sm text-gray-700 transition hover:bg-gray-100">
@@ -640,9 +639,7 @@ export default function Verifications() {
 
                           <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                             <p className="text-xs text-gray-500">
-                              {approveAllowed
-                                ? "Both verification items confirmed — ready to approve."
-                                : "Tick both verification items to enable approval."}
+                              Checklist above is optional. Remarks are required to reject.
                             </p>
                             <div className="flex flex-wrap items-center justify-end gap-2">
                               <button

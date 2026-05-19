@@ -1,7 +1,34 @@
 @import "tailwindcss";
 
+/* Tailwind v4: extend the default theme. Overrides Tailwind's default
+   font-sans stack with Plus Jakarta Sans (loaded in index.html). Every
+   `font-sans` utility, and the un-prefixed body text by default, picks this
+   up automatically — no per-component class needed. */
+@theme {
+  --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif,
+    "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+}
+
 :root {
   --primary: #01411C;
+}
+
+/* Make the new font the default for all text, and improve readability with
+   antialiasing + a sensible default line-height + slight tracking on
+   headings. Tailwind components inherit these unless overridden. */
+html {
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+}
+
+h1, h2, h3, h4, h5, h6 {
+  letter-spacing: -0.015em;
 }
 
 /* Hide scrollbar but keep scroll functionality */

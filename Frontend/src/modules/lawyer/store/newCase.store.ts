@@ -1,11 +1,16 @@
 import { create } from "zustand";
-import type { CaseType } from "../constants/caseTypes";
 
+import type { ApiCaseType, CaseCategory } from "../api/cases.api";
+
+// In-flight selection while the lawyer steps from "pick category" through
+// "pick case type" into the "fill client details" form. Source of truth for
+// the saved case is the backend; this store only holds the lawyer's
+// not-yet-submitted picks.
 interface NewCaseState {
-  category: "civil" | "family" | null;
-  selectedCaseType: CaseType | null;
-  setCategory: (category: "civil" | "family") => void;
-  setSelectedCaseType: (caseType: CaseType | null) => void;
+  category: CaseCategory | null;
+  selectedCaseType: ApiCaseType | null;
+  setCategory: (category: CaseCategory) => void;
+  setSelectedCaseType: (caseType: ApiCaseType | null) => void;
   reset: () => void;
 }
 

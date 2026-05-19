@@ -104,64 +104,66 @@ export default function LawyerCases() {
       brandTitle="LawFlow"
       brandSubtitle="My Cases"
     >
-      <div className="space-y-6">
+      <div className="space-y-8">
         {/* Header */}
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">All Cases</h1>
-          <p className="text-gray-600 mt-1">
-            View and manage all your active cases with clients
+        <header>
+          <h1 className="text-3xl font-bold tracking-tight text-gray-900">
+            All <span className="text-[var(--primary)]">Cases</span>
+          </h1>
+          <p className="mt-2 text-[15px] leading-relaxed text-gray-600">
+            View and manage all your active cases with clients.
           </p>
-        </div>
+        </header>
 
         {/* Statistics Cards */}
         {/* Shows case counts: Active, Pending, Returned (needs attention), and Total */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <div className="bg-white border border-gray-200 rounded-lg p-4">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
+          <div className="bg-white border border-gray-200 rounded-xl p-5">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-600">Active Cases</p>
-                <p className="text-2xl font-bold text-green-600">
+                <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Active Cases</p>
+                <p className="mt-1 text-3xl font-bold tracking-tight text-green-600">
                   {activeCasesCount}
                 </p>
               </div>
-              <CheckCircle className="w-10 h-10 text-green-500" />
+              <CheckCircle className="w-9 h-9 text-green-500" />
             </div>
           </div>
 
-          <div className="bg-white border border-gray-200 rounded-lg p-4">
+          <div className="bg-white border border-gray-200 rounded-xl p-5">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-600">Pending Cases</p>
-                <p className="text-2xl font-bold text-blue-600">
+                <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Pending Cases</p>
+                <p className="mt-1 text-3xl font-bold tracking-tight text-blue-600">
                   {pendingCasesCount}
                 </p>
               </div>
-              <Clock className="w-10 h-10 text-blue-500" />
+              <Clock className="w-9 h-9 text-blue-500" />
             </div>
           </div>
 
           {/* Returned Cases Stat Card */}
-          <div className="bg-white border border-red-200 rounded-lg p-4">
+          <div className="bg-white border border-red-200 rounded-xl p-5">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-600">Returned Cases</p>
-                <p className="text-2xl font-bold text-red-600">
+                <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Returned Cases</p>
+                <p className="mt-1 text-3xl font-bold tracking-tight text-red-600">
                   {returnedCasesCount}
                 </p>
               </div>
-              <AlertCircle className="w-10 h-10 text-red-500" />
+              <AlertCircle className="w-9 h-9 text-red-500" />
             </div>
           </div>
 
-          <div className="bg-white border border-gray-200 rounded-lg p-4">
+          <div className="bg-white border border-gray-200 rounded-xl p-5">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-600">Total Cases</p>
-                <p className="text-2xl font-bold text-purple-600">
+                <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Total Cases</p>
+                <p className="mt-1 text-3xl font-bold tracking-tight text-purple-600">
                   {totalCasesCount}
                 </p>
               </div>
-              <FileText className="w-10 h-10 text-purple-500" />
+              <FileText className="w-9 h-9 text-purple-500" />
             </div>
           </div>
         </div>

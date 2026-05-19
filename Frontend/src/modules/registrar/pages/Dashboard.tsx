@@ -170,31 +170,31 @@ export function RegistrarDashboard() {
 
   return (
     <RegistrarLayout pageSubtitle="Registrar Dashboard" notificationBadge={queueCases.length}>
-      <div className="mb-6 flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+      <header className="mb-8 flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
         <div>
-          <h2 className="text-xl font-semibold text-gray-900">
-            Welcome back, {displayName}
-          </h2>
-          <p className="text-sm text-gray-600">
+          <h1 className="text-3xl font-bold tracking-tight text-gray-900">
+            Welcome back, <span className="text-[var(--primary)]">{displayName}</span>
+          </h1>
+          <p className="mt-2 text-[15px] leading-relaxed text-gray-600">
             Review submitted case bundles and process registrar actions.
           </p>
         </div>
-        <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
+        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">
           {new Date().toLocaleDateString()}
         </p>
-      </div>
+      </header>
 
-      <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+      <section className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         {stats.map((stat) => (
           <StatCard key={stat.label} {...stat} />
         ))}
       </section>
 
-      <section className="mt-6">
+      <section className="mt-8">
         <QuickActions actions={quickActions} onNavigate={(to) => navigate({ to })} />
       </section>
 
-      <section className="mt-6">
+      <section className="mt-8">
         <Card className="p-4">
           <div className="grid gap-3 md:grid-cols-4">
             <div className="relative md:col-span-3">
@@ -219,7 +219,7 @@ export function RegistrarDashboard() {
         </Card>
       </section>
 
-      <section className="mt-6">
+      <section className="mt-8">
         <Card className="overflow-hidden p-0">
           <div className="overflow-x-auto">
             <table className="w-full min-w-[760px] text-left">

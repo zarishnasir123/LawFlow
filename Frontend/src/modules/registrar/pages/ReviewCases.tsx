@@ -435,8 +435,8 @@ export default function ReviewCases() {
               <p className="text-xs font-semibold uppercase tracking-[0.22em] text-emerald-700">
                 Registrar Review
               </p>
-              <h2 className="mt-2 text-2xl font-semibold text-gray-900">{caseTitleDisplay}</h2>
-              <p className="mt-1 text-sm text-gray-600">
+              <h1 className="mt-2 text-3xl font-bold tracking-tight text-gray-900">{caseTitleDisplay}</h1>
+              <p className="mt-2 text-[15px] leading-relaxed text-gray-600">
                 Review submitted bundle, inspect signatures, then approve or return for corrections.
               </p>
             </div>

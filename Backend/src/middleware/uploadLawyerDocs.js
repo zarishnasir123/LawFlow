@@ -2,8 +2,16 @@ import multer from "multer";
 
 import { ApiError } from "../utils/apiError.js";
 
-const maxFileSizeBytes = 10 * 1024 * 1024;
+// Hard upload cap. The previous 10 MB ceiling was too permissive — a single
+// uncompressed degree scan can hit 8–10 MB and bloats storage over the
+// project's lifetime. 5 MB is the sweet spot: enough headroom for a
+// well-compressed scanned degree (typical size 1–4 MB) but still bounded so
+// total storage stays predictable across the user base.
+const maxFileSizeBytes = 5 * 1024 * 1024;
 
+// Law degree is a PDF only. The 5 MB cap is enough headroom for a
+// well-compressed scanned degree; lawyers with heavier scans are expected to
+// compress before uploading (most PDF tools achieve 50–80% size reduction).
 const allowedMimeByField = {
   degreeDocument: new Set(["application/pdf"]),
   licenseCardFrontImage: new Set(["image/jpeg", "image/png"]),
@@ -57,7 +65,7 @@ export function uploadLawyerDocs(req, res, next) {
 
     if (err instanceof multer.MulterError) {
       if (err.code === "LIMIT_FILE_SIZE") {
-        return next(new ApiError(400, "Uploaded file is too large. Maximum size is 10 MB."));
+        return next(new ApiError(400, "Uploaded file is too large. Maximum size is 5 MB — please compress your PDF before uploading."));
       }
       if (err.code === "LIMIT_UNEXPECTED_FILE") {
         return next(new ApiError(400, `Unexpected upload field: ${err.field}`));
