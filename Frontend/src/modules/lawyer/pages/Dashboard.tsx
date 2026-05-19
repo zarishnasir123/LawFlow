@@ -60,17 +60,17 @@ export default function LawyerDashboard() {
       pageSubtitle="Lawyer Dashboard"
     >
         {/* HEADER */}
-        <div className="mb-6">
-          <h2 className="text-xl font-semibold text-gray-900">
-            Welcome back, {displayName}
-          </h2>
-          <p className="text-sm text-gray-600">
+        <header className="mb-8">
+          <h1 className="text-3xl font-bold tracking-tight text-gray-900">
+            Welcome back, <span className="text-[var(--primary)]">{displayName}</span>
+          </h1>
+          <p className="mt-2 text-[15px] leading-relaxed text-gray-600">
             Manage your cases, clients, and hearings efficiently.
           </p>
-        </div>
+        </header>
 
         {/* STATS */}
-        <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <section className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
           {lawyerDashboardStats.map((stat) => (
             <StatCard key={stat.label} {...stat} />
           ))}
@@ -83,7 +83,7 @@ export default function LawyerDashboard() {
         </section>
 
         {/* QUICK ACTIONS */}
-        <section className="mt-6">
+        <section className="mt-8">
           <QuickActions
             actions={lawyerDashboardQuickActions}
             onNavigate={(to) => navigate({ to })}
@@ -91,7 +91,7 @@ export default function LawyerDashboard() {
         </section>
 
         {/* CASES + ACTIVITY */}
-        <section className="mt-6 grid gap-6 lg:grid-cols-3">
+        <section className="mt-8 grid gap-6 lg:grid-cols-3">
           <div className="lg:col-span-2">
             <RecentCases
               cases={lawyerDashboardCases}

@@ -7,6 +7,7 @@
     "dev": "nodemon src/server.js",
     "start": "node src/server.js",
     "email:check": "node src/scripts/checkEmailConfig.js",
+    "generate:case-templates": "node src/scripts/generateCaseTemplates.js",
     "sync:supabase-users": "node src/scripts/syncSupabaseUsers.js",
     "sync:supabase-users:apply": "node src/scripts/syncSupabaseUsers.js --apply",
     "user:delete": "node src/scripts/deleteUser.js"
@@ -29,6 +30,7 @@
     "ws": "^8.20.0"
   },
   "devDependencies": {
+    "docx": "^9.5.0",
     "nodemon": "^3.1.9"
   }
 }

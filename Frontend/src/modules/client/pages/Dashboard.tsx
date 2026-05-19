@@ -114,27 +114,27 @@ export default function Dashboard() {
   return (
     <>
       <ClientLayout brandSubtitle="Client Dashboard">
-        <div className="mb-6">
-          <h2 className="text-xl font-semibold text-gray-900">
-            Welcome back, {displayName}
-          </h2>
-          <p className="text-sm text-gray-600">
+        <header className="mb-8">
+          <h1 className="text-3xl font-bold tracking-tight text-gray-900">
+            Welcome back, <span className="text-[var(--primary)]">{displayName}</span>
+          </h1>
+          <p className="mt-2 text-[15px] leading-relaxed text-gray-600">
             Track your cases, connect with lawyers, and manage documents in one place.
           </p>
           <p className="mt-1 text-xs text-gray-500">Signed in as {signedInEmail}</p>
-        </div>
+        </header>
 
-        <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <section className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
           {stats.map((stat) => (
             <StatCard key={stat.label} {...stat} />
           ))}
         </section>
 
-        <section className="mt-6">
+        <section className="mt-8">
           <QuickActions actions={quickActions} onNavigate={(to) => navigate({ to })} />
         </section>
 
-        <section className="mt-6 grid gap-6 lg:grid-cols-3">
+        <section className="mt-8 grid gap-6 lg:grid-cols-3">
           <div className="lg:col-span-2">
             <RecentCases
               cases={recentCases}

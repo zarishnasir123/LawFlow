@@ -320,6 +320,56 @@ CREATE TABLE lawyer_rejection_history (
 );
 
 -- =====================================================================
+-- Module 3: Case file drafting (Online Document Editing & PDF Preparation)
+-- =====================================================================
+
+-- Catalog of supported plaint/petition types. One row per template the lawyer
+-- can pick from when creating a new case. category constrained to the two
+-- tracks LawFlow supports at the tehsil level; a new category is a schema
+-- change rather than a runtime config.
+CREATE TABLE case_types (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+
+  category      VARCHAR(20) NOT NULL CHECK (category IN ('civil', 'family')),
+  code          VARCHAR(80) NOT NULL UNIQUE,
+  display_name  VARCHAR(200) NOT NULL,
+  governing_law VARCHAR(300),
+  sort_order    INT NOT NULL DEFAULT 0,
+
+  created_at    TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+-- A case is owned by exactly one lawyer (lawyer_user_id) and references one
+-- case_types row for its drafting template. client_* columns are free-form
+-- for now — Module 5 will introduce a nullable client_user_id linking to a
+-- registered LawFlow user and treat these as the fallback.
+CREATE TABLE cases (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  lawyer_user_id  UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  case_type_id    UUID NOT NULL REFERENCES case_types(id),
+
+  title           VARCHAR(300) NOT NULL,
+  description     TEXT,
+
+  client_name     VARCHAR(200) NOT NULL,
+  client_email    VARCHAR(200),
+  client_phone    VARCHAR(30),
+
+  opposite_party_name VARCHAR(200) NOT NULL,
+
+  -- draft = lawyer is still drafting / editing
+  -- submitted = sent to registrar, awaiting review
+  -- returned = registrar bounced it back with remarks
+  -- accepted = registrar approved it for filing
+  status          VARCHAR(30) NOT NULL DEFAULT 'draft'
+                  CHECK (status IN ('draft', 'submitted', 'returned', 'accepted')),
+
+  created_at      TIMESTAMP NOT NULL DEFAULT NOW(),
+  updated_at      TIMESTAMP NOT NULL DEFAULT NOW(),
+  submitted_at    TIMESTAMP
+);
+
+-- =====================================================================
 -- Indexes (only for real query patterns; PRIMARY KEY / UNIQUE already
 -- get implicit indexes, so do not duplicate them here.)
 -- =====================================================================
@@ -357,6 +407,11 @@ CREATE INDEX idx_lawyer_rejection_history_email
 CREATE INDEX idx_lawyer_rejection_history_rejected_at
   ON lawyer_rejection_history(rejected_at DESC);
 
+CREATE INDEX idx_case_types_category ON case_types(category, sort_order);
+
+CREATE INDEX idx_cases_lawyer_user_id ON cases(lawyer_user_id);
+CREATE INDEX idx_cases_status         ON cases(status);
+
 -- =====================================================================
 -- Row Level Security: deny by default on every table.
 -- The Express backend uses SUPABASE_SERVICE_ROLE_KEY (and the local
@@ -377,5 +432,22 @@ ALTER TABLE password_reset_tokens          ENABLE ROW LEVEL SECURITY;
 ALTER TABLE auth_sessions                  ENABLE ROW LEVEL SECURITY;
 ALTER TABLE auth_identities                ENABLE ROW LEVEL SECURITY;
 ALTER TABLE lawyer_rejection_history       ENABLE ROW LEVEL SECURITY;
+ALTER TABLE case_types                     ENABLE ROW LEVEL SECURITY;
+ALTER TABLE cases                          ENABLE ROW LEVEL SECURITY;
+
+-- =====================================================================
+-- Seed data: supported case types (5 civil + 5 family at tehsil level).
+-- =====================================================================
+INSERT INTO case_types (category, code, display_name, governing_law, sort_order) VALUES
+  ('civil',  'civil_recovery_of_money',         'Suit for Recovery of Money',                  'Civil Procedure Code (CPC), 1908',                                       1),
+  ('civil',  'civil_permanent_injunction',      'Suit for Permanent Injunction',               'Specific Relief Act, 1877',                                              2),
+  ('civil',  'civil_declaration',               'Suit for Declaration',                        'Specific Relief Act, 1877',                                              3),
+  ('civil',  'civil_specific_performance',      'Suit for Specific Performance of Agreement',  'Specific Relief Act, 1877',                                              4),
+  ('civil',  'civil_possession_of_property',    'Suit for Possession of Property',             'Civil Procedure Code (CPC), 1908',                                       5),
+  ('family', 'family_khula',                    'Khula (Wife''s Judicial Divorce)',            'Dissolution of Muslim Marriages Act, 1939 & MFLO, 1961',                 1),
+  ('family', 'family_maintenance',              'Maintenance (Wife & Children)',               'MFLO, 1961 & Family Courts Act, 1964',                                   2),
+  ('family', 'family_dowry_recovery',           'Recovery of Dowry Articles / Personal Property','Dowry & Bridal Gifts Act, 1976 & Family Courts Act, 1964',             3),
+  ('family', 'family_minor_custody',            'Custody of Minors (Hizanat)',                 'Guardian and Wards Act, 1890 & Family Courts Act, 1964',                 4),
+  ('family', 'family_conjugal_rights',          'Restitution of Conjugal Rights',              'Family Courts Act, 1964',                                                5);
 
 

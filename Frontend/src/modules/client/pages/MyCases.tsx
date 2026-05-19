@@ -58,6 +58,15 @@ export default function ClientMyCases() {
       showBackButton
       onBackClick={() => navigate({ to: "/client-dashboard" })}
     >
+      <header className="mb-8">
+        <h1 className="text-3xl font-bold tracking-tight text-gray-900">
+          My <span className="text-[var(--primary)]">Cases</span>
+        </h1>
+        <p className="mt-2 text-[15px] leading-relaxed text-gray-600">
+          Every case you've filed, including hearings, lawyer details, and current status.
+        </p>
+      </header>
+
       <div className="space-y-6">
         <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -108,7 +117,7 @@ export default function ClientMyCases() {
                     Case Overview
                   </p>
                   <div className="flex flex-wrap items-center gap-2">
-                    <h2 className="text-xl font-semibold text-gray-900">{item.title}</h2>
+                    <h2 className="text-xl font-semibold tracking-tight text-gray-900">{item.title}</h2>
                     <span
                       className={`rounded-full px-2.5 py-1 text-xs font-semibold ${getStatusBadgeClass(
                         item.status

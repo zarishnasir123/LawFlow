@@ -17,12 +17,22 @@ function getSelectedFile(value: File | FileList | null | undefined) {
   return null;
 }
 
+// Law degree must be a PDF. 5 MB cap (also enforced server-side at the upload
+// middleware) gives comfortable headroom for a typical scanned degree and
+// prevents storage bloat across the user base.
+const DEGREE_FILE_SIZE_LIMIT_BYTES = 5 * 1024 * 1024;
+
 function isPdfFile(value: File | FileList | null | undefined) {
   const file = getSelectedFile(value);
-
   return file instanceof File && (
     file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")
   );
+}
+
+function isUnderDegreeFileSizeCap(value: File | FileList | null | undefined) {
+  const file = getSelectedFile(value);
+  if (!(file instanceof File)) return true;
+  return file.size <= DEGREE_FILE_SIZE_LIMIT_BYTES;
 }
 
 function isJpgOrPngFile(value: File | FileList | null | undefined) {
@@ -153,7 +163,15 @@ export default function LawyerRegisterForm() {
 
   const lawDegreeRegister = register("lawDegree", {
     required: "Law degree document is required.",
-    validate: (file: File | FileList | null) => isPdfFile(file) || "Upload the law degree as a PDF file.",
+    validate: (file: File | FileList | null) => {
+      if (!isPdfFile(file)) {
+        return "Upload the law degree as a PDF file.";
+      }
+      if (!isUnderDegreeFileSizeCap(file)) {
+        return "File too large. Maximum size is 5 MB — please compress your PDF before uploading.";
+      }
+      return true;
+    },
     setValueAs: (value: FileList | null) => value?.[0] ?? null,
     onChange: (event: ChangeEvent<HTMLInputElement>) => {
       const file = event.target.files?.[0];

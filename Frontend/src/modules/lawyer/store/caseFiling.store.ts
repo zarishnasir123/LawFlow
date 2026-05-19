@@ -58,7 +58,11 @@ interface CaseFilingState {
   submittedCases: CaseSubmissionRecord[];
 
   createCaseFromIntake: (input: IntakeCaseInput) => string;
-  ensureCaseContext: (caseId: string, title?: string) => void;
+  ensureCaseContext: (
+    caseId: string,
+    title?: string,
+    options?: { clientName?: string; caseType?: FilingCaseRecord["caseType"] }
+  ) => void;
   getCaseById: (caseId: string) => FilingCaseRecord | null;
   getBundleByCaseId: (caseId: string) => CompiledCaseBundle | null;
   refreshBundleFromWorkspace: (
@@ -219,7 +223,7 @@ export const useCaseFilingStore = create<CaseFilingState>()(
         return caseId;
       },
 
-      ensureCaseContext: (caseId, title) => {
+      ensureCaseContext: (caseId, title, options) => {
         if (!caseId) return;
         const exists = get().cases.some((item) => item.id === caseId);
         if (exists) return;
@@ -229,8 +233,8 @@ export const useCaseFilingStore = create<CaseFilingState>()(
           id: caseId,
           displayCaseId: toDisplayCaseId(caseId),
           title: title?.trim() || toCaseTitle(caseId),
-          caseType: "civil",
-          clientName: "Client",
+          caseType: options?.caseType ?? "civil",
+          clientName: options?.clientName?.trim() || "Client",
           assignedTehsil: "Assigned Tehsil",
           assignedRegistrar: "Assigned Registrar",
           casePrepared: true,
