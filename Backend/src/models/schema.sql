@@ -74,6 +74,12 @@ CREATE TABLE users (
   failed_login_attempts INTEGER     NOT NULL DEFAULT 0,
   locked_until          TIMESTAMP,
 
+  -- Set atomically the first time the user opens any dashboard (see
+  -- getCurrentUser in auth.service.js). NULL = the user has never opened
+  -- the dashboard, so the UI renders "Welcome, ..." instead of
+  -- "Welcome back, ...".
+  first_login_at        TIMESTAMP,
+
   created_at TIMESTAMP NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
 

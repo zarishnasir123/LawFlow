@@ -17,8 +17,7 @@ import RecentCases from "../../../shared/components/dashboard/RecentCases";
 import StatCard from "../../../shared/components/dashboard/StatCard";
 import UpcomingHearings from "../../../shared/components/dashboard/UpcomingHearings";
 
-import { useLoginStore } from "../../auth/store";
-import { getStoredAuthUser } from "../../auth/utils/authStorage";
+import { useCurrentUser, displayFullName } from "../../auth/hooks/useCurrentUser";
 import { useClientProfileStore } from "../store";
 import { useSignatureRequestsStore } from "../../lawyer/signatures/store/signatureRequests.store";
 
@@ -32,32 +31,18 @@ import type {
 
 export default function Dashboard() {
   const navigate = useNavigate();
-  const email = useLoginStore((state) => state.email);
-  const { profile, initializeProfile } = useClientProfileStore();
+  const { data: currentUser } = useCurrentUser();
+  const { initializeProfile } = useClientProfileStore();
   const { countPendingSignatures } = useSignatureRequestsStore();
   const pendingSignatureCount = countPendingSignatures();
-  const storedLoginEmail = (() => {
-    const storedUser = getStoredAuthUser();
-    return storedUser?.role === "client" ? storedUser.email : "";
-  })();
 
   useEffect(() => {
     initializeProfile();
   }, [initializeProfile]);
 
-  const displayName = (() => {
-    const activeEmail = email || storedLoginEmail || profile?.email || "";
-    if (!activeEmail) return profile?.fullName || "Client";
-    const handle = activeEmail.split("@")[0] ?? "";
-    return handle
-      .replace(/[._-]+/g, " ")
-      .trim()
-      .split(" ")
-      .filter(Boolean)
-      .map((p) => p.charAt(0).toUpperCase() + p.slice(1))
-      .join(" ");
-  })();
-  const signedInEmail = email || storedLoginEmail || profile?.email || "N/A";
+  const displayName = displayFullName(currentUser) || "Client";
+  const greeting = currentUser?.firstLoginCompleted ? "Welcome back" : "Welcome";
+  const signedInEmail = currentUser?.email ?? "";
 
   const stats: DashboardStat[] = [
     { label: "Active Cases", value: "2", icon: FileText, accentClassName: "bg-blue-500" },
@@ -116,12 +101,14 @@ export default function Dashboard() {
       <ClientLayout brandSubtitle="Client Dashboard">
         <header className="mb-8">
           <h1 className="text-3xl font-bold tracking-tight text-gray-900">
-            Welcome back, <span className="text-[var(--primary)]">{displayName}</span>
+            {greeting}, <span className="text-[var(--primary)]">{displayName}</span>
           </h1>
           <p className="mt-2 text-[15px] leading-relaxed text-gray-600">
             Track your cases, connect with lawyers, and manage documents in one place.
           </p>
-          <p className="mt-1 text-xs text-gray-500">Signed in as {signedInEmail}</p>
+          {signedInEmail && (
+            <p className="mt-1 text-xs text-gray-500">Signed in as {signedInEmail}</p>
+          )}
         </header>
 
         <section className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">

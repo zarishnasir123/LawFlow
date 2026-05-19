@@ -12,25 +12,27 @@ import {
 } from "../dashboard.mock";
 
 import { useAdminNotificationsStore } from "../store/notifications.store";
+import { usePendingLawyerCount } from "../hooks/usePendingLawyerCount";
 
 export default function AdminDashboardPage() {
   const navigate = useNavigate();
   const addSystemStatisticsNotification = useAdminNotificationsStore(
     (state) => state.addSystemStatisticsNotification,
   );
+  const pendingLawyerCount = usePendingLawyerCount();
   const lawyerVerificationItems = adminPendingVerifications.filter(
     (request) => request.type === "Lawyer",
   );
 
   return (
     <div className="w-full px-6 lg:px-8 xl:px-10 py-8">
-          <div className="bg-white rounded-xl shadow-sm p-6 mb-8 border border-green-100">
+          <div className="bg-white rounded-2xl shadow-sm p-6 mb-8 border border-green-100">
             <div className="flex items-center justify-between">
               <div>
-                <h2 className="text-2xl font-bold text-[#01411C] mb-2">
-                  Welcome back, Admin
-                </h2>
-                <p className="text-gray-600">
+                <h1 className="text-3xl font-bold tracking-tight text-[#01411C] mb-2">
+                  Welcome back, <span className="text-gray-900">Admin</span>
+                </h1>
+                <p className="text-[15px] leading-relaxed text-gray-600">
                   Monitor operations and manage core system controls.
                 </p>
               </div>
@@ -60,14 +62,14 @@ export default function AdminDashboardPage() {
           </div>
 
           <div className="bg-white rounded-2xl shadow-sm border border-green-100 p-6 mb-8">
-            <div className="mb-5">
-              <h3 className="text-lg font-semibold text-gray-900">Quick Actions</h3>
-              <p className="text-sm text-gray-600">
+            <div className="mb-6">
+              <h2 className="text-lg font-semibold tracking-tight text-gray-900">Quick Actions</h2>
+              <p className="mt-1 text-sm text-gray-600">
                 Manage registrars, templates, statistics, and lawyer verification.
               </p>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-5">
               <ActionCard
                 title="Manage Registrars"
                 description="Create, assign, activate, and manage registrar accounts."
@@ -117,6 +119,7 @@ export default function AdminDashboardPage() {
                 iconBgClass="bg-amber-100"
                 iconTextClass="text-amber-700"
                 badgeClassName="bg-amber-100 text-amber-700"
+                pendingCount={pendingLawyerCount}
                 onClick={() => navigate({ to: "/verifications" })}
               />
 
