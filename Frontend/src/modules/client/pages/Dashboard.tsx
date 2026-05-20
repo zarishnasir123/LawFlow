@@ -18,6 +18,7 @@ import StatCard from "../../../shared/components/dashboard/StatCard";
 import UpcomingHearings from "../../../shared/components/dashboard/UpcomingHearings";
 
 import { useCurrentUser, displayFullName } from "../../auth/hooks/useCurrentUser";
+import { useEnforcePasswordChange } from "../../auth/hooks/useEnforcePasswordChange";
 import { useClientProfileStore } from "../store";
 import { useSignatureRequestsStore } from "../../lawyer/signatures/store/signatureRequests.store";
 
@@ -31,6 +32,7 @@ import type {
 
 export default function Dashboard() {
   const navigate = useNavigate();
+  useEnforcePasswordChange();
   const { data: currentUser } = useCurrentUser();
   const { initializeProfile } = useClientProfileStore();
   const { countPendingSignatures } = useSignatureRequestsStore();

@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
@@ -9,9 +10,9 @@ import GoogleAuthButton from "./GoogleAuthButton";
 import PasswordField from "./PasswordField";
 import RoleSelector from "./RoleSelector";
 import TextField from "./TextField";
-import { useRegistrarAccountsStore } from "../../registrar/store/registrars.store";
 import { loginClient } from "../../client/api";
 import { loginLawyer } from "../../lawyer/api";
+import { loginRegistrar } from "../../registrar/api";
 
 type LoginFormProps = {
   onForgotPassword?: () => void;
@@ -22,6 +23,21 @@ export default function LoginForm({ onForgotPassword }: LoginFormProps) {
   const role = useLoginStore((state) => state.role);
   const setRole = useLoginStore((state) => state.setRole);
   const setEmail = useLoginStore((state) => state.setEmail);
+
+  // One-shot banner shown after the user completes a forced password change.
+  // The flag is written by ChangeTempPassword.tsx into sessionStorage and
+  // cleared here on first read so a refresh or revisit doesn't re-show it.
+  const [passwordChangeSuccess, setPasswordChangeSuccess] = useState(false);
+  useEffect(() => {
+    try {
+      if (sessionStorage.getItem("lawflow_password_change_success") === "1") {
+        sessionStorage.removeItem("lawflow_password_change_success");
+        setPasswordChangeSuccess(true);
+      }
+    } catch {
+      // ignore — banner is a nicety
+    }
+  }, []);
 
   const {
     register,
@@ -82,16 +98,44 @@ export default function LoginForm({ onForgotPassword }: LoginFormProps) {
     },
   });
 
+  const registrarLoginMutation = useMutation({
+    mutationFn: loginRegistrar,
+    onSuccess: (data, variables) => {
+      if (data.user.role !== "registrar") {
+        alert("These credentials do not belong to a registrar account.");
+        return;
+      }
+
+      const fullName = [data.user.firstName, data.user.lastName].filter(Boolean).join(" ");
+
+      setEmail(data.user.email);
+      saveStoredAuthUser(
+        {
+          id: data.user.id,
+          email: data.user.email,
+          role: data.user.role,
+          name: fullName || data.user.email,
+          refreshTokenExpiresAt: data.refreshTokenExpiresAt,
+        },
+        Boolean(variables.rememberMe),
+        data.accessToken
+      );
+      navigate({ to: "/registrar-dashboard" });
+    },
+  });
+
   const disabled =
     isSubmitting ||
     clientLoginMutation.isPending ||
-    lawyerLoginMutation.isPending;
+    lawyerLoginMutation.isPending ||
+    registrarLoginMutation.isPending;
 
   // Wrap setRole so stale error banners from a previous role's mutation don't
   // stack when the user toggles between Client / Lawyer / Registrar tabs.
   const changeRole = (next: LoginRole) => {
     clientLoginMutation.reset();
     lawyerLoginMutation.reset();
+    registrarLoginMutation.reset();
     setRole(next);
   };
 
@@ -115,28 +159,13 @@ export default function LoginForm({ onForgotPassword }: LoginFormProps) {
         });
         break;
 
-      case "registrar": {
-        const registrar = useRegistrarAccountsStore
-          .getState()
-          .authenticateRegistrar(values.email, values.password);
-
-        if (!registrar) {
-          alert("Invalid registrar credentials. Contact admin for account access.");
-          return;
-        }
-
-        localStorage.setItem(
-          "user",
-          JSON.stringify({
-            email: registrar.email,
-            role: "registrar",
-            name: registrar.name,
-          })
-        );
-
-        navigate({ to: "/registrar-dashboard" });
+      case "registrar":
+        registrarLoginMutation.mutate({
+          email: values.email,
+          password: values.password,
+          rememberMe: Boolean(values.rememberMe),
+        });
         break;
-      }
 
       default:
         navigate({ to: "/login" });
@@ -216,6 +245,12 @@ export default function LoginForm({ onForgotPassword }: LoginFormProps) {
         {disabled ? "Logging in..." : "Login"}
       </button>
 
+      {passwordChangeSuccess ? (
+        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+          Password changed successfully. Please sign in with your new password.
+        </div>
+      ) : null}
+
       {clientLoginMutation.isError ? (
         <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
           {getAuthErrorMessage(clientLoginMutation.error)}
@@ -224,6 +259,12 @@ export default function LoginForm({ onForgotPassword }: LoginFormProps) {
 
       {lawyerLoginMutation.isError ? (
         <LawyerLoginError message={getAuthErrorMessage(lawyerLoginMutation.error)} />
+      ) : null}
+
+      {registrarLoginMutation.isError ? (
+        <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {getAuthErrorMessage(registrarLoginMutation.error)}
+        </div>
       ) : null}
 
       {role === "client" ? (

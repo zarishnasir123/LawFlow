@@ -17,6 +17,7 @@ import { getCaseDisplayTitle } from "../../../shared/utils/caseDisplay";
 import RegistrarLayout from "../components/RegistrarLayout";
 import { useCaseFilingStore } from "../../lawyer/store/caseFiling.store";
 import { useCurrentUser, displayFullName } from "../../auth/hooks/useCurrentUser";
+import { useEnforcePasswordChange } from "../../auth/hooks/useEnforcePasswordChange";
 import {
   getFcfsSubmissionQueue,
   getProcessedCaseIdsForLatestSubmission,
@@ -38,6 +39,7 @@ export function RegistrarDashboard() {
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState("");
   const [filterType, setFilterType] = useState("all");
+  useEnforcePasswordChange();
   const { data: currentUser } = useCurrentUser();
   const liveSubmittedCases = useCaseFilingStore((state) =>
     state.getSubmittedCasesForRegistrar()

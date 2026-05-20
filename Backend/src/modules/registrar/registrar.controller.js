@@ -19,11 +19,19 @@ function getField(payload, ...names) {
 }
 
 // Same response shape used by create + resend. Surfacing `emailDelivery`
-// lets the admin UI distinguish "registrar created, email queued" from
-// "registrar created but the SMTP server rejected the password email" —
-// the latter requires manually re-issuing credentials.
+// lets the admin UI distinguish "registrar created, email queued / sent"
+// from "registrar created but the SMTP server rejected the password email"
+// — the latter requires manually re-issuing credentials.
+//
+// `emailSent` is true only when delivery was synchronous (Resend action).
+// `emailQueued` is true when the create path scheduled an async send.
+// Either of those counts as success from the admin's point of view —
+// the credential is on its way to the registrar's inbox.
 function buildCredentialsResponse({ registrar, emailDelivery }, baseMessage) {
-  const message = emailDelivery.emailSent
+  const dispatchedOk =
+    emailDelivery.emailSent === true || emailDelivery.emailQueued === true;
+
+  const message = dispatchedOk
     ? `${baseMessage} Credentials have been emailed.`
     : `${baseMessage} Credentials email could not be delivered (${emailDelivery.deliveryReason ?? "SMTP unavailable"}). Re-send from the registrar list once email is configured.`;
 

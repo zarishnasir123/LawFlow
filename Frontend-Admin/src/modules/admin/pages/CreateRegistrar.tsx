@@ -55,10 +55,15 @@ export default function CreateRegistrar() {
       });
 
       // Account creation succeeded server-side regardless of email outcome.
-      // Distinguish "credentials emailed" from "account created but SMTP
+      // Distinguish "credentials dispatched" from "account created but SMTP
       // could not deliver" so the admin knows whether to re-issue
-      // credentials manually.
-      if (emailDelivery.emailSent) {
+      // credentials manually. `emailSent` (synchronous) and `emailQueued`
+      // (asynchronous) both count as success — both mean the credential
+      // is en route to the registrar's inbox.
+      const dispatchedOk =
+        emailDelivery.emailSent === true || emailDelivery.emailQueued === true;
+
+      if (dispatchedOk) {
         setToast({
           open: true,
           type: "success",

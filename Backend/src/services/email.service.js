@@ -311,12 +311,50 @@ function toCredentialsEmailDeliveryStatus(result) {
   };
 }
 
-// Synchronous delivery so the admin endpoint can surface SMTP failures back
-// to the admin UI instead of silently fire-and-forgetting the password email.
-// Mirrors the OTP delivery pattern.
+// Synchronous delivery — used by the explicit "Resend credentials" admin
+// action where per-call SMTP feedback matters. The create-registrar happy
+// path should use queueRegistrarCredentialsEmail instead so the admin UI
+// returns immediately.
 export async function deliverRegistrarCredentialsEmail({ email, firstName, temporaryPassword }) {
   const result = await sendRegistrarCredentialsEmail({ email, firstName, temporaryPassword });
   return toCredentialsEmailDeliveryStatus(result);
+}
+
+// Non-blocking queued delivery. setImmediate starts the SMTP handshake in
+// the same event-loop turn (before the HTTP response flushes), so the email
+// is in flight by the time the admin sees the success toast — but the
+// admin's Create button doesn't hang on the 5–8 second Gmail handshake.
+// SMTP failures get logged via [EMAIL QUEUE FAILED] and the admin can fix
+// + resend via the dedicated Resend Credentials action.
+export function queueRegistrarCredentialsEmail({ email, firstName, temporaryPassword }) {
+  const emailConfig = getEmailDeliveryConfig();
+
+  setImmediate(() => {
+    sendRegistrarCredentialsEmail({ email, firstName, temporaryPassword })
+      .then((result) => {
+        if (result.mode === "smtp" && shouldLogEmailDebug()) {
+          console.log("[EMAIL SENT]", {
+            task: "registrar-credentials",
+            messageId: result.messageId
+          });
+        }
+      })
+      .catch((error) => {
+        console.error("[EMAIL QUEUE FAILED]", {
+          task: "registrar-credentials",
+          message: error.message
+        });
+      });
+  });
+
+  return {
+    emailSent: false,
+    emailQueued: true,
+    deliveryMode: emailConfig.mode,
+    deliveryReason: emailConfig.issues.length > 0
+      ? `SMTP is not configured. Missing or placeholder values: ${emailConfig.issues.join(", ")}`
+      : undefined
+  };
 }
 
 export function sendPasswordResetEmail({ email, firstName, resetUrl }) {

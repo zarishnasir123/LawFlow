@@ -1,7 +1,10 @@
 import { randomBytes } from "node:crypto";
 
 import { pool } from "../../config/db.js";
-import { deliverRegistrarCredentialsEmail } from "../../services/email.service.js";
+import {
+  deliverRegistrarCredentialsEmail,
+  queueRegistrarCredentialsEmail
+} from "../../services/email.service.js";
 import { ApiError } from "../../utils/apiError.js";
 import { hashValue } from "../../utils/hash.js";
 
@@ -191,10 +194,14 @@ export async function createRegistrar({
 
     await client.query("COMMIT");
 
-    // Synchronous delivery so a failed SMTP handshake surfaces back to the
-    // admin UI instead of silently disappearing into a setImmediate. The
-    // plaintext password leaves memory the moment this promise resolves.
-    const emailDelivery = await deliverRegistrarCredentialsEmail({
+    // Queued (non-blocking) delivery on the create path — admins were
+    // complaining about a 5–8s wait on the Create button while Gmail's
+    // SMTP handshake completed. The setImmediate starts the send in the
+    // same event-loop turn so the email is in flight by the time the
+    // response reaches the browser, but the response itself doesn't wait.
+    // The dedicated Resend Credentials action still uses the synchronous
+    // variant — there the admin actively wants per-call SMTP feedback.
+    const emailDelivery = queueRegistrarCredentialsEmail({
       email: normalizedEmail,
       firstName: firstName.trim(),
       temporaryPassword
@@ -539,7 +546,13 @@ export async function resendRegistrarCredentials(registrarProfileId) {
 function generateTemporaryPassword() {
   const alpha = "abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ";
   const digits = "23456789";
-  const specials = "!@#$%^&*";
+  // Specials kept HTML-safe — `&`, `<`, `>`, `"`, `'` are excluded because
+  // they get HTML-entity-encoded by Handlebars in the credentials email
+  // template, and some email clients propagate the literal entity (e.g.
+  // `&amp;`) into the clipboard, which then mismatches the bcrypt hash of
+  // the original character. The remaining set still satisfies the platform
+  // password policy ("at least one non-alphanumeric character").
+  const specials = "!@#$%^*";
 
   function pickFrom(charset) {
     const setSize = charset.length;
