@@ -8,7 +8,7 @@ import { useNewCaseStore } from "../store/newCase.store";
 import { useCaseFilingStore } from "../store/caseFiling.store";
 
 export default function CreateCase() {
-  const { selectedCaseType, reset: resetNewCaseStore } = useNewCaseStore();
+  const { selectedCaseType } = useNewCaseStore();
   const ensureCaseContext = useCaseFilingStore((state) => state.ensureCaseContext);
   const navigate = useNavigate();
 
@@ -51,7 +51,11 @@ export default function CreateCase() {
         clientName: created.clientName,
         caseType: created.caseCategory,
       });
-      resetNewCaseStore();
+      // IMPORTANT: do NOT reset the new-case store here. Doing so nulls out
+      // selectedCaseType and instantly trips the redirect useEffect below,
+      // which fires before TanStack Router finishes the navigation to the
+      // editor — bouncing the lawyer back to step 1. LawyerNewCase resets
+      // its own store on mount, so the cleanup is already covered.
       navigate({
         to: "/lawyer-case-editor/$caseId",
         params: { caseId: created.id },

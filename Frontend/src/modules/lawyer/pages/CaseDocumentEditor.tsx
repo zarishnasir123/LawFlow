@@ -1,32 +1,35 @@
 import { useEffect, useState, useCallback, useRef } from "react";
-import * as mammoth from "mammoth";
 import { type JSONContent } from "@tiptap/react";
 import { useNavigate, useParams } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
 import { Document, Page, pdfjs } from "react-pdf";
 import LawyerLayout from "../components/LawyerLayout";
 import DocumentSidebar from "../components/documentEditor/DocumentSidebar";
-import DocEditor from "../components/documentEditor/DocEditor";
+import DocxPreviewSurface from "../components/documentEditor/DocxPreviewSurface";
+import ContentEditableToolbar from "../components/documentEditor/ContentEditableToolbar";
 import TopActionBar from "../components/documentEditor/TopActionBar";
 import DownloadModal from "../components/documentEditor/DownloadModal";
 import SignatureRequestPanel from "../signatures/components/SignatureRequestPanel";
 import { useDocumentEditorStore } from "../store/documentEditor.store";
 import { useSignatureRequestsStore } from "../signatures/store/signatureRequests.store";
-import { DEFAULT_CASE_DOCS } from "../data/defaultCaseDocuments";
+import { casesApi, caseTemplateApiPath } from "../api/cases.api";
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL(
   "pdfjs-dist/build/pdf.worker.min.mjs",
   import.meta.url
 ).toString();
 
-const resolveTemplateUrl = (path: string) => {
-  if (path.startsWith("http://") || path.startsWith("https://")) {
-    return path;
-  }
-  const base = import.meta.env.BASE_URL || "/";
-  const normalizedBase = base.endsWith("/") ? base : `${base}/`;
-  const normalizedPath = path.startsWith("/") ? path.slice(1) : path;
-  return `${normalizedBase}${normalizedPath}`;
-};
+// Document URLs live in one of two universes:
+//
+//   1. Backend API paths      e.g. "/cases/types/civil_khula/template"
+//      → fetched through apiClient (auth headers added automatically).
+//   2. Browser-local URLs     blob:, data:, http:, https:
+//      → fetched with plain fetch() — these come from file uploads where
+//        the bytes already live in memory or on a third-party host.
+//
+// Telling them apart at the call-site keeps the loader honest about which
+// transport to use.
+const isApiPath = (url: string) => url.startsWith("/cases/") || url.startsWith("/api/");
 
 export default function CaseDocumentEditor() {
   const { caseId } = useParams({ strict: false }) as { caseId?: string }; // Retrieve generic params
@@ -60,6 +63,15 @@ export default function CaseDocumentEditor() {
   } = useSignatureRequestsStore();
 
   const [editorContent, setEditorContent] = useState<string | JSONContent>("");
+  // Raw .docx bytes for the document currently open in the preview surface.
+  // docx-preview consumes this directly — no mammoth/HTML conversion in
+  // between, so the rendered pages preserve Word's exact layout (fonts,
+  // page breaks, tables, justify).
+  const [docxBytes, setDocxBytes] = useState<ArrayBuffer | null>(null);
+  // Live references to the rendered <section class="docx"> elements
+  // produced by docx-preview. The sidebar's Pages panel uses these for
+  // jump-to-page and per-page signature actions.
+  const [renderedPages, setRenderedPages] = useState<HTMLElement[]>([]);
   const [isDownloadModalOpen, setIsDownloadModalOpen] = useState(false);
   const [isSignaturePanelOpen, setIsSignaturePanelOpen] = useState(false);
   const [selectedAttachmentId, setSelectedAttachmentId] = useState<string | null>(null);
@@ -180,15 +192,41 @@ export default function CaseDocumentEditor() {
     bundleItems,
   ]);
 
-  // Load draft on mount (or initialize defaults)
-  useEffect(() => {
-    // If caseId is present, load that specific draft. Otherwise generic.
-    loadDraft(effectiveCaseId);
+  // Fetch the case so the editor knows which backend-generated template to
+  // load. caseId is the only thing the route gives us — case_type code +
+  // display name come from the server (single source of truth).
+  //
+  // The "default-case" fallback exists for the deep-link path
+  // /lawyer-case-editor (no caseId); in that mode the editor is read-only
+  // until the lawyer comes through the wizard.
+  const { data: caseRecord } = useQuery({
+    queryKey: ["case", effectiveCaseId],
+    queryFn: () => casesApi.getCase(effectiveCaseId),
+    enabled: Boolean(caseId) && caseId !== "default-case",
+    staleTime: 1000 * 60,
+  });
 
-    // We only init defaults if the bundle is empty (handled inside store or here?)
-    // initializeDefaultBundle checks emptiness internally.
-    initializeDefaultBundle(DEFAULT_CASE_DOCS);
-  }, [loadDraft, initializeDefaultBundle, effectiveCaseId]);
+  // Load draft on mount.
+  useEffect(() => {
+    loadDraft(effectiveCaseId);
+  }, [loadDraft, effectiveCaseId]);
+
+  // Seed the bundle with a single document derived from the case's
+  // case_types.code. The bundle stays a one-doc-per-case-type model — the
+  // composite .docx already contains all the legal sections (Cause Title,
+  // Plaint, Verification, Schedules, Vakalatnama) separated by Heading 1
+  // markers, so a section navigator can be built off the document itself
+  // in Phase 2 rather than off the bundle.
+  useEffect(() => {
+    if (!caseRecord) return;
+    initializeDefaultBundle([
+      {
+        id: caseRecord.caseTypeCode,
+        title: caseRecord.caseTypeName,
+        url: caseTemplateApiPath(caseRecord.caseTypeCode)
+      }
+    ]);
+  }, [caseRecord, initializeDefaultBundle]);
 
   // Auto-save every 30 seconds
   useEffect(() => {
@@ -244,49 +282,51 @@ export default function CaseDocumentEditor() {
         return;
       }
 
-      // Load from DOCX
-      const doc = DEFAULT_CASE_DOCS.find((d) => d.id === docId);
-      if (!doc) return;
+      // Load from DOCX — the bundle entry's `url` is the source of truth.
+      // For backend templates it's an API path (e.g. /cases/types/<code>/template)
+      // and we go through apiClient so the bearer token rides along.
+      const templateUrl = docData?.url;
+      if (!templateUrl) return;
 
       setCurrentDocId(docId);
       setLoading(true);
 
       try {
-        console.log(`[DOCX Loader] Loading document: ${doc.title}`);
+        console.log(`[DOCX Loader] Loading document from: ${templateUrl}`);
 
-        // ... (existing fetch logic) ...
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 15000);
-        const response = await fetch(resolveTemplateUrl(doc.url), { signal: controller.signal });
-        clearTimeout(timeoutId);
-
-        if (!response.ok) {
-          throw new Error(`Failed to fetch: ${response.status}`);
+        let arrayBuffer: ArrayBuffer;
+        if (isApiPath(templateUrl)) {
+          // Backend-served template — extract case_types.code from the path
+          // and use the typed API helper so we get auth + error mapping for
+          // free.
+          const match = templateUrl.match(/\/cases\/types\/([^/]+)\/template/);
+          const code = match?.[1];
+          if (!code) {
+            throw new Error(`Unrecognised template path: ${templateUrl}`);
+          }
+          arrayBuffer = await casesApi.fetchCaseTemplateBytes(code);
+        } else {
+          // Local / uploaded URL (blob:, data:, http:) — plain fetch.
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 15000);
+          const response = await fetch(templateUrl, { signal: controller.signal });
+          clearTimeout(timeoutId);
+          if (!response.ok) {
+            throw new Error(`Failed to fetch: ${response.status}`);
+          }
+          arrayBuffer = await response.arrayBuffer();
         }
-
-        const arrayBuffer = await response.arrayBuffer();
-        let htmlContent = "";
-        try {
-          const result = await mammoth.convertToHtml({ arrayBuffer });
-          htmlContent = result.value || "";
-        } catch (convertError) {
-          console.warn("[DOCX Loader] HTML conversion failed, falling back to text.", convertError);
-          const textResult = await mammoth.extractRawText({ arrayBuffer });
-          const plainText = textResult.value || "";
-          htmlContent = plainText
-            .split("\n")
-            .map((line) => `<p>${line}</p>`)
-            .join("");
-        }
-
-        // Initialize as HTML (DocEditor will handle it)
-        setEditorContent(htmlContent);
-        // Note: We don't save immediately, wait for auto-save or edit
+        // docx-preview renders directly from the bytes — no HTML conversion
+        // step. Storing the buffer (not the HTML) preserves Word's exact
+        // formatting and lets us pipe the same bytes into per-page PDF
+        // extraction for the signature workflow later.
+        setDocxBytes(arrayBuffer);
+        setRenderedPages([]); // cleared until the new render finishes
       } catch (error) {
         const message =
           error instanceof DOMException && error.name === "AbortError"
             ? "Request timed out while loading the template."
-            : "Unable to load the template. Please check that the file exists in /public/templates.";
+            : "Unable to load the template. Please confirm the template exists for this case type.";
         console.error(`[DOCX Loader] Error loading document:`, error);
         setEditorContent(`<p>${message}</p>`);
       } finally {
@@ -316,12 +356,6 @@ export default function CaseDocumentEditor() {
       loadDocument(nextDocId);
     }
   }, [bundleItems, currentDocId, loadDocument, setCurrentDocId]);
-
-  const handleContentChange = (newContent: JSONContent) => {
-    setEditorContent(newContent);
-    // Optionally auto-save immediately on change? Or wait for interval.
-    // Interval is safer for performance.
-  };
 
   const handleDocumentSelect = (docId: string) => {
     // Save current document before switching
@@ -366,25 +400,18 @@ export default function CaseDocumentEditor() {
       "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
       fileName.endsWith(".docx")
     ) {
-      // Convert DOCX to HTML and add as document
-      try {
-        const arrayBuffer = await file.arrayBuffer();
-        const result = await mammoth.convertToHtml({ arrayBuffer });
-        const htmlContent = result.value;
-
-        addUploadedDocument({
-          title: fileName.replace(".docx", ""),
-          type: "docx",
-          content: htmlContent,
-        });
-        saveDraft(effectiveCaseId);
-
-        // Optionally switch to the newly uploaded document
-        // You would need to handle this in the store
-      } catch (error) {
-        console.error("Error converting DOCX:", error);
-        alert("Failed to convert DOCX file");
-      }
+      // Stash the raw .docx as a Blob URL on the bundle so the same
+      // loadDocument path that handles backend templates can pick it up:
+      // isApiPath() returns false → plain fetch() of the blob: URL →
+      // ArrayBuffer → docx-preview. No mammoth conversion needed; the
+      // file is rendered with Word fidelity just like the case template.
+      const blobUrl = URL.createObjectURL(file);
+      addUploadedDocument({
+        title: fileName.replace(/\.docx$/i, ""),
+        type: "docx",
+        url: blobUrl,
+      });
+      saveDraft(effectiveCaseId);
     } else {
       // Add as attachment (PDF, image, etc.)
       const url = URL.createObjectURL(file);
@@ -421,7 +448,7 @@ export default function CaseDocumentEditor() {
   };
 
   const currentDocTitle =
-    DEFAULT_CASE_DOCS.find((d) => d.id === currentDocId)?.title || "Document";
+    (currentDocId && documentsById[currentDocId]?.title) || "Document";
   const selectedAttachment = selectedAttachmentId
     ? attachmentsById[selectedAttachmentId]
     : null;
@@ -451,7 +478,13 @@ export default function CaseDocumentEditor() {
       brandTitle="LawFlow"
       brandSubtitle="Case Document Preparation"
     >
-      <div className="flex flex-col h-full bg-gray-50 -m-6">
+      {/* Pin the editor to the viewport below the dashboard header so the
+          formatting toolbar + sidebar stay in place while the document
+          itself scrolls. Without this, the dashboard layout's
+          min-h-screen would let the whole page scroll, taking the
+          toolbar out of view (the bug the user reported). The fixed
+          72px is the rendered height of the dashboard header. */}
+      <div className="fixed inset-x-0 top-[72px] bottom-0 flex flex-col bg-gray-100 overflow-hidden">
         <TopActionBar
           onSaveDraft={handleSaveDraft}
           onDownload={handleDownload}
@@ -474,6 +507,15 @@ export default function CaseDocumentEditor() {
               }
             }}
             caseId={caseId}
+            pages={renderedPages}
+            onSendPageToClient={(pageIndex) => {
+              // Opens the signature panel with the page pre-selected.
+              // Per-page extraction (DOCX → PDF for one page) is wired
+              // up in the next sub-phase; for now this just opens the
+              // existing signature panel so the lawyer sees the flow.
+              console.log(`[Signature] requested page ${pageIndex + 1}`);
+              setIsSignaturePanelOpen(true);
+            }}
           />
           {isAttachmentView && selectedAttachment ? (
             <div className="flex-1 overflow-auto bg-white p-6">
@@ -545,11 +587,20 @@ export default function CaseDocumentEditor() {
               </div>
             </div>
           ) : (
-            <DocEditor
-              content={editorContent}
-              onContentChange={handleContentChange}
-              isLoading={isLoading}
-            />
+            // Stack the formatting toolbar above the page surface so it
+            // hovers as a fixed strip while the lawyer scrolls through
+            // pages — same pattern as Word's ribbon.
+            <div className="flex flex-1 flex-col overflow-hidden">
+              <ContentEditableToolbar />
+              <div className="flex-1 overflow-hidden">
+                <DocxPreviewSurface
+                  arrayBuffer={docxBytes}
+                  isLoading={isLoading}
+                  onPagesReady={setRenderedPages}
+                  editable
+                />
+              </div>
+            </div>
           )}
         </div>
 

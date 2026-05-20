@@ -1,5 +1,14 @@
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { promises as fs } from "node:fs";
+
 import { pool } from "../../config/db.js";
 import { ApiError } from "../../utils/apiError.js";
+
+// Absolute path to the case-templates root. Computed once at module load so
+// the path traversal check below is anchored to a single trusted directory.
+const here = path.dirname(fileURLToPath(import.meta.url));
+const CASE_TEMPLATES_DIR = path.resolve(here, "..", "..", "services", "case-templates");
 
 function mapCaseType(row) {
   return {
@@ -51,6 +60,57 @@ async function findCaseTypeById(caseTypeId) {
   );
 
   return result.rows[0] || null;
+}
+
+// Resolve a case-template .docx for a given case_types.code.
+//
+// Security model:
+//   1. The DB row is the source of truth for both `category` and `code` — the
+//      caller's input is only used to look up the row, never to build the path.
+//      This means a request like `?code=../../etc/passwd` cannot escape the
+//      template directory: it would simply fail the SELECT.
+//   2. After computing the path, we re-resolve and check it still sits under
+//      CASE_TEMPLATES_DIR (belt-and-braces defence against any future change
+//      that lets user input near path.join).
+//   3. Filename naming matches `case_types.code` exactly (kebab_case). The
+//      generator writes files using these same identifiers; the lookup is a
+//      simple string equality, no escape needed.
+export async function resolveCaseTemplate(code) {
+  const result = await pool.query(
+    `SELECT code, category, display_name
+     FROM case_types
+     WHERE code = $1`,
+    [code]
+  );
+
+  if (result.rowCount === 0) {
+    throw new ApiError(404, "Case type not found");
+  }
+
+  const row = result.rows[0];
+  const filePath = path.resolve(CASE_TEMPLATES_DIR, row.category, `${row.code}.docx`);
+
+  if (!filePath.startsWith(CASE_TEMPLATES_DIR + path.sep)) {
+    // Path-traversal guard. Should never trigger because category + code are
+    // DB-controlled, but bail before touching the filesystem if anything is
+    // off (e.g., schema seed accidentally inserts ".." in category).
+    throw new ApiError(500, "Invalid template path");
+  }
+
+  try {
+    await fs.access(filePath);
+  } catch {
+    // DB has the case type but the .docx hasn't been generated on this host.
+    // Run `npm run generate:case-templates` once and the file will appear.
+    throw new ApiError(404, "Template file is not available on the server");
+  }
+
+  return {
+    filePath,
+    fileName: `${row.code}.docx`,
+    displayName: row.display_name,
+    category: row.category
+  };
 }
 
 // Build the SELECT used by every "fetch a case" path so the joined case_type

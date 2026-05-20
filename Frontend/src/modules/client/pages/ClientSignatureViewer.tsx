@@ -6,8 +6,6 @@ import { Rnd } from "react-rnd";
 import { ImagePlus, Type, CheckCircle2, Download, RotateCcw } from "lucide-react";
 import ClientLayout from "../components/ClientLayout";
 import { useSignatureRequestsStore } from "../../lawyer/signatures/store/signatureRequests.store";
-import * as mammoth from "mammoth";
-import { DEFAULT_CASE_DOCS } from "../../lawyer/data/defaultCaseDocuments";
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL(
   "pdfjs-dist/build/pdf.worker.min.mjs",
@@ -65,16 +63,6 @@ function createTypedSignatureDataUrl(name: string): string {
   ctx.restore();
 
   return canvas.toDataURL("image/png");
-}
-
-function resolveTemplateUrl(path: string): string {
-  if (path.startsWith("http://") || path.startsWith("https://")) {
-    return path;
-  }
-  const base = import.meta.env.BASE_URL || "/";
-  const normalizedBase = base.endsWith("/") ? base : `${base}/`;
-  const normalizedPath = path.startsWith("/") ? path.slice(1) : path;
-  return `${normalizedBase}${normalizedPath}`;
 }
 
 function formatDateTime(value?: string) {
@@ -243,6 +231,10 @@ export default function ClientSignatureViewer() {
     let url: string | null = null;
     const run = async () => {
       if (!request) return;
+    // The client view receives a baked PDF data-URL whenever the lawyer
+    // initiates a signature request — that's the normal path. If the
+    // request lacks a PDF (e.g., follow-up request without re-rendering),
+    // fall back to a text-snapshot rendering and finally a placeholder.
     const bytes =
       request.pdfDataUrl && request.pdfDataUrl.startsWith("data:application/pdf")
         ? dataUrlToBytes(request.pdfDataUrl)
@@ -253,32 +245,8 @@ export default function ClientSignatureViewer() {
                 return await generatePdfFromText(request.docTitle, text);
               }
             }
-            const requestTitle = request.docTitle.toLowerCase();
-            const template = DEFAULT_CASE_DOCS.find((doc) => {
-              const docTitle = doc.title.toLowerCase();
-                return (
-                  docTitle === requestTitle ||
-                  requestTitle.includes(docTitle) ||
-                  docTitle.includes(requestTitle)
-                );
-              });
-              if (template?.url) {
-                try {
-                  const response = await fetch(resolveTemplateUrl(template.url));
-                  if (response.ok) {
-                    const arrayBuffer = await response.arrayBuffer();
-                    const result = await mammoth.extractRawText({ arrayBuffer });
-                    const text = result.value?.trim();
-                    if (text) {
-                      return await generatePdfFromText(request.docTitle, text);
-                    }
-                  }
-                } catch (error) {
-                  console.error("Failed to load template docx:", error);
-                }
-              }
-              return await generateMockPdf(request.docTitle);
-            })();
+            return await generateMockPdf(request.docTitle);
+          })();
 
       setPdfBytes(bytes);
       const blob = new Blob([bytes as BlobPart], { type: "application/pdf" });

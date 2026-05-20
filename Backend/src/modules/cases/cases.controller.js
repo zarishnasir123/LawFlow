@@ -3,12 +3,33 @@ import {
   getCaseForLawyer,
   listCaseTypes,
   listCasesForLawyer,
+  resolveCaseTemplate,
   updateCase
 } from "./cases.service.js";
 
 export async function getCaseTypes(req, res) {
   const types = await listCaseTypes();
   return res.status(200).json({ caseTypes: types });
+}
+
+// Streams the .docx template for the given case_types.code.
+//
+// Returns the raw Word document with the correct OOXML MIME type so the
+// browser presents it as a download (or the editor can pipe it through
+// mammoth → HTML for in-app rendering in Module 3 Phase 2).
+export async function downloadCaseTemplate(req, res) {
+  const template = await resolveCaseTemplate(req.params.code);
+
+  res.setHeader(
+    "Content-Type",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+  );
+  res.setHeader(
+    "Content-Disposition",
+    `attachment; filename="${template.fileName}"`
+  );
+
+  return res.sendFile(template.filePath);
 }
 
 export async function createMyCase(req, res) {

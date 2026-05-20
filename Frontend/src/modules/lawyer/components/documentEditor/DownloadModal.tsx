@@ -8,7 +8,7 @@ import type { JSONContent } from "@tiptap/react";
 import { AttachmentBlock } from "../../extensions/AttachmentBlock";
 import { ImageAttachment } from "../../extensions/ImageAttachment";
 import { useDocumentEditorStore, type Attachment } from "../../store/documentEditor.store";
-import { DEFAULT_CASE_DOCS } from "../../data/defaultCaseDocuments";
+import { casesApi } from "../../api/cases.api";
 import { pdfjs } from "react-pdf";
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL(
@@ -83,16 +83,17 @@ export default function DownloadModal({
         return "<p></p>";
     };
 
-    const resolveTemplateUrl = (path: string) => {
-        if (path.startsWith("http://") || path.startsWith("https://")) {
-            return path;
-        }
-        const base = import.meta.env.BASE_URL || "/";
-        const normalizedBase = base.endsWith("/") ? base : `${base}/`;
-        const normalizedPath = path.startsWith("/") ? path.slice(1) : path;
-        return `${normalizedBase}${normalizedPath}`;
-    };
-
+    // Resolve a document's HTML, going through the most authoritative source
+    // available:
+    //   1. live editor JSON  (the lawyer is editing right now)
+    //   2. saved JSON         (auto-saved or restored from draft)
+    //   3. legacy HTML        (older drafts before the JSON migration)
+    //   4. plain-text content (last-resort migration path)
+    //   5. backend template   (re-fetch the .docx and convert via mammoth)
+    //
+    // The backend-template branch only fires the very first time the lawyer
+    // exports a document they have never opened in the editor (i.e. the JSON
+    // was never populated). After that the JSON path covers it.
     const resolveDocHtmlAsync = async (docId: string) => {
         if (docId === currentDocId && activeEditorRef) {
             return activeEditorRef.getHTML();
@@ -105,19 +106,24 @@ export default function DownloadModal({
         if (doc?.legacyHtml) return doc.legacyHtml;
         if (documentContents[docId]) return documentContents[docId];
 
-        const templateUrl =
-            doc?.url || DEFAULT_CASE_DOCS.find((entry) => entry.id === docId)?.url;
+        const templateUrl = doc?.url;
         if (!templateUrl) return "<p></p>";
 
         try {
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 15000);
-            const response = await fetch(resolveTemplateUrl(templateUrl), { signal: controller.signal });
-            clearTimeout(timeoutId);
-            if (!response.ok) {
-                throw new Error(`Failed to fetch: ${response.status}`);
+            let arrayBuffer: ArrayBuffer;
+            const apiMatch = templateUrl.match(/\/cases\/types\/([^/]+)\/template/);
+            if (apiMatch) {
+                arrayBuffer = await casesApi.fetchCaseTemplateBytes(apiMatch[1]);
+            } else {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 15000);
+                const response = await fetch(templateUrl, { signal: controller.signal });
+                clearTimeout(timeoutId);
+                if (!response.ok) {
+                    throw new Error(`Failed to fetch: ${response.status}`);
+                }
+                arrayBuffer = await response.arrayBuffer();
             }
-            const arrayBuffer = await response.arrayBuffer();
             const result = await mammoth.convertToHtml({ arrayBuffer });
             return result.value || "<p></p>";
         } catch (error) {

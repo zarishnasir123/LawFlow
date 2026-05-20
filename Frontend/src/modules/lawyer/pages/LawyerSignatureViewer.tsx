@@ -13,8 +13,6 @@ import {
 import LawyerLayout from "../components/LawyerLayout";
 import { useDocumentEditorStore } from "../store/documentEditor.store";
 import { useSignatureRequestsStore } from "../signatures/store/signatureRequests.store";
-import * as mammoth from "mammoth";
-import { DEFAULT_CASE_DOCS } from "../data/defaultCaseDocuments";
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL(
   "pdfjs-dist/build/pdf.worker.min.mjs",
@@ -72,16 +70,6 @@ function createTypedSignatureDataUrl(name: string): string {
   ctx.restore();
 
   return canvas.toDataURL("image/png");
-}
-
-function resolveTemplateUrl(path: string): string {
-  if (path.startsWith("http://") || path.startsWith("https://")) {
-    return path;
-  }
-  const base = import.meta.env.BASE_URL || "/";
-  const normalizedBase = base.endsWith("/") ? base : `${base}/`;
-  const normalizedPath = path.startsWith("/") ? path.slice(1) : path;
-  return `${normalizedBase}${normalizedPath}`;
 }
 
 function formatDateTime(value?: string) {
@@ -250,36 +238,15 @@ export default function LawyerSignatureViewer() {
         request.pdfDataUrl ||
         request.lawyerSignedPdfDataUrl ||
         request.signedPdfDataUrl;
+      // If the request already carries a signed PDF data-URL we use that
+      // verbatim. Otherwise we render a stub PDF based on the doc title — the
+      // real bytes will arrive once the lawyer initiates the signature request
+      // from the editor (which is the only entry-point that ever sets
+      // pdfDataUrl on a SignatureRequest).
       const bytes =
         baseDataUrl && baseDataUrl.startsWith("data:application/pdf")
           ? dataUrlToBytes(baseDataUrl)
-          : await (async () => {
-              const requestTitle = request.docTitle.toLowerCase();
-              const template = DEFAULT_CASE_DOCS.find((doc) => {
-                const docTitle = doc.title.toLowerCase();
-                return (
-                  docTitle === requestTitle ||
-                  requestTitle.includes(docTitle) ||
-                  docTitle.includes(requestTitle)
-                );
-              });
-              if (template?.url) {
-                try {
-                  const response = await fetch(resolveTemplateUrl(template.url));
-                  if (response.ok) {
-                    const arrayBuffer = await response.arrayBuffer();
-                    const result = await mammoth.extractRawText({ arrayBuffer });
-                    const text = result.value?.trim();
-                    if (text) {
-                      return generatePdfFromText(request.docTitle, text);
-                    }
-                  }
-                } catch (error) {
-                  console.warn("[LawyerSignature] Template fetch failed", error);
-                }
-              }
-              return generateMockPdf(request.docTitle);
-            })();
+          : generateMockPdf(request.docTitle);
 
       setPdfBytes(bytes);
       const safeBytes = new Uint8Array(bytes);

@@ -7,6 +7,7 @@ import { validateRequest } from "../../middleware/validateRequest.js";
 
 import {
   createMyCase,
+  downloadCaseTemplate,
   getCaseTypes,
   getMyCase,
   listMyCases,
@@ -14,6 +15,7 @@ import {
 } from "./cases.controller.js";
 import {
   caseIdParamValidator,
+  caseTypeCodeParamValidator,
   createCaseValidator,
   updateCaseValidator
 } from "./cases.validators.js";
@@ -23,6 +25,19 @@ const router = Router();
 // Case-type catalog is needed by the lawyer's "create case" picker. Any
 // authenticated user can read it — no PII, just the supported template list.
 router.get("/types", authenticate, asyncHandler(getCaseTypes));
+
+// .docx template download for a given case_types.code. The Tiptap editor
+// (Module 3 Phase 2) calls this endpoint to bootstrap the editor surface with
+// the canonical plaint scaffolding for the case type the lawyer picked.
+// Restricted to lawyers because clients/registrars don't draft plaints.
+router.get(
+  "/types/:code/template",
+  authenticate,
+  authorizeRoles("lawyer"),
+  caseTypeCodeParamValidator,
+  validateRequest,
+  asyncHandler(downloadCaseTemplate)
+);
 
 router.post(
   "/",
