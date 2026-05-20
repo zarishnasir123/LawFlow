@@ -69,6 +69,17 @@ export const createCaseValidator = [
 
 export const caseIdParamValidator = [uuidParam("caseId")];
 
+// case_types.code is kebab-style snake_case ([a-z_]+) — restrict before the DB
+// lookup so a malicious caller can't probe the route with arbitrary strings.
+// The DB lookup is still the authoritative gate, but rejecting obvious garbage
+// at the edge keeps query logs clean.
+export const caseTypeCodeParamValidator = [
+  param("code")
+    .isString()
+    .matches(/^[a-z][a-z_]{2,80}$/)
+    .withMessage("code must be a lowercase snake_case identifier")
+];
+
 export const updateCaseValidator = [
   uuidParam("caseId"),
   optionalStringField(["title"], "Title", { max: 300 }),

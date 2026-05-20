@@ -46,12 +46,33 @@ export type CreateCasePayload = {
 
 export type UpdateCasePayload = Partial<Omit<CreateCasePayload, "caseTypeId">>;
 
+// Relative API path that streams the generated .docx for a given
+// case_types.code. Building it here (not inline at call-sites) keeps the
+// path in one place and lets the apiClient interceptor attach auth headers
+// without us hand-rolling a fetch().
+export function caseTemplateApiPath(code: string): string {
+  return `/cases/types/${code}/template`;
+}
+
 export const casesApi = {
   listCaseTypes: async (): Promise<ApiCaseType[]> => {
     const { data } = await apiClient.get<{ caseTypes: ApiCaseType[] }>(
       "/cases/types"
     );
     return data.caseTypes;
+  },
+
+  // Download the .docx template bytes for a given case_types.code. Returns an
+  // ArrayBuffer ready to feed straight into mammoth (now) or SuperDoc (Phase 2).
+  // Authentication comes from the apiClient interceptor; we never expose the
+  // template via a public URL because Module 3 Phase 2 will tie editable
+  // templates to case ownership.
+  fetchCaseTemplateBytes: async (code: string): Promise<ArrayBuffer> => {
+    const { data } = await apiClient.get<ArrayBuffer>(
+      caseTemplateApiPath(code),
+      { responseType: "arraybuffer" }
+    );
+    return data;
   },
 
   listMyCases: async (): Promise<ApiCase[]> => {

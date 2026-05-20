@@ -22,6 +22,7 @@ import {
   X,
   Upload,
   GripVertical,
+  Layers,
 } from "lucide-react";
 import clsx from "clsx";
 import { useState } from "react";
@@ -30,11 +31,16 @@ import {
   type BundleItem,
 } from "../../store/documentEditor.store";
 import { useSignatureRequestsStore } from "../../signatures/store/signatureRequests.store";
+import DocumentPagesPanel from "./DocumentPagesPanel";
 
 interface DocumentSidebarProps {
   onDocumentSelect: (docId: string) => void;
   onAttachmentSelect?: (attachmentId: string | null) => void;
   caseId?: string;
+  // Pages rendered by docx-preview. The sidebar's Pages panel uses these
+  // DOM refs for jump-to-page and per-page actions like "send to client".
+  pages?: HTMLElement[];
+  onSendPageToClient?: (pageIndex: number, pageElement: HTMLElement) => void;
 }
 
 function formatFileSize(bytes: number): string {
@@ -73,6 +79,9 @@ interface SortableBundleItemProps {
   onPreview?: () => void;
   fileInfo?: { size: number; type: string }; // Extra info for attachments
   signedLabel?: string | null;
+  // 1-based ordinal — displayed as a numbered badge so the bundle reads
+  // like a numbered filing sequence rather than an unordered list.
+  ordinal: number;
 }
 
 function SortableBundleItem({
@@ -83,6 +92,7 @@ function SortableBundleItem({
   onPreview,
   fileInfo,
   signedLabel,
+  ordinal,
 }: SortableBundleItemProps) {
   const {
     attributes,
@@ -129,6 +139,18 @@ function SortableBundleItem({
       >
         <GripVertical className="w-4 h-4" />
       </div>
+
+      {/* Ordinal badge */}
+      <span
+        className={clsx(
+          "flex-shrink-0 mt-0.5 w-6 h-6 rounded-md text-[11px] font-semibold flex items-center justify-center",
+          isActive
+            ? "bg-[var(--primary)] text-white shadow-sm"
+            : "bg-gray-100 text-gray-600"
+        )}
+      >
+        {ordinal}
+      </span>
 
       {/* Content */}
       <div className="flex-1 min-w-0 cursor-pointer">
@@ -186,6 +208,8 @@ export default function DocumentSidebar({
   onDocumentSelect,
   onAttachmentSelect,
   caseId,
+  pages = [],
+  onSendPageToClient,
 }: DocumentSidebarProps) {
   const {
     bundleItems,
@@ -257,18 +281,25 @@ export default function DocumentSidebar({
 
   return (
     <div className="w-80 bg-white border-r border-gray-200 flex flex-col h-full">
+      {/* One scrollable column. The Bundle Sequencing list shrinks to fit its
+          items (capped) so the Document Sections panel below it stays
+          visible without the lawyer having to scroll past the bundle. */}
+      <div className="flex-1 overflow-y-auto">
       {/* Header */}
-      <div className="p-4 border-b border-gray-200 bg-gray-50">
-        <h2 className="text-base font-semibold text-gray-900">
-          Bundle Sequencing
-        </h2>
-        <p className="text-xs text-gray-500 mt-1">
-          Drag to reorder - {bundleItems.length} items
+      <div className="px-4 py-3 border-b border-gray-200 bg-gradient-to-b from-gray-50 to-white sticky top-0 z-10">
+        <div className="flex items-center gap-2">
+          <Layers className="w-4 h-4 text-gray-500" />
+          <h2 className="text-xs font-semibold text-gray-900 uppercase tracking-wider">
+            Case Bundle
+          </h2>
+        </div>
+        <p className="text-[11px] text-gray-500 mt-1 ml-6">
+          {bundleItems.length} {bundleItems.length === 1 ? "document" : "documents"} · drag to reorder
         </p>
       </div>
 
       {/* Bundle List */}
-      <div className="flex-1 overflow-y-auto p-3">
+      <div className="p-3">
         {bundleItems.length === 0 ? (
           <div className="text-center py-6 px-4 bg-gray-50 rounded-lg border-2 border-dashed border-gray-200 mt-4">
             <Upload className="w-8 h-8 text-gray-400 mx-auto mb-2" />
@@ -285,7 +316,7 @@ export default function DocumentSidebar({
               strategy={verticalListSortingStrategy}
             >
               <div className="space-y-1">
-                {bundleItems.map((item) => {
+                {bundleItems.map((item, itemIndex) => {
                   // Get extra info if attachment
                   const att =
                     item.type === "ATTACHMENT"
@@ -320,6 +351,7 @@ export default function DocumentSidebar({
                     <SortableBundleItem
                       key={item.id}
                       item={item}
+                      ordinal={itemIndex + 1}
                       isActive={item.id === derivedSelectedId}
                       fileInfo={fileInfo}
                       signedLabel={signedLabel}
@@ -365,6 +397,17 @@ export default function DocumentSidebar({
             </SortableContext>
           </DndContext>
         )}
+      </div>
+
+      {/* Document Pages — real page boundaries from docx-preview's
+          paginated render, matching Word's Navigation Pane "Pages" tab.
+          Each row labels the page by its first heading (Cause Title,
+          Verification, Vakalatnama, …) and offers a per-page send-to-
+          client action for signature workflows. */}
+      <DocumentPagesPanel
+        pages={pages}
+        onSendPageToClient={onSendPageToClient}
+      />
       </div>
 
       {previewAttachment && isPreviewOpen && (
