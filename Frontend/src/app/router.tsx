@@ -17,6 +17,7 @@ import ForgotPassword from "../modules/auth/pages/ForgotPassword";
 import VerifyEmail from "../modules/auth/pages/VerifyEmail";
 import AuthCallback from "../modules/auth/pages/AuthCallback";
 import ResetPassword from "../modules/auth/pages/ResetPassword";
+import ChangeTempPassword from "../modules/auth/pages/ChangeTempPassword";
 
 /* =====================================================
    CLIENT MODULE IMPORTS
@@ -126,6 +127,16 @@ const resetPasswordRoute = createRoute({
       token: (search.token as string) || undefined,
     };
   },
+});
+
+// Forced password-change page (registrar's first login with the temp
+// password, or any user with must_change_password=true). Protected by
+// requireAuth so an anonymous visit bounces to /login.
+const changeTempPasswordRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "change-temp-password",
+  beforeLoad: requireAuth(),
+  component: ChangeTempPassword,
 });
 
 /* =====================================================
@@ -439,6 +450,7 @@ const routeTree = rootRoute.addChildren([
   verifyEmailRoute,
   authCallbackRoute,
   resetPasswordRoute,
+  changeTempPasswordRoute,
 
   // Client Routes
   clientDashboardRoute,

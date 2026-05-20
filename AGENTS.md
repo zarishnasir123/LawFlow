@@ -153,6 +153,56 @@ Rules:
 - Keep JWT payloads small.
 - Do not put CNIC, phone, document URLs, case data, or signatures inside JWTs.
 
+## Registrar credentials flow (admin-provisioned accounts)
+
+Registrars never self-register. Admin creates the account; the server
+generates a temporary password and emails it; the registrar is forced to
+replace it on first sign-in.
+
+Generation + storage rules:
+
+- Generate the temporary password server-side with rejection-sampling over
+  HTML-safe characters only. **Never** include `&`, `<`, `>`, `"`, or `'`
+  in the temp-password charset — the credentials email runs through
+  Handlebars and any HTML-special character gets entity-encoded, breaking
+  bcrypt comparison when the registrar copies the displayed value.
+- Persist `must_change_password = true` on the new user row. The flag is
+  the gate that forces the registrar through `/change-temp-password`
+  before they can use the dashboard. `changeAuthenticatedPassword` clears
+  this flag and revokes the session in the same transaction.
+- Email the plaintext password via the credentials template using
+  triple-brace Handlebars (`{{{temporaryPassword}}}`) so the renderer
+  cannot HTML-escape it. The defence above (HTML-safe charset) is the
+  primary guard; the triple-brace is belt-and-braces.
+
+Email delivery rules:
+
+- The create-registrar happy path uses `queueRegistrarCredentialsEmail`
+  (non-blocking, `setImmediate`). The admin's Create button must not
+  block on Gmail's 5–8 second SMTP handshake.
+- The explicit "Resend Credentials" action on the registrars list uses
+  the synchronous `deliverRegistrarCredentialsEmail` — that path actively
+  needs per-call SMTP feedback so the admin knows whether to retry.
+- Treat **either** `emailSent === true` or `emailQueued === true` as
+  success on the admin UI. Only when both are false does the
+  "email NOT delivered" toast appear.
+- Resending credentials rotates the password. Always confirm with the
+  admin via a dialog before invoking the resend endpoint, because the
+  rotation invalidates the previously emailed password immediately —
+  including the one auto-sent at account creation.
+
+Login flow on the frontend:
+
+- The registrar login path posts to `/auth/login` with
+  `expectedRole: "registrar"`, same as client and lawyer. There is no
+  `/auth/login/registrar` endpoint and there never was.
+- After a successful registrar login, the dashboard component must call
+  `useEnforcePasswordChange()` (or equivalent) to redirect to
+  `/change-temp-password` whenever `mustChangePassword === true`.
+- The change-password endpoint revokes the session on success; the
+  frontend must clear local auth and route to `/login`. The user signs
+  in again with the new password.
+
 ## OAuth (Google sign-in)
 
 Only clients can sign in with Google. Lawyers, registrars, and admins use the local password flow only.

@@ -4,6 +4,7 @@ import { PenSquare, Send, Trash2, UserPlus, UserX, UserCheck } from "lucide-reac
 
 import StatusToast from "../components/modals/StatusToast";
 import DeleteRegistrarModal from "../components/modals/DeleteRegistrarModal";
+import ResendCredentialsConfirmationModal from "../components/modals/ResendCredentialsConfirmationModal";
 import {
   deleteRegistrar,
   fetchRegistrars,
@@ -16,6 +17,10 @@ import { extractApiErrorMessage } from "../../../shared/api/extractApiErrorMessa
 export default function Registrars() {
   const navigate = useNavigate();
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
+  // The Send action rotates the registrar's temp password and invalidates
+  // the one that was sent at account creation. Stage the target here so a
+  // confirmation dialog can interpose before the destructive rotation runs.
+  const [resendTargetId, setResendTargetId] = useState<string | null>(null);
   const [registrars, setRegistrars] = useState<Registrar[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -178,6 +183,30 @@ export default function Registrars() {
         onConfirm={handleConfirmDelete}
       />
 
+      {(() => {
+        const resendTarget = registrars.find(
+          (reg) => reg.registrarProfileId === resendTargetId,
+        );
+        return (
+          <ResendCredentialsConfirmationModal
+            open={Boolean(resendTargetId)}
+            registrarName={
+              resendTarget
+                ? `${resendTarget.firstName} ${resendTarget.lastName}`
+                : undefined
+            }
+            registrarEmail={resendTarget?.email}
+            onCancel={() => setResendTargetId(null)}
+            onConfirm={() => {
+              if (!resendTarget) return;
+              const target = resendTarget;
+              setResendTargetId(null);
+              handleResendCredentials(target);
+            }}
+          />
+        );
+      })()}
+
       <div className="w-full px-6 lg:px-8 xl:px-10 py-8 space-y-6">
           <section className="rounded-xl border border-green-100 bg-white p-6 shadow-sm">
             <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
@@ -282,7 +311,7 @@ export default function Registrars() {
                         Edit
                       </button>
                       <button
-                        onClick={() => handleResendCredentials(r)}
+                        onClick={() => setResendTargetId(r.registrarProfileId)}
                         className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-300 px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
                         disabled={isBusy || r.accountStatus !== "active"}
                         title={

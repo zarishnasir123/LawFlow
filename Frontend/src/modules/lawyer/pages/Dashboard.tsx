@@ -8,6 +8,7 @@ import UpcomingHearings from "../../../shared/components/dashboard/UpcomingHeari
 import QuickActions from "../../../shared/components/dashboard/QuickActions";
 import type { ActivityItem, CaseItem } from "../../../shared/types/dashboard";
 import { useCurrentUser, displayFullName } from "../../auth/hooks/useCurrentUser";
+import { useEnforcePasswordChange } from "../../auth/hooks/useEnforcePasswordChange";
 import { useSignatureRequestsStore } from "../signatures/store/signatureRequests.store";
 import {
   lawyerDashboardActivity,
@@ -19,6 +20,7 @@ import {
 
 export default function LawyerDashboard() {
   const navigate = useNavigate();
+  useEnforcePasswordChange();
   const { data: currentUser } = useCurrentUser();
   const { requests } = useSignatureRequestsStore();
   const signedCount = requests.filter(

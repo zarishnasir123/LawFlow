@@ -28,7 +28,13 @@ export type RegistrarsResponse = {
 };
 
 export type RegistrarCredentialsEmailDelivery = {
+  // True only when SMTP returned success synchronously (the Resend action
+  // awaits delivery so the admin sees per-call feedback).
   emailSent: boolean;
+  // True when the create flow scheduled the SMTP send via setImmediate.
+  // From the admin's perspective, emailQueued is just as good as emailSent
+  // — both mean the credential is on its way to the registrar's inbox.
+  emailQueued?: boolean;
   deliveryMode: "smtp" | "console" | "failed";
   deliveryReason?: string;
 };
