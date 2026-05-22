@@ -7,6 +7,10 @@ import hpp from "hpp";
 import authRoutes from "./modules/auth/auth.routes.js";
 import casesRoutes from "./modules/cases/cases.routes.js";
 import registrarRoutes from "./modules/registrar/registrar.routes.js";
+import {
+  caseSignatureRoutes,
+  publicSigningRoutes,
+} from "./modules/signatures/signatures.routes.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 import { notFoundHandler } from "./middleware/notFoundHandler.js";
 
@@ -60,6 +64,15 @@ app.get("/health", (req, res) => {
 
 app.use("/api/auth", authRoutes);
 app.use("/api/cases", casesRoutes);
+// Signature endpoints scoped to a case live under /api/cases/:caseId/...
+// so case ownership can be enforced through the join in the service
+// layer. The mergeParams option on the router lets the nested route
+// see :caseId from the parent mount.
+app.use("/api/cases/:caseId", caseSignatureRoutes);
+// Public signing endpoints — no auth middleware, the URL token IS
+// the credential. Mounted at /api/signing so the audit trail is clear
+// (any access through this path is unauthenticated by design).
+app.use("/api/signing", publicSigningRoutes);
 app.use("/api/registrars", registrarRoutes);
 
 app.use(notFoundHandler);

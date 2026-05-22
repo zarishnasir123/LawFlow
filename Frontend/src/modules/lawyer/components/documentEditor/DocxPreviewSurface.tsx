@@ -16,9 +16,13 @@ interface DocxPreviewSurfaceProps {
   // When true, content inside each rendered page becomes editable —
   // lawyer can click to position a caret, type to replace placeholders
   // like "[insert court city]", and use Ctrl+B / Ctrl+I / Ctrl+U for
-  // bold / italic / underline. Page borders + layout chrome stay
-  // non-editable so the Word-style page shape is preserved.
+  // bold / italic / underline.
   editable?: boolean;
+  // Called when the lawyer drops a sidebar PNG/JPG attachment onto a
+  // page. The handler receives the refId of the dragged attachment
+  // plus the drop coordinates so it can position the floating image
+  // exactly where the lawyer let go.
+  onImageDropped?: (refId: string, clientX: number, clientY: number) => void;
 }
 
 export default function DocxPreviewSurface({
@@ -26,6 +30,7 @@ export default function DocxPreviewSurface({
   isLoading,
   onPagesReady,
   editable = false,
+  onImageDropped,
 }: DocxPreviewSurfaceProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   // onPagesReady is stored in a ref so we don't re-run the render effect
@@ -48,24 +53,16 @@ export default function DocxPreviewSurface({
     let cancelled = false;
 
     renderAsync(arrayBuffer, container, undefined, {
-      // breakPages is the whole point of switching from mammoth → docx-preview:
-      // it honours Word's <w:lastRenderedPageBreak/> markers and renders
-      // each page as a separately-sized <section class="docx">.
+      // breakPages honours Word's <w:lastRenderedPageBreak/> markers
+      // and renders each page as a separately-sized <section class="docx">.
       breakPages: true,
-      // inWrapper keeps the rendered pages inside a single .docx-wrapper
-      // element so we can query them as a group for the navigator.
       inWrapper: true,
-      // Render headers/footers if the .docx defines them (our generated
-      // templates don't yet, but this future-proofs the surface).
       renderHeaders: true,
       renderFooters: true,
       renderFootnotes: true,
-      // Don't strip the .docx's own widths/heights — that's what makes the
-      // result look like a real Word page rather than a flowing column.
       ignoreWidth: false,
       ignoreHeight: false,
       ignoreFonts: false,
-      // Embed images as data URLs so they render without a separate fetch.
       useBase64URL: true,
       className: "docx",
       trimXmlDeclaration: true,
@@ -83,22 +80,10 @@ export default function DocxPreviewSurface({
           ".docx-wrapper > section.docx"
         );
 
-        // Turn each rendered page into a Word-style editable surface.
-        // We set contenteditable on the page itself (not the wrapper or
-        // individual paragraphs) so the lawyer can click anywhere,
-        // position a caret, and type — including across paragraphs and
-        // through placeholder brackets like "[insert court city]".
-        //
-        // spellcheck off because legal documents are full of CNICs,
-        // section references, and Latinate phrases that browser
-        // spellcheckers love to underline in red.
         if (editable) {
           pages.forEach((page) => {
             page.setAttribute("contenteditable", "true");
             page.setAttribute("spellcheck", "false");
-            // Suppress the focus outline browsers add by default for
-            // contenteditable — the page already has its own border and
-            // the outline looks out-of-place on a Word page.
             page.style.outline = "none";
           });
         }
@@ -130,10 +115,42 @@ export default function DocxPreviewSurface({
     );
   }
 
+  // The drag-over / drop handlers accept image attachments dragged from
+  // the sidebar. We key off the custom "application/x-lawflow-image"
+  // MIME type so OS-level drag-and-drop (text, links, files) doesn't
+  // accidentally trigger our drop logic.
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    if (!onImageDropped) return;
+    if (!e.dataTransfer.types.includes("application/x-lawflow-image")) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "copy";
+  };
+
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    if (!onImageDropped) return;
+    const raw = e.dataTransfer.getData("application/x-lawflow-image");
+    if (!raw) return;
+    e.preventDefault();
+    try {
+      const { refId } = JSON.parse(raw) as { refId?: string };
+      if (refId) {
+        onImageDropped(refId, e.clientX, e.clientY);
+      }
+    } catch (err) {
+      console.error("[DocxPreview] bad drag payload", err);
+    }
+  };
+
   return (
     // The container scrolls — docx-preview renders fixed-size A4/Letter
     // pages, so we let them sit in a centered scroll area like Word does.
-    <div className="h-full overflow-auto bg-gray-100 py-8">
+    // Slightly darker bg (gray-200) so the white pages read as paper-on-
+    // desk; matches Google Docs' editing canvas tone.
+    <div
+      className="h-full overflow-auto bg-[#f8f9fa] py-10"
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
+    >
       {/* Override docx-preview's default chrome:
           - It sets `background: gray` on .docx-wrapper which fights our
             own bg-gray-100 and produces the dark "frame" the user saw.
@@ -147,11 +164,13 @@ export default function DocxPreviewSurface({
           padding: 0 !important;
         }
         .docx-preview-host .docx-wrapper > section.docx {
-          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04) !important;
-          margin-bottom: 24px !important;
+          /* Google Docs-style paper shadow — soft, slightly lifted */
+          box-shadow: 0 1px 3px rgba(60, 64, 67, 0.15),
+                      0 4px 8px rgba(60, 64, 67, 0.08) !important;
+          margin-bottom: 32px !important;
           border: none !important;
           outline: none !important;
-          border-radius: 2px;
+          border-radius: 0;
         }
         .docx-preview-host .docx-wrapper > section.docx::before,
         .docx-preview-host .docx-wrapper > section.docx::after {
@@ -161,6 +180,41 @@ export default function DocxPreviewSurface({
         .docx-preview-host .docx-wrapper > section.docx:focus-within {
           box-shadow: 0 0 0 2px var(--primary), 0 1px 3px rgba(0, 0, 0, 0.08) !important;
         }
+        /* Floating image — Word's "In Front of Text" positioning.
+           Hovering shows a thin primary-color outline + the four
+           corner resize handles. Selected (last clicked) image stays
+           outlined even after the lawyer moves their mouse away. */
+        .lawflow-floating-image {
+          outline: 1px solid transparent;
+          transition: outline-color 0.15s ease;
+        }
+        .lawflow-floating-image:hover,
+        .lawflow-floating-image.lawflow-floating-image-selected {
+          outline: 1.5px solid var(--primary);
+        }
+        .lawflow-resize-handle {
+          position: absolute;
+          width: 10px;
+          height: 10px;
+          background: var(--primary);
+          border: 2px solid white;
+          border-radius: 50%;
+          box-shadow: 0 0 0 1px rgba(1, 65, 28, 0.2);
+          opacity: 0;
+          transition: opacity 0.15s ease;
+          z-index: 2;
+        }
+        .lawflow-floating-image:hover .lawflow-resize-handle,
+        .lawflow-floating-image-selected .lawflow-resize-handle {
+          opacity: 1;
+        }
+        /* Corner positions + cursors. The cursor classes (nwse / nesw)
+           are the standard "double-headed diagonal arrow" the browser
+           draws for resize affordances. */
+        .lawflow-resize-handle-nw { top: -6px; left: -6px;  cursor: nwse-resize; }
+        .lawflow-resize-handle-ne { top: -6px; right: -6px; cursor: nesw-resize; }
+        .lawflow-resize-handle-sw { bottom: -6px; left: -6px; cursor: nesw-resize; }
+        .lawflow-resize-handle-se { bottom: -6px; right: -6px; cursor: nwse-resize; }
       `}</style>
       <div
         ref={containerRef}

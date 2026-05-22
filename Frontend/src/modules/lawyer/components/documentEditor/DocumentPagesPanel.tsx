@@ -1,43 +1,33 @@
 import { useState, useEffect, useMemo } from "react";
-import { FileText, ChevronRight, Send } from "lucide-react";
+import { ChevronRight, Send } from "lucide-react";
 import clsx from "clsx";
 
 interface DocumentPagesPanelProps {
   // Live references to the rendered DOM pages from docx-preview. We use
   // refs (not derived data) because clicking a page should scrollIntoView
-  // the exact rendered element — translating through serialized data would
-  // lose that connection.
+  // the exact rendered element — translating through serialized data
+  // would lose that connection.
   pages: HTMLElement[];
   // Fired when the lawyer clicks the "send to client" icon on a specific
-  // page. The parent owns the signature-request workflow and decides what
-  // to do with the page (e.g., extract its content as PDF and open the
-  // signature request modal).
+  // page. The parent owns the signature-request workflow.
   onSendPageToClient?: (pageIndex: number, pageElement: HTMLElement) => void;
+  // Sidebar collapsed mode — compact number-only pills.
+  collapsed?: boolean;
 }
 
 // Try a series of strategies to find a meaningful label for a page:
-//
-//   1. A real heading tag (h1/h2/h3) — what docx-preview *should* emit
-//      when the source .docx has a Heading style applied.
+//   1. A real heading tag (h1/h2/h3) — what docx-preview emits when the
+//      source .docx has a Heading style applied.
 //   2. The first paragraph whose text matches our generator's section
-//      pattern "─── Section Name ───" — docx-preview can also render
-//      these as plain styled <p> if the source style is custom.
-//   3. The first non-empty block of text on the page — guarantees a
-//      meaningful label even for pages that have no heading at all
-//      (e.g., the second page of a long Body of the Plaint section).
-//
-// All three strategies fall back to the page number if nothing matches.
+//      pattern "─── Section Name ───".
+//   3. The first non-empty block of text on the page.
+// All three fall back to the page number if nothing matches.
 function deriveLabel(page: HTMLElement, fallback: string): string {
-  // Strategy 1: real heading tag.
   const heading = page.querySelector("h1, h2, h3, h4, h5, h6");
   if (heading?.textContent?.trim()) {
     return stripDashes(heading.textContent.trim());
   }
 
-  // Strategy 2: paragraph containing the "─── ... ───" pattern that our
-  // generator uses for sectionHeading() — these are H1s in the source
-  // .docx but docx-preview may render them as styled <p> if the heading
-  // style isn't recognised.
   const paragraphs = page.querySelectorAll("p");
   for (const p of Array.from(paragraphs)) {
     const text = p.textContent?.trim() || "";
@@ -46,12 +36,9 @@ function deriveLabel(page: HTMLElement, fallback: string): string {
     }
   }
 
-  // Strategy 3: first non-empty paragraph, truncated.
   for (const p of Array.from(paragraphs)) {
     const text = p.textContent?.trim();
     if (text && text.length > 2) {
-      // Trim to a readable preview length; sidebar gets unreadable
-      // if the label is a whole paragraph.
       return text.length > 38 ? `${text.slice(0, 38)}…` : text;
     }
   }
@@ -66,13 +53,10 @@ function stripDashes(text: string): string {
 export default function DocumentPagesPanel({
   pages,
   onSendPageToClient,
+  collapsed = false,
 }: DocumentPagesPanelProps) {
   const [activeIndex, setActiveIndex] = useState<number>(0);
 
-  // Build the displayed page list once per pages-array change. Using
-  // useMemo (not state) keeps the label derivation tied to the source
-  // pages array — if the parent re-renders with new pages, labels
-  // recompute automatically.
   const items = useMemo(
     () =>
       pages.map((page, index) => ({
@@ -83,9 +67,6 @@ export default function DocumentPagesPanel({
     [pages]
   );
 
-  // Highlight whichever page is closest to the top of the scroll viewport.
-  // This gives the lawyer a "you are here" indicator that stays in sync
-  // as they scroll through the document.
   useEffect(() => {
     if (pages.length === 0) return;
     const scrollHost = pages[0].closest(".docx-preview-host")?.parentElement;
@@ -120,18 +101,46 @@ export default function DocumentPagesPanel({
     return null;
   }
 
+  if (collapsed) {
+    return (
+      <div className="border-t border-gray-100 bg-white py-2">
+        <ol className="flex flex-col items-center gap-1 px-1">
+          {items.map((item) => {
+            const isActive = item.index === activeIndex;
+            return (
+              <li key={item.index}>
+                <button
+                  type="button"
+                  onClick={() => handlePageClick(item.index, item.element)}
+                  title={`${item.index + 1}. ${item.label}`}
+                  className={clsx(
+                    "flex items-center justify-center w-9 h-9 rounded-md text-[12px] font-semibold transition-colors",
+                    isActive
+                      ? "bg-[var(--primary)] text-white shadow-sm"
+                      : "bg-gray-50 text-gray-600 hover:bg-gray-100 hover:text-gray-900"
+                  )}
+                >
+                  {item.index + 1}
+                </button>
+              </li>
+            );
+          })}
+        </ol>
+      </div>
+    );
+  }
+
   return (
-    <div className="border-t border-gray-200 bg-white">
-      <div className="px-4 py-3 bg-gradient-to-b from-gray-50 to-white border-b border-gray-100">
-        <div className="flex items-center gap-2">
-          <FileText className="w-4 h-4 text-gray-500" />
-          <h2 className="text-xs font-semibold text-gray-900 uppercase tracking-wider">
+    <div className="border-t border-gray-100 bg-white">
+      <div className="px-4 py-3 bg-white">
+        <div className="flex items-center justify-between">
+          <h2 className="text-[11px] font-semibold text-gray-500 uppercase tracking-[0.08em]">
             Pages
           </h2>
+          <span className="text-[10px] text-gray-400 font-medium">
+            {pages.length}
+          </span>
         </div>
-        <p className="text-[11px] text-gray-500 mt-1 ml-6">
-          {pages.length} {pages.length === 1 ? "page" : "pages"} · click to jump or send
-        </p>
       </div>
       <ol className="py-1">
         {items.map((item) => {

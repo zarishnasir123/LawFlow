@@ -363,6 +363,13 @@ CREATE TABLE cases (
 
   opposite_party_name VARCHAR(200) NOT NULL,
 
+  -- The lawyer's edited HTML state of the case document. NULL until the
+  -- lawyer makes a change — when NULL, the editor renders the freshly
+  -- fetched template bytes from case-templates/<category>/<code>.docx.
+  -- Inline images (CNICs, photos) live here as data: URLs inside the
+  -- HTML, so a single column captures the entire edit state.
+  edited_html     TEXT,
+
   -- draft = lawyer is still drafting / editing
   -- submitted = sent to registrar, awaiting review
   -- returned = registrar bounced it back with remarks
@@ -373,6 +380,66 @@ CREATE TABLE cases (
   created_at      TIMESTAMP NOT NULL DEFAULT NOW(),
   updated_at      TIMESTAMP NOT NULL DEFAULT NOW(),
   submitted_at    TIMESTAMP
+);
+
+-- =====================================================================
+-- Signature requests: a single workflow item where the lawyer sends a
+-- snapshot of the case document to a recipient (typically the client)
+-- for e-signature. The snapshot is intentionally frozen at send time so
+-- the lawyer can keep editing the live document without disturbing an
+-- in-flight signature request.
+--
+-- Lifecycle:
+--   pending           → request created, awaiting first signer
+--   partially_signed  → at least one required signature collected
+--   fully_signed      → all required signatures collected
+--   expired           → past expires_at without completion
+--   cancelled         → lawyer revoked the request before completion
+-- =====================================================================
+CREATE TABLE signature_requests (
+  id                         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  case_id                    UUID NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
+  created_by_user_id         UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+
+  recipient_email            VARCHAR(200) NOT NULL,
+  recipient_name             VARCHAR(200),
+
+  -- Frozen snapshot of the document HTML at the moment of send. The
+  -- public signing page renders this verbatim so the client sees the
+  -- same content the lawyer sent, even if the lawyer keeps editing.
+  document_html_snapshot     TEXT NOT NULL,
+
+  -- Which pages were sent (0-based indices into the rendered document).
+  -- NULL means the whole document. Stored as JSONB so we can filter
+  -- requests by page if a "per-section status" UI ever needs it.
+  page_indices               JSONB,
+
+  -- Token for the public signing link. We store only the SHA-256 hash so
+  -- a leaked database dump can't grant signing access — the plaintext
+  -- token only ever exists in the email body and the URL the client
+  -- clicks. Same pattern as auth_sessions.refresh_token_hash.
+  token_hash                 VARCHAR(64) NOT NULL UNIQUE,
+
+  -- Required signers. Defaults reflect the common case: client signs,
+  -- lawyer signs separately later (or not at all).
+  requires_client_signature  BOOLEAN NOT NULL DEFAULT TRUE,
+  requires_lawyer_signature  BOOLEAN NOT NULL DEFAULT FALSE,
+
+  -- Captured signatures, as base64 PNG data URLs from the signature pad
+  -- canvas. Stored inline because they're tiny (a few KB each) and
+  -- tightly coupled to the request row.
+  client_signature_image     TEXT,
+  client_signed_at           TIMESTAMP,
+  lawyer_signature_image     TEXT,
+  lawyer_signed_at           TIMESTAMP,
+
+  status                     VARCHAR(30) NOT NULL DEFAULT 'pending'
+                             CHECK (status IN ('pending', 'partially_signed', 'fully_signed', 'expired', 'cancelled')),
+
+  expires_at                 TIMESTAMP NOT NULL,
+
+  created_at                 TIMESTAMP NOT NULL DEFAULT NOW(),
+  updated_at                 TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
 -- =====================================================================
@@ -418,6 +485,15 @@ CREATE INDEX idx_case_types_category ON case_types(category, sort_order);
 CREATE INDEX idx_cases_lawyer_user_id ON cases(lawyer_user_id);
 CREATE INDEX idx_cases_status         ON cases(status);
 
+-- token_hash already gets a UNIQUE index implicitly; only add what's
+-- needed for real query patterns.
+CREATE INDEX idx_signature_requests_case_id ON signature_requests(case_id);
+CREATE INDEX idx_signature_requests_case_status
+  ON signature_requests(case_id, status);
+CREATE INDEX idx_signature_requests_expires_at
+  ON signature_requests(expires_at)
+  WHERE status IN ('pending', 'partially_signed');
+
 -- =====================================================================
 -- Row Level Security: deny by default on every table.
 -- The Express backend uses SUPABASE_SERVICE_ROLE_KEY (and the local
@@ -440,6 +516,7 @@ ALTER TABLE auth_identities                ENABLE ROW LEVEL SECURITY;
 ALTER TABLE lawyer_rejection_history       ENABLE ROW LEVEL SECURITY;
 ALTER TABLE case_types                     ENABLE ROW LEVEL SECURITY;
 ALTER TABLE cases                          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE signature_requests             ENABLE ROW LEVEL SECURITY;
 
 -- =====================================================================
 -- Seed data: supported case types (5 civil + 5 family at tehsil level).
