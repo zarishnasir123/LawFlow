@@ -36,6 +36,11 @@ function mapCase(row) {
     clientEmail: row.client_email,
     clientPhone: row.client_phone,
     oppositePartyName: row.opposite_party_name,
+    // Lawyer's saved HTML edit state. NULL until the lawyer touches the
+    // template; on the frontend, null means "render the fresh template
+    // bytes", non-null means "rehydrate this HTML directly into the
+    // docx-preview host".
+    editedHtml: row.edited_html,
     status: row.status,
     createdAt: row.created_at,
     updatedAt: row.updated_at,

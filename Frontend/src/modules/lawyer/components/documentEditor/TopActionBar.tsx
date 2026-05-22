@@ -1,4 +1,4 @@
-import { Save, Download, Paperclip, FilePlus, Check, FileSignature, UploadCloud } from "lucide-react";
+import { FileSignature, UploadCloud, Cloud, CloudOff } from "lucide-react";
 import { useDocumentEditorStore } from "../../store/documentEditor.store";
 
 function formatTimeAgo(dateString: string): string {
@@ -19,103 +19,106 @@ interface TopActionBarProps {
     onSaveDraft: () => void;
     onDownload: () => void;
     onAddAttachment: () => void;
-    onAddDocument: () => void;
     onSubmitCase?: () => void;
     onRequestSignatures?: () => void;
     signaturePendingCount?: number;
     onToggleSidebar?: () => void;
+    // Title bar shows the case document's display name (e.g.,
+    // "Khula (Wife's Judicial Divorce)") not a generic "Case Document
+    // Preparation" — matches Google Docs' file-title pattern.
+    docTitle?: string;
+    docSubtitle?: string | null;
 }
 
 export default function TopActionBar({
-    onSaveDraft,
-    onDownload,
-    onAddAttachment,
-    onAddDocument,
     onSubmitCase,
     onRequestSignatures,
     signaturePendingCount,
     onToggleSidebar,
+    docTitle,
+    docSubtitle,
 }: TopActionBarProps) {
     const { lastSaved, isDirty } = useDocumentEditorStore();
 
-    const getStatusText = () => {
+    // Google Docs-style "Last edited X ago" line. Shows a cloud icon to
+    // signal sync state: solid cloud = saved, struck-through cloud =
+    // unsaved (the "you have unsaved changes" cue Docs uses).
+    const renderSaveStatus = () => {
         if (isDirty) {
-            return <span className="text-amber-600 font-medium">Draft</span>;
-        }
-        if (lastSaved) {
-            const timeAgo = formatTimeAgo(lastSaved);
             return (
-                <span className="text-emerald-600 font-medium flex items-center gap-1">
-                    <Check className="w-4 h-4" />
-                    Saved {timeAgo}
+                <span className="text-amber-700 inline-flex items-center gap-1.5">
+                    <CloudOff className="w-3.5 h-3.5" />
+                    Unsaved changes
                 </span>
             );
         }
-        return <span className="text-gray-500 font-medium">Not saved</span>;
+        if (lastSaved) {
+            return (
+                <span className="text-gray-500 inline-flex items-center gap-1.5">
+                    <Cloud className="w-3.5 h-3.5" />
+                    Last edited {formatTimeAgo(lastSaved)}
+                </span>
+            );
+        }
+        return (
+            <span className="text-gray-500 inline-flex items-center gap-1.5">
+                <Cloud className="w-3.5 h-3.5" />
+                Draft
+            </span>
+        );
     };
 
     return (
-        <div className="sticky top-0 z-10 bg-white border-b border-gray-200 shadow-sm">
-            <div className="px-4 md:px-6 py-3 flex items-center justify-between gap-4">
-                <div className="flex items-center gap-4 flex-1 min-w-0">
+        // Google Docs-style title bar: the file's name is the hero. Save
+        // status sits beneath it as quiet caption text. Right side carries
+        // just two actions — Signatures (like Docs' Comments icon) and
+        // Submit Case (the equivalent of Docs' "Share" primary button).
+        // Save Draft / Download / Add Attachment / Add Document have moved
+        // into the formatting toolbar so the title bar stays uncluttered.
+        <div className="flex-shrink-0 bg-white border-b border-gray-200">
+            <div className="px-5 py-2 flex items-center justify-between gap-4">
+                {/* Left: doc title + last-edited caption */}
+                <div className="flex items-center gap-3 flex-1 min-w-0">
                     <button
                         onClick={onToggleSidebar}
-                        className="md:hidden p-2 -ml-2 text-gray-600 hover:bg-gray-100 rounded-md"
+                        className="md:hidden p-1.5 -ml-1 text-gray-600 hover:bg-gray-100 rounded-md"
                     >
-                        <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            width="24"
-                            height="24"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            className="lucide lucide-menu"
-                        >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                             <line x1="4" x2="20" y1="12" y2="12" />
                             <line x1="4" x2="20" y1="6" y2="6" />
                             <line x1="4" x2="20" y1="18" y2="18" />
                         </svg>
                     </button>
                     <div className="flex flex-col min-w-0">
-                        <h1 className="text-lg font-semibold text-gray-900 truncate">
-                            Case Document Preparation
+                        <h1 className="text-[15px] font-semibold text-gray-900 truncate leading-tight">
+                            {docTitle || "Untitled document"}
                         </h1>
-                        <div className="text-sm">{getStatusText()}</div>
+                        <div className="flex items-center gap-2 text-[11.5px] mt-0.5 text-gray-500">
+                            {docSubtitle && (
+                                <>
+                                    <span className="truncate max-w-[280px]">{docSubtitle}</span>
+                                    <span className="text-gray-300">·</span>
+                                </>
+                            )}
+                            {renderSaveStatus()}
+                        </div>
                     </div>
                 </div>
 
+                {/* Right: just two actions — Signatures (icon-only badge, like
+                    Docs' Comments button) and Submit Case (primary action,
+                    like Docs' Share). Utility actions are in the toolbar. */}
                 <div className="flex items-center gap-2">
-                    <button
-                        onClick={onSaveDraft}
-                        className="flex items-center gap-2 px-3 md:px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors duration-200 font-medium text-sm"
-                        title="Save Draft"
-                    >
-                        <Save className="w-4 h-4" />
-                        <span className="hidden md:inline">Save Draft</span>
-                    </button>
-
-                    <button
-                        onClick={onDownload}
-                        className="flex items-center gap-2 px-3 md:px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors duration-200 font-medium text-sm"
-                        title="Download"
-                    >
-                        <Download className="w-4 h-4" />
-                        <span className="hidden md:inline">Download</span>
-                    </button>
-
                     {onRequestSignatures && (
                         <button
                             onClick={onRequestSignatures}
-                            className="relative flex items-center gap-2 px-3 md:px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors duration-200 font-medium text-sm"
-                            title="Request Client Signatures"
+                            className="relative inline-flex items-center gap-1.5 h-9 px-3 text-gray-700 rounded-full hover:bg-gray-100 transition-colors text-[13px] font-medium"
+                            title="Request signatures from client and/or lawyer"
                         >
                             <FileSignature className="w-4 h-4" />
-                            <span className="hidden md:inline">Signatures</span>
+                            <span className="hidden lg:inline">Signatures</span>
                             {signaturePendingCount !== undefined && signaturePendingCount > 0 && (
-                                <span className="absolute -top-2 -right-2 w-5 h-5 bg-amber-500 text-white text-xs font-bold rounded-full flex items-center justify-center">
+                                <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 bg-amber-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
                                     {signaturePendingCount}
                                 </span>
                             )}
@@ -125,31 +128,13 @@ export default function TopActionBar({
                     {onSubmitCase && (
                         <button
                             onClick={onSubmitCase}
-                            className="flex items-center gap-2 px-3 md:px-4 py-2 bg-[#01411C] text-white rounded-lg hover:bg-[#024a23] transition-colors duration-200 font-medium text-sm"
-                            title="Submit Case to Registrar"
+                            className="inline-flex items-center gap-1.5 h-9 px-4 bg-[var(--primary)] text-white rounded-full hover:bg-[#024a23] transition-colors text-[13px] font-semibold"
+                            title="Submit case to registrar"
                         >
                             <UploadCloud className="w-4 h-4" />
-                            <span className="hidden md:inline">Submit Case</span>
+                            <span>Submit</span>
                         </button>
                     )}
-
-                    <button
-                        onClick={onAddAttachment}
-                        className="flex items-center gap-2 px-3 md:px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors duration-200 font-medium text-sm border border-gray-200"
-                        title="Add Attachment (PDF, Image, Evidence)"
-                    >
-                        <Paperclip className="w-4 h-4" />
-                        <span className="hidden md:inline">Add Attachment</span>
-                    </button>
-
-                    <button
-                        onClick={onAddDocument}
-                        className="flex items-center gap-2 px-3 md:px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors duration-200 font-medium text-sm border border-gray-200"
-                        title="Add Editable Document (DOCX)"
-                    >
-                        <FilePlus className="w-4 h-4" />
-                        <span className="hidden md:inline">Add Document</span>
-                    </button>
                 </div>
             </div>
         </div>

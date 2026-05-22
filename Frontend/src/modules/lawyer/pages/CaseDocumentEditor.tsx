@@ -13,6 +13,7 @@ import SignatureRequestPanel from "../signatures/components/SignatureRequestPane
 import { useDocumentEditorStore } from "../store/documentEditor.store";
 import { useSignatureRequestsStore } from "../signatures/store/signatureRequests.store";
 import { casesApi, caseTemplateApiPath } from "../api/cases.api";
+import { mountFloatingImage } from "../utils/floatingImage";
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL(
   "pdfjs-dist/build/pdf.worker.min.mjs",
@@ -48,7 +49,6 @@ export default function CaseDocumentEditor() {
     saveDraft,
     loadDraft,
     addAttachment,
-    addUploadedDocument,
     addSignedAttachment,
     attachmentsById,
     removeFromBundle,
@@ -78,7 +78,6 @@ export default function CaseDocumentEditor() {
   const [pdfNumPages, setPdfNumPages] = useState(0);
   const [pdfContainerWidth, setPdfContainerWidth] = useState(0);
   const [pdfReady, setPdfReady] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const attachmentInputRef = useRef<HTMLInputElement>(null);
   const pdfContainerRef = useRef<HTMLDivElement>(null);
 
@@ -262,29 +261,12 @@ export default function CaseDocumentEditor() {
 
   const loadDocument = useCallback(
     async (docId: string) => {
-      // Check if content is cached (JSON)
-      const cachedJSON = getDocumentJSON(docId);
-      if (cachedJSON) {
-        setCurrentDocId(docId);
-        setEditorContent(cachedJSON);
-        return;
-      }
-
-      // Check for legacy HTML (migration)
+      // The Tiptap-era cached-JSON / legacy-HTML early returns are gone —
+      // they bailed before fetching the ArrayBuffer, which left docxBytes
+      // null when the editor re-mounted (the "No document loaded" bug
+      // after navigating away and back). docx-preview always needs the
+      // raw bytes, so we always go through the fetch path.
       const docData = documentsById[docId];
-      const legacyHtml = docData?.legacyHtml;
-      const isErrorPlaceholder =
-        typeof legacyHtml === "string" &&
-        legacyHtml.includes("Unable to load the template");
-      if (legacyHtml && !isErrorPlaceholder) {
-        setCurrentDocId(docId);
-        setEditorContent(legacyHtml);
-        return;
-      }
-
-      // Load from DOCX — the bundle entry's `url` is the source of truth.
-      // For backend templates it's an API path (e.g. /cases/types/<code>/template)
-      // and we go through apiClient so the bearer token rides along.
       const templateUrl = docData?.url;
       if (!templateUrl) return;
 
@@ -292,8 +274,6 @@ export default function CaseDocumentEditor() {
       setLoading(true);
 
       try {
-        console.log(`[DOCX Loader] Loading document from: ${templateUrl}`);
-
         let arrayBuffer: ArrayBuffer;
         if (isApiPath(templateUrl)) {
           // Backend-served template — extract case_types.code from the path
@@ -336,7 +316,11 @@ export default function CaseDocumentEditor() {
     [getDocumentJSON, documentsById, setCurrentDocId, setLoading]
   );
 
-  // Auto-open first document on mount
+  // Auto-open the case template by default. With uploaded DOCs sitting
+  // at the top of the bundle (for easy drag access), bundleItems[0] is
+  // no longer reliable as "the doc to render" — we look up the template
+  // explicitly via documentsById[*].isTemplate so the canvas always
+  // boots up showing the template + interleaved page-insertions.
   useEffect(() => {
     const docItems = bundleItems.filter((item) => item.type === "DOC");
     if (docItems.length === 0) {
@@ -348,14 +332,22 @@ export default function CaseDocumentEditor() {
     }
 
     const validDocIds = new Set(docItems.map((item) => item.refId));
+    const templateDoc = docItems.find(
+      (item) => documentsById[item.refId]?.isTemplate
+    );
     const nextDocId = currentDocId && validDocIds.has(currentDocId)
       ? currentDocId
-      : docItems[0]?.refId;
+      : templateDoc?.refId || docItems[0]?.refId;
 
-    if (nextDocId && nextDocId !== currentDocId) {
+    // Also reload when docxBytes is null even if currentDocId already
+    // matches — this happens after the lawyer navigates away and comes
+    // back: bundle/currentDocId are restored from the saved draft, but
+    // docxBytes is local React state and starts fresh at null. Without
+    // this trigger the editor would render "No document loaded".
+    if (nextDocId && (nextDocId !== currentDocId || !docxBytes)) {
       loadDocument(nextDocId);
     }
-  }, [bundleItems, currentDocId, loadDocument, setCurrentDocId]);
+  }, [bundleItems, currentDocId, docxBytes, documentsById, loadDocument, setCurrentDocId]);
 
   const handleDocumentSelect = (docId: string) => {
     // Save current document before switching
@@ -383,68 +375,71 @@ export default function CaseDocumentEditor() {
     attachmentInputRef.current?.click();
   };
 
-  const handleAddDocument = () => {
-    fileInputRef.current?.click();
-  };
-
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const fileType = file.type;
-    const fileName = file.name;
-
-    // Check if it's a DOCX file
-    if (
-      fileType ===
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
-      fileName.endsWith(".docx")
-    ) {
-      // Stash the raw .docx as a Blob URL on the bundle so the same
-      // loadDocument path that handles backend templates can pick it up:
-      // isApiPath() returns false → plain fetch() of the blob: URL →
-      // ArrayBuffer → docx-preview. No mammoth conversion needed; the
-      // file is rendered with Word fidelity just like the case template.
-      const blobUrl = URL.createObjectURL(file);
-      addUploadedDocument({
-        title: fileName.replace(/\.docx$/i, ""),
-        type: "docx",
-        url: blobUrl,
-      });
-      saveDraft(effectiveCaseId);
-    } else {
-      // Add as attachment (PDF, image, etc.)
-      const url = URL.createObjectURL(file);
-      addAttachment({
-        name: fileName,
-        type: fileType,
-        size: file.size,
-        url: url,
-      });
-      saveDraft(effectiveCaseId);
-    }
-
-    // Reset input
-    if (fileInputRef.current) fileInputRef.current.value = "";
-  };
-
+  // Attachment upload — PNG/JPG only. Lawyer uploads CNIC scans /
+  // evidence photos, which land in the sidebar bundle and can then be
+  // dragged onto a specific page in the document as a floating image
+  // overlay. Non-image files are rejected at the input layer (the
+  // hidden <input> already restricts via `accept`), but we double-check
+  // the MIME here so a drag-and-drop or paste-driven upload can't
+  // slip past.
   const handleAttachmentUpload = (
     e: React.ChangeEvent<HTMLInputElement>
   ) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    if (!file.type.startsWith("image/")) {
+      if (attachmentInputRef.current) attachmentInputRef.current.value = "";
+      return;
+    }
+
     const url = URL.createObjectURL(file);
     addAttachment({
       name: file.name,
       type: file.type,
       size: file.size,
-      url: url,
+      url,
     });
     saveDraft(effectiveCaseId);
 
-    // Reset input
     if (attachmentInputRef.current) attachmentInputRef.current.value = "";
+  };
+
+  // Drops the image onto the page as a "floating" image — Word's
+  // "In Front of Text" positioning. The image becomes an absolutely-
+  // positioned overlay on the page, draggable anywhere and resizable
+  // from any of its four corners with aspect ratio preserved. Doesn't
+  // disturb the underlying text flow at all.
+  const handleImageDropped = (
+    refId: string,
+    clientX: number,
+    clientY: number
+  ) => {
+    const attachment = attachmentsById[refId];
+    if (!attachment || !attachment.url) return;
+
+    // Find which page (section.docx) the drop landed on. elementFromPoint
+    // gives us the topmost element at the cursor — closest("section.docx")
+    // walks up to the page container.
+    const elementAtPoint = document.elementFromPoint(clientX, clientY);
+    const page = elementAtPoint?.closest("section.docx") as HTMLElement | null;
+    if (!page) return;
+
+    // Translate viewport coords → page-relative coords.
+    const pageRect = page.getBoundingClientRect();
+    const leftInPage = clientX - pageRect.left;
+    const topInPage = clientY - pageRect.top;
+
+    mountFloatingImage({
+      src: attachment.url,
+      alt: attachment.name,
+      page,
+      left: leftInPage,
+      top: topInPage,
+      onChange: () => saveDraft(effectiveCaseId),
+    });
+
+    saveDraft(effectiveCaseId);
   };
 
   const currentDocTitle =
@@ -480,12 +475,14 @@ export default function CaseDocumentEditor() {
     >
       {/* Pin the editor to the viewport below the dashboard header so the
           formatting toolbar + sidebar stay in place while the document
-          itself scrolls. Without this, the dashboard layout's
-          min-h-screen would let the whole page scroll, taking the
-          toolbar out of view (the bug the user reported). The fixed
-          72px is the rendered height of the dashboard header. */}
+          itself scrolls. The fixed 72px is the rendered height of the
+          dashboard header. */}
       <div className="fixed inset-x-0 top-[72px] bottom-0 flex flex-col bg-gray-100 overflow-hidden">
         <TopActionBar
+          docTitle={caseRecord?.title || caseRecord?.caseTypeName}
+          docSubtitle={caseRecord?.caseTypeName && caseRecord?.title
+            ? caseRecord.caseTypeName
+            : null}
           onSaveDraft={handleSaveDraft}
           onDownload={handleDownload}
           onRequestSignatures={() => setIsSignaturePanelOpen(true)}
@@ -494,7 +491,6 @@ export default function CaseDocumentEditor() {
             navigate({ to: `/lawyer-submit-case/${effectiveCaseId}` })
           }
           onAddAttachment={handleAddAttachment}
-          onAddDocument={handleAddDocument}
         />
 
         <div className="flex flex-1 overflow-hidden">
@@ -508,12 +504,11 @@ export default function CaseDocumentEditor() {
             }}
             caseId={caseId}
             pages={renderedPages}
-            onSendPageToClient={(pageIndex) => {
-              // Opens the signature panel with the page pre-selected.
-              // Per-page extraction (DOCX → PDF for one page) is wired
-              // up in the next sub-phase; for now this just opens the
-              // existing signature panel so the lawyer sees the flow.
-              console.log(`[Signature] requested page ${pageIndex + 1}`);
+            onSendPageToClient={() => {
+              // Opens the signature panel. Per-page extraction (DOCX →
+              // PDF for one page) is wired up in the next sub-phase;
+              // for now this opens the existing signature panel so the
+              // lawyer sees the flow.
               setIsSignaturePanelOpen(true);
             }}
           />
@@ -591,12 +586,17 @@ export default function CaseDocumentEditor() {
             // hovers as a fixed strip while the lawyer scrolls through
             // pages — same pattern as Word's ribbon.
             <div className="flex flex-1 flex-col overflow-hidden">
-              <ContentEditableToolbar />
+              <ContentEditableToolbar
+                onSaveDraft={handleSaveDraft}
+                onDownload={handleDownload}
+                onAddAttachment={handleAddAttachment}
+              />
               <div className="flex-1 overflow-hidden">
                 <DocxPreviewSurface
                   arrayBuffer={docxBytes}
                   isLoading={isLoading}
                   onPagesReady={setRenderedPages}
+                  onImageDropped={handleImageDropped}
                   editable
                 />
               </div>
@@ -621,18 +621,11 @@ export default function CaseDocumentEditor() {
           />
         )}
 
-        {/* Hidden file inputs */}
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept=".docx,.pdf,.jpg,.jpeg,.png"
-          onChange={handleFileUpload}
-          className="hidden"
-        />
+        {/* Hidden file input for attachment uploads (PNG/JPG only) */}
         <input
           ref={attachmentInputRef}
           type="file"
-          accept=".pdf,.jpg,.jpeg,.png,.docx"
+          accept=".jpg,.jpeg,.png"
           onChange={handleAttachmentUpload}
           className="hidden"
         />

@@ -17,8 +17,21 @@ import {
   Redo,
   RemoveFormatting,
   Type,
+  Save,
+  Download,
+  Paperclip,
 } from "lucide-react";
 import clsx from "clsx";
+import { alignSelectedImage, type ImageAlignMode } from "../../utils/floatingImage";
+
+interface ContentEditableToolbarProps {
+  // Utility actions live on the right side of the toolbar (Google Docs
+  // pattern), so they're always next to formatting tools where the user
+  // is already focused.
+  onSaveDraft?: () => void;
+  onDownload?: () => void;
+  onAddAttachment?: () => void;
+}
 
 interface ToolbarButtonProps {
   onClick: () => void;
@@ -63,7 +76,11 @@ function Divider() {
 // is selected inside a contenteditable element. Alternative is to
 // hand-roll selection manipulation via Selection/Range — overkill for an
 // FYP-scale editor.
-export default function ContentEditableToolbar() {
+export default function ContentEditableToolbar({
+  onSaveDraft,
+  onDownload,
+  onAddAttachment,
+}: ContentEditableToolbarProps = {}) {
   const [activeStates, setActiveStates] = useState<Record<string, boolean>>({});
 
   // Poll the current command states once per selection change so the
@@ -106,11 +123,22 @@ export default function ContentEditableToolbar() {
     document.execCommand(command, false, value);
   };
 
+  // Alignment buttons do double duty: if a floating image is currently
+  // selected, the button repositions the image inside its page (left
+  // edge / centered / right edge / stretched to full width). Otherwise
+  // it falls through to execCommand on whatever text the caret is in.
+  // We try the image path first; alignSelectedImage returns false if no
+  // image is selected, in which case we run the text command.
+  const align = (mode: ImageAlignMode, command: string) => {
+    if (alignSelectedImage(mode)) return;
+    exec(command);
+  };
+
   return (
     // flex-shrink-0 keeps the toolbar at its natural height when the
     // editor column is constrained — critical inside the fixed-viewport
     // layout where the document area takes flex-1.
-    <div className="flex flex-shrink-0 items-center gap-1 px-3 py-2 border-b border-gray-200 bg-white">
+    <div className="flex flex-shrink-0 items-center gap-1 px-3 py-1.5 border-b border-gray-200 bg-gray-50/60">
       <ToolbarButton onClick={() => exec("undo")} title="Undo (Ctrl+Z)">
         <Undo className="w-4 h-4" />
       </ToolbarButton>
@@ -196,28 +224,28 @@ export default function ContentEditableToolbar() {
       <Divider />
 
       <ToolbarButton
-        onClick={() => exec("justifyLeft")}
+        onClick={() => align("left", "justifyLeft")}
         isActive={activeStates.justifyLeft}
         title="Align left"
       >
         <AlignLeft className="w-4 h-4" />
       </ToolbarButton>
       <ToolbarButton
-        onClick={() => exec("justifyCenter")}
+        onClick={() => align("center", "justifyCenter")}
         isActive={activeStates.justifyCenter}
         title="Align center"
       >
         <AlignCenter className="w-4 h-4" />
       </ToolbarButton>
       <ToolbarButton
-        onClick={() => exec("justifyRight")}
+        onClick={() => align("right", "justifyRight")}
         isActive={activeStates.justifyRight}
         title="Align right"
       >
         <AlignRight className="w-4 h-4" />
       </ToolbarButton>
       <ToolbarButton
-        onClick={() => exec("justifyFull")}
+        onClick={() => align("justify", "justifyFull")}
         isActive={activeStates.justifyFull}
         title="Justify"
       >
@@ -232,6 +260,32 @@ export default function ContentEditableToolbar() {
       >
         <RemoveFormatting className="w-4 h-4" />
       </ToolbarButton>
+
+      {/* Utility cluster, right-aligned. The flex-1 spacer pushes the
+          remaining buttons to the right edge — Google Docs pattern of
+          formatting tools on the left, file actions on the right. */}
+      {(onAddAttachment || onDownload || onSaveDraft) && (
+        <>
+          <div className="flex-1" />
+
+          {onAddAttachment && (
+            <ToolbarButton onClick={onAddAttachment} title="Add attachment (PNG/JPG evidence photo)">
+              <Paperclip className="w-4 h-4" />
+            </ToolbarButton>
+          )}
+          {onAddAttachment && (onDownload || onSaveDraft) && <Divider />}
+          {onDownload && (
+            <ToolbarButton onClick={onDownload} title="Download document">
+              <Download className="w-4 h-4" />
+            </ToolbarButton>
+          )}
+          {onSaveDraft && (
+            <ToolbarButton onClick={onSaveDraft} title="Save draft">
+              <Save className="w-4 h-4" />
+            </ToolbarButton>
+          )}
+        </>
+      )}
     </div>
   );
 }
