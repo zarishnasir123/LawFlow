@@ -8,8 +8,10 @@ import { validateRequest } from "../../middleware/validateRequest.js";
 import {
   deleteSignatureRequest,
   getCaseSignatureRequests,
-  getPublicSigningRequest,
-  postClientSignature,
+  getMyPendingSignatures,
+  getMySignatureRequest,
+  getSignedPdfDownloadUrl,
+  postSignature,
   postSignatureRequest,
   putEditedDocument,
 } from "./signatures.controller.js";
@@ -19,15 +21,15 @@ import {
   requestIdParamValidator,
   saveEditedDocumentValidator,
   submitSignatureValidator,
-  tokenParamValidator,
 } from "./signatures.validators.js";
 
-// Two separate routers because the public signing endpoints sit on a
-// different mount point (`/api/signing`) so they can't accidentally
-// inherit the lawyer auth middleware from the case-scoped routes.
+// =====================================================================
+// Lawyer-auth routes (mounted under /api/cases/:caseId in app.js with
+// mergeParams so :caseId comes through to the handlers).
+// =====================================================================
 export const caseSignatureRoutes = Router({ mergeParams: true });
 
-// Lawyer saves the current edited HTML state of a case document.
+// Save current edited HTML state of a case document.
 caseSignatureRoutes.put(
   "/document",
   authenticate,
@@ -37,7 +39,7 @@ caseSignatureRoutes.put(
   asyncHandler(putEditedDocument)
 );
 
-// Lawyer lists all signature requests on a case (poll target).
+// List signature requests for a case + overall completion state.
 caseSignatureRoutes.get(
   "/signature-requests",
   authenticate,
@@ -47,7 +49,7 @@ caseSignatureRoutes.get(
   asyncHandler(getCaseSignatureRequests)
 );
 
-// Lawyer creates a new signature request.
+// Create a new batch of signature requests (one row per signer).
 caseSignatureRoutes.post(
   "/signature-requests",
   authenticate,
@@ -57,8 +59,8 @@ caseSignatureRoutes.post(
   asyncHandler(postSignatureRequest)
 );
 
-// Lawyer cancels a specific signature request. Nested under
-// /cases/:caseId so ownership can be checked through the join.
+// Cancel a specific signature request (must belong to a case the
+// lawyer owns; service performs the ownership join).
 caseSignatureRoutes.delete(
   "/signature-requests/:requestId",
   authenticate,
@@ -68,24 +70,49 @@ caseSignatureRoutes.delete(
   asyncHandler(deleteSignatureRequest)
 );
 
-// ──────────────────────────────────────────────────────────────────────
-// Public signing endpoints. No authenticate middleware — the URL token
-// IS the auth: it's a 256-bit random secret that only exists in the
-// email body and the recipient's URL bar. Both validators are still
-// in front of the controllers so malformed tokens return 400/404 fast.
-// ──────────────────────────────────────────────────────────────────────
-export const publicSigningRoutes = Router();
-
-publicSigningRoutes.get(
-  "/:token",
-  tokenParamValidator,
+// Lawyer requests a short-lived download URL for the case's final
+// compiled signed PDF. Returns 409 until every required signature
+// has been collected (compile is sync on the last signer's submit).
+caseSignatureRoutes.get(
+  "/signed-pdf",
+  authenticate,
+  authorizeRoles("lawyer"),
+  caseIdParamValidator,
   validateRequest,
-  asyncHandler(getPublicSigningRequest)
+  asyncHandler(getSignedPdfDownloadUrl)
 );
 
-publicSigningRoutes.post(
-  "/:token/sign",
+// =====================================================================
+// Recipient-auth routes (mounted under /api/me).
+//
+// Same handlers serve both client and lawyer signers — access control
+// is per-row via recipient_user_id matching req.user.sub, not per-role.
+// A lawyer who created a batch and is ALSO the recipient (self-sign
+// flow for the lawyer's own pages) hits exactly these routes.
+// =====================================================================
+export const mySignatureRoutes = Router();
+
+// "What signatures am I asked to provide?" — list pending rows for me.
+mySignatureRoutes.get(
+  "/signature-requests",
+  authenticate,
+  asyncHandler(getMyPendingSignatures)
+);
+
+// Fetch one signature request (with HTML snapshot) for the signing UI.
+mySignatureRoutes.get(
+  "/signature-requests/:requestId",
+  authenticate,
+  requestIdParamValidator,
+  validateRequest,
+  asyncHandler(getMySignatureRequest)
+);
+
+// Submit signature for one request.
+mySignatureRoutes.post(
+  "/signature-requests/:requestId/sign",
+  authenticate,
   submitSignatureValidator,
   validateRequest,
-  asyncHandler(postClientSignature)
+  asyncHandler(postSignature)
 );

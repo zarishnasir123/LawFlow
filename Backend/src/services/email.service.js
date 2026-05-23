@@ -384,6 +384,115 @@ export function queuePasswordResetGoogleUserEmail({ email, firstName }) {
   ));
 }
 
+// Signature-request notification: sent when a lawyer creates a batch.
+// Email is a notification only — signing happens in-app, so the CTA
+// just routes to the login page. signerRole is 'client' or 'lawyer';
+// signerRoleLabel becomes the natural-language fragment in the body
+// copy ("as the client" / "as the advocate").
+export function sendSignatureRequestEmail({
+  email,
+  firstName,
+  caseTitle,
+  requestingLawyerName,
+  pageCount,
+  signerRole,
+  expiresAt,
+}) {
+  const safePageCount = Number.isFinite(pageCount) && pageCount > 0 ? pageCount : 1;
+  const expiryDate = expiresAt instanceof Date ? expiresAt : new Date(expiresAt);
+  const expiresLabel = Number.isFinite(expiryDate.getTime())
+    ? expiryDate.toLocaleDateString("en-US", {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+      })
+    : "the request expiry date";
+  const signerRoleLabel = signerRole === "lawyer" ? "as the advocate" : "as the client";
+
+  return send(email, "A document is waiting for your signature on LawFlow", "signatureRequest", {
+    firstName: firstName || "there",
+    caseTitle,
+    requestingLawyerName,
+    pageCount: safePageCount,
+    pageSuffix: safePageCount === 1 ? "" : "s",
+    signerRoleLabel,
+    expiresLabel,
+    loginUrl: `${getFrontendUrl()}/login`,
+  });
+}
+
+export function queueSignatureRequestEmail({
+  email,
+  firstName,
+  caseTitle,
+  requestingLawyerName,
+  pageCount,
+  signerRole,
+  expiresAt,
+}) {
+  return queueEmailTask("signature-request", () =>
+    sendSignatureRequestEmail({
+      email,
+      firstName,
+      caseTitle,
+      requestingLawyerName,
+      pageCount,
+      signerRole,
+      expiresAt,
+    })
+  );
+}
+
+// Signer-completion notification: fired when a signature_requests row
+// transitions to status='signed'. Goes to the case's owning lawyer so
+// they know the case moved one step closer to submittable, with a CTA
+// that links straight back to the editor for that case. The skip-self
+// rule (lawyer is also the signer → don't email) is enforced by the
+// caller, not here, so this helper stays single-purpose.
+export function sendSignatureCompletionEmail({
+  lawyerEmail,
+  lawyerFirstName,
+  signerName,
+  signerRole,
+  caseId,
+  caseTitle,
+  pageIndices,
+}) {
+  const indices = Array.isArray(pageIndices) ? pageIndices : [];
+  const pageNumbers = indices.length > 0
+    ? indices.map((i) => i + 1)
+    : [];
+  const pageList = pageNumbers.length > 0
+    ? pageNumbers.join(", ")
+    : "the requested page";
+  const pageSuffix = pageNumbers.length === 1 ? "" : "s";
+  // Short label for the "Signed by … · <label>" line in the body.
+  // Full natural-language fragment for the inline copy.
+  const signerRoleLabelShort = signerRole === "lawyer" ? "Lawyer" : "Client";
+  const signerRoleLabel =
+    signerRole === "lawyer" ? "as the advocate" : "as the client";
+  const caseEditorUrl = `${getFrontendUrl()}/lawyer-case-editor/${caseId}`;
+
+  const subject = `${signerName} signed page${pageSuffix} ${pageList} — ${caseTitle}`;
+
+  return send(lawyerEmail, subject, "signatureCompleted", {
+    lawyerFirstName: lawyerFirstName || "there",
+    signerName,
+    signerRoleLabel,
+    signerRoleLabelShort,
+    caseTitle,
+    pageList,
+    pageSuffix,
+    caseEditorUrl,
+  });
+}
+
+export function queueSignatureCompletionEmail(params) {
+  return queueEmailTask("signature-completion", () =>
+    sendSignatureCompletionEmail(params)
+  );
+}
+
 export async function warmEmailTransport() {
   preloadEmailTemplates(["verificationOtp"]);
 

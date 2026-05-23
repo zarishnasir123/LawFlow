@@ -1,4 +1,10 @@
-import { FileSignature, UploadCloud, Cloud, CloudOff } from "lucide-react";
+import {
+  Cloud,
+  CloudOff,
+  FileSignature,
+  FileCheck2,
+  UploadCloud,
+} from "lucide-react";
 import { useDocumentEditorStore } from "../../store/documentEditor.store";
 
 function formatTimeAgo(dateString: string): string {
@@ -23,6 +29,10 @@ interface TopActionBarProps {
     onRequestSignatures?: () => void;
     signaturePendingCount?: number;
     onToggleSidebar?: () => void;
+    // Only set when every required signature on the case is collected
+    // and the backend has compiled the final signed PDF. Parent passes
+    // undefined while signing is in progress so the button stays hidden.
+    onDownloadSignedPdf?: () => void;
     // Title bar shows the case document's display name (e.g.,
     // "Khula (Wife's Judicial Divorce)") not a generic "Case Document
     // Preparation" — matches Google Docs' file-title pattern.
@@ -35,6 +45,7 @@ export default function TopActionBar({
     onRequestSignatures,
     signaturePendingCount,
     onToggleSidebar,
+    onDownloadSignedPdf,
     docTitle,
     docSubtitle,
 }: TopActionBarProps) {
@@ -122,6 +133,17 @@ export default function TopActionBar({
                                     {signaturePendingCount}
                                 </span>
                             )}
+                        </button>
+                    )}
+
+                    {onDownloadSignedPdf && (
+                        <button
+                            onClick={onDownloadSignedPdf}
+                            className="inline-flex items-center gap-1.5 h-9 px-3 text-emerald-700 bg-emerald-50 ring-1 ring-emerald-200 rounded-full hover:bg-emerald-100 transition-colors text-[13px] font-medium"
+                            title="Download the compiled signed PDF (all signatures collected)"
+                        >
+                            <FileCheck2 className="w-4 h-4" />
+                            <span className="hidden lg:inline">Download signed PDF</span>
                         </button>
                     )}
 

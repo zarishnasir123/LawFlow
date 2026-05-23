@@ -27,6 +27,9 @@ import {
 } from "lucide-react";
 import clsx from "clsx";
 import { useEffect, useState } from "react";
+// useSignatureRequestsStore was the source of per-bundle-item badges in
+// the legacy signature model. Phase 1's per-signer-per-row model keys
+// off pages, not bundle items, so badges are off here pending Phase 2.
 
 // LocalStorage key mirrors the admin sidebar's pattern so each user gets
 // per-device persistence of their preferred sidebar state.
@@ -44,7 +47,6 @@ import {
   useDocumentEditorStore,
   type BundleItem,
 } from "../../store/documentEditor.store";
-import { useSignatureRequestsStore } from "../../signatures/store/signatureRequests.store";
 import DocumentPagesPanel from "./DocumentPagesPanel";
 
 interface DocumentSidebarProps {
@@ -54,7 +56,18 @@ interface DocumentSidebarProps {
   // Pages rendered by docx-preview. The sidebar's Pages panel uses these
   // DOM refs for jump-to-page and per-page actions like "send to client".
   pages?: HTMLElement[];
+  // Per-page signature status — drives the badges next to each page in
+  // the PAGES panel (client signed / lawyer signed / both). Computed by
+  // CaseDocumentEditor from the signature_requests cache.
+  signatureStatusByPageIndex?: Record<
+    number,
+    { clientSigned: boolean; lawyerSigned: boolean }
+  >;
   onSendPageToClient?: (pageIndex: number, pageElement: HTMLElement) => void;
+  // Right-click on a page row in the PAGES sidebar. Bubbled up so the
+  // CaseDocumentEditor can render its custom <PageContextMenu> at the
+  // cursor — same handler used for the canvas right-click path.
+  onPageContextMenu?: (pageIndex: number, x: number, y: number) => void;
 }
 
 function formatFileSize(bytes: number): string {
@@ -246,7 +259,9 @@ export default function DocumentSidebar({
   onAttachmentSelect,
   caseId,
   pages = [],
+  signatureStatusByPageIndex,
   onSendPageToClient,
+  onPageContextMenu,
 }: DocumentSidebarProps) {
   const {
     bundleItems,
@@ -255,22 +270,15 @@ export default function DocumentSidebar({
     reorderBundleItems,
     removeFromBundle,
   } = useDocumentEditorStore();
-  const { getRequestsByCaseId } = useSignatureRequestsStore();
-  const signatureCaseId = caseId || "default-case";
-  const requests = getRequestsByCaseId(signatureCaseId);
-  const requestByBundleItemId = new Map(
-    requests.map((req) => [req.bundleItemId, req] as const)
-  );
-  const requestBySignedAttachmentId = new Map(
-    requests
-      .filter((req) => req.signedAttachmentId)
-      .map((req) => [req.signedAttachmentId as string, req] as const)
-  );
-  const signedAttachmentIds = new Set(
-    requests
-      .filter((req) => req.clientSigned && req.signedAttachmentId)
-      .map((req) => req.signedAttachmentId as string),
-  );
+  // Per-bundle-item signature badges are off in Phase 1 — the new
+  // signature_requests model keys off pages, not bundle items, so the
+  // legacy `bundleItemId` / `signedAttachmentId` cross-references no
+  // longer exist. The badges return in Phase 2 once we re-link signed
+  // pages back to the page outline.
+  void caseId;
+  const requestByBundleItemId = new Map<string, never>();
+  const requestBySignedAttachmentId = new Map<string, never>();
+  const signedAttachmentIds = new Set<string>();
   const [selectedBundleItemId, setSelectedBundleItemId] = useState<
     string | null
   >(null);
@@ -404,23 +412,12 @@ export default function DocumentSidebar({
                     item.type === "ATTACHMENT" &&
                     (fileInfo?.type?.includes("image") ||
                       fileInfo?.type?.includes("pdf"));
-                  const request =
-                    requestByBundleItemId.get(item.id) ||
-                    (item.type === "ATTACHMENT"
-                      ? requestBySignedAttachmentId.get(item.refId)
-                      : undefined);
-                  const signedLabel =
-                    request && request.clientSigned && request.lawyerSigned
-                      ? "Client + Lawyer Signed"
-                      : request?.clientSigned
-                        ? "Client Signed"
-                        : request?.lawyerSigned
-                          ? "Lawyer Signed"
-                          : item.type === "ATTACHMENT" &&
-                              (signedAttachmentIds.has(item.refId) ||
-                                att?.name?.toLowerCase().includes("signed"))
-                            ? "Client Signed"
-                            : null;
+                  // Phase 1: badges off (see top-of-file comment). Phase 2
+                  // re-links signed pages → bundle items.
+                  void requestByBundleItemId;
+                  void requestBySignedAttachmentId;
+                  void signedAttachmentIds;
+                  const signedLabel: string | null = null;
 
                   return (
                     <SortableBundleItem
@@ -480,7 +477,9 @@ export default function DocumentSidebar({
           paginated render, matching Word's Navigation Pane "Pages" tab. */}
       <DocumentPagesPanel
         pages={pages}
+        signatureStatusByPageIndex={signatureStatusByPageIndex}
         onSendPageToClient={onSendPageToClient}
+        onPageContextMenu={onPageContextMenu}
         collapsed={collapsed}
       />
       </div>

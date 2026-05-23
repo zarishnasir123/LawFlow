@@ -22,10 +22,12 @@ export default function LawyerDashboard() {
   const navigate = useNavigate();
   useEnforcePasswordChange();
   const { data: currentUser } = useCurrentUser();
-  const { requests } = useSignatureRequestsStore();
-  const signedCount = requests.filter(
-    (req) => req.clientSigned && req.sentToLawyerAt
-  ).length;
+  // Signature dashboard activity is now backend-sourced per case; the
+  // global "X documents signed by client" tile on the lawyer dashboard
+  // needs a per-user pending fetch that we don't ship in Phase 1. The
+  // tile renders empty until that endpoint lands.
+  useSignatureRequestsStore();
+  const signedCount: number = 0;
   const signedActivity: ActivityItem[] =
     signedCount > 0
       ? [

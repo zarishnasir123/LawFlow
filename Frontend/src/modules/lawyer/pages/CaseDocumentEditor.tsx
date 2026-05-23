@@ -1,11 +1,21 @@
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { type JSONContent } from "@tiptap/react";
 import { useNavigate, useParams } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Document, Page, pdfjs } from "react-pdf";
 import LawyerLayout from "../components/LawyerLayout";
 import DocumentSidebar from "../components/documentEditor/DocumentSidebar";
 import DocxPreviewSurface from "../components/documentEditor/DocxPreviewSurface";
+import SignatureOverlayLayer from "../components/documentEditor/SignatureOverlayLayer";
+import PageContextMenu, {
+  type PageContextMenuState,
+} from "../components/documentEditor/PageContextMenu";
+import {
+  signaturesApi,
+  getSignaturesErrorMessage,
+  type SignerRole,
+} from "../signatures/api/signatures.api";
+import { buildEditorSnapshot } from "../utils/editorSnapshot";
 import ContentEditableToolbar from "../components/documentEditor/ContentEditableToolbar";
 import TopActionBar from "../components/documentEditor/TopActionBar";
 import DownloadModal from "../components/documentEditor/DownloadModal";
@@ -49,17 +59,17 @@ export default function CaseDocumentEditor() {
     saveDraft,
     loadDraft,
     addAttachment,
-    addSignedAttachment,
     attachmentsById,
-    removeFromBundle,
     initializeDefaultBundle,
     bundleItems,
   } = useDocumentEditorStore();
 
   const {
-    getRequestsByCaseId,
     getPendingRequests,
-    updateRequest,
+    getSignedRequests,
+    isCaseFullySigned,
+    loadForCase: loadSignatureRequestsForCase,
+    create: createSignatureRequests,
   } = useSignatureRequestsStore();
 
   const [editorContent, setEditorContent] = useState<string | JSONContent>("");
@@ -74,6 +84,21 @@ export default function CaseDocumentEditor() {
   const [renderedPages, setRenderedPages] = useState<HTMLElement[]>([]);
   const [isDownloadModalOpen, setIsDownloadModalOpen] = useState(false);
   const [isSignaturePanelOpen, setIsSignaturePanelOpen] = useState(false);
+  // Right-click context menu state — populated when the lawyer right-
+  // clicks a page row in the sidebar OR a rendered section on the
+  // canvas. Routes through one handler so both surfaces use the same
+  // menu. The menu's three signer options fire the API directly via
+  // sendPageForSignature — no panel detour, no pre-tick state needed.
+  // The full SignatureRequestPanel is still reachable from the
+  // Signatures toolbar button for the bulk / multi-page flow.
+  const [pageMenu, setPageMenu] = useState<PageContextMenuState | null>(null);
+  // Toast feedback for the right-click signature fast-path. Lives in
+  // the editor (not a global store) because the menu's result is
+  // case-scoped and should disappear when the lawyer navigates away.
+  const [signatureToast, setSignatureToast] = useState<{
+    tone: "success" | "error";
+    message: string;
+  } | null>(null);
   const [selectedAttachmentId, setSelectedAttachmentId] = useState<string | null>(null);
   const [pdfNumPages, setPdfNumPages] = useState(0);
   const [pdfContainerWidth, setPdfContainerWidth] = useState(0);
@@ -82,114 +107,108 @@ export default function CaseDocumentEditor() {
   const pdfContainerRef = useRef<HTMLDivElement>(null);
 
   const signatureCaseId = effectiveCaseId;
-  const signaturePendingCount = (() => {
-    const pending = getPendingRequests(signatureCaseId);
-    if (bundleItems.length === 0) return 0;
-    const bundleItemIds = new Set(bundleItems.map((item) => item.id));
-    return pending.filter((req) => bundleItemIds.has(req.bundleItemId)).length;
-  })();
 
+  // Refresh the backend-synced signature cache when the case loads /
+  // switches. Initial fetch + 15-second poll so the editor reflects
+  // newly-collected signatures + status badges in near-real-time
+  // without WebSockets. 15s is the sweet spot between freshness and
+  // not hammering the backend while the editor sits open.
   useEffect(() => {
-    const requests = getRequestsByCaseId(signatureCaseId);
-    const linkedSignedAttachmentIds = new Set(
-      requests
-        .map((req) => req.signedAttachmentId)
-        .filter((id): id is string => Boolean(id))
-    );
+    loadSignatureRequestsForCase(signatureCaseId);
+    const interval = setInterval(() => {
+      // Skip the poll tick if a load is already in flight for this
+      // case. Without this guard a slow backend could leave multiple
+      // overlapping fetches racing, each clobbering the previous
+      // store snapshot when they resolve out of order.
+      const state = useSignatureRequestsStore.getState();
+      if (state.loadingCaseId === signatureCaseId) return;
+      loadSignatureRequestsForCase(signatureCaseId);
+    }, 15_000);
+    return () => clearInterval(interval);
+  }, [signatureCaseId, loadSignatureRequestsForCase]);
 
-    requests.forEach((request) => {
-      const existingAttachment = request.signedAttachmentId
-        ? attachmentsById[request.signedAttachmentId]
-        : undefined;
-      const stillHasOriginal = bundleItems.some(
-        (item) => item.id === request.bundleItemId
-      );
+  // Auto-save plumbing — see persistEditedHtml below for the saver
+  // itself. We use a ref to bridge the effect (which runs early) and
+  // the saver (declared after this in the component body) without
+  // hitting "used before declaration" or stuffing both into a useRef
+  // initializer. Refs are how React handles "I need to call function X
+  // from inside a long-lived listener" without re-binding listeners
+  // every render.
+  const persistEditedHtmlRef = useRef<() => Promise<void>>(async () => {});
 
-      const latestSignedDataUrl =
-        (request.clientSigned || request.lawyerSigned
-          ? request.pdfDataUrl
-          : undefined) ||
-        request.lawyerSignedPdfDataUrl ||
-        request.signedPdfDataUrl;
+  // Two auto-save triggers:
+  //   1. On blur from anywhere in the docx-preview host — catches the
+  //      "lawyer typed something then clicked away" case. 500ms
+  //      debounce so a focus-shuffle inside the canvas (e.g., the
+  //      caret moving between sections via mouse) doesn't fire a
+  //      flurry of saves.
+  //   2. Every 30 seconds — heartbeat for the "lawyer keeps typing
+  //      forever without leaving the canvas" case. The saver itself
+  //      short-circuits when the snapshot hasn't changed, so this is
+  //      cheap when idle.
+  // Manual Save Draft (handleSaveDraft above) calls the same saver.
+  useEffect(() => {
+    if (renderedPages.length === 0) return;
+    const host =
+      renderedPages[0].closest(".docx-preview-host") ||
+      renderedPages[0].closest(".docx-wrapper")?.parentElement;
+    if (!host) return;
+    let blurTimer: number | null = null;
+    const onBlur = () => {
+      if (blurTimer !== null) window.clearTimeout(blurTimer);
+      blurTimer = window.setTimeout(() => {
+        void persistEditedHtmlRef.current();
+      }, 500);
+    };
+    host.addEventListener("focusout", onBlur as EventListener);
+    const interval = window.setInterval(() => {
+      void persistEditedHtmlRef.current();
+    }, 30_000);
+    return () => {
+      host.removeEventListener("focusout", onBlur as EventListener);
+      window.clearInterval(interval);
+      if (blurTimer !== null) window.clearTimeout(blurTimer);
+    };
+  }, [renderedPages]);
 
-      // For client-required docs, wait until client actually sends to lawyer.
-      const waitingForClientSend =
-        request.requiresClientSignature !== false &&
-        request.clientSigned &&
-        !request.sentToLawyerAt;
+  const signaturePendingCount = getPendingRequests(signatureCaseId).length;
 
-      if (!latestSignedDataUrl || waitingForClientSend) return;
+  // Pull the latest signed requests from the cache for two consumers:
+  //   1. SignatureOverlayLayer renders each one's PNG on the canvas at
+  //      its captured placement.
+  //   2. The PAGES sidebar's per-page status badges (client / lawyer /
+  //      both) derive from these rows' pageIndices + signer_role.
+  const signedSignatureRequests = getSignedRequests(signatureCaseId);
 
-      const signedName = `${request.docTitle}-Signed.pdf`;
-      const base64 = latestSignedDataUrl.split(",")[1] || "";
-      const sizeBytes = Math.floor((base64.length * 3) / 4);
-
-      // Keep only the latest signed artifact for this request in the bundle.
-      // Older signed attachments (same file name) become stale after re-signing.
-      bundleItems
-        .filter((item) => {
-          if (item.type !== "ATTACHMENT") return false;
-          if (request.signedAttachmentId && item.refId === request.signedAttachmentId) {
-            return false;
-          }
-          const attachment = attachmentsById[item.refId];
-          if (!attachment) return false;
-          if (attachment.name !== signedName) return false;
-          return !linkedSignedAttachmentIds.has(item.refId);
-        })
-        .forEach((staleItem) => removeFromBundle(staleItem.id));
-
-      if (existingAttachment) {
-        const needsRefresh =
-          existingAttachment.url !== latestSignedDataUrl ||
-          existingAttachment.name !== signedName ||
-          existingAttachment.size !== sizeBytes;
-
-        if (needsRefresh) {
-          const oldBundleItem = bundleItems.find(
-            (item) =>
-              item.type === "ATTACHMENT" && item.refId === existingAttachment.id
-          );
-          const insertAfterId = oldBundleItem?.id || request.bundleItemId;
-          const updatedAttachmentId = addSignedAttachment(
-            {
-              name: signedName,
-              type: "application/pdf",
-              size: sizeBytes,
-              url: latestSignedDataUrl,
-            },
-            insertAfterId
-          );
-          updateRequest(request.id, { signedAttachmentId: updatedAttachmentId });
-          if (oldBundleItem) {
-            removeFromBundle(oldBundleItem.id);
-          }
-        }
-      } else {
-        const attachmentId = addSignedAttachment(
-          {
-            name: signedName,
-            type: "application/pdf",
-            size: sizeBytes,
-            url: latestSignedDataUrl,
-          },
-          request.bundleItemId
-        );
-        updateRequest(request.id, { signedAttachmentId: attachmentId });
+  const signatureStatusByPageIndex = useMemo(() => {
+    const map: Record<number, { clientSigned: boolean; lawyerSigned: boolean }> = {};
+    for (const req of signedSignatureRequests) {
+      const indices = req.pageIndices || [];
+      for (const idx of indices) {
+        const entry = map[idx] || { clientSigned: false, lawyerSigned: false };
+        if (req.signerRole === "client") entry.clientSigned = true;
+        if (req.signerRole === "lawyer") entry.lawyerSigned = true;
+        map[idx] = entry;
       }
-      if (stillHasOriginal) {
-        removeFromBundle(request.bundleItemId);
-      }
-    });
-  }, [
-    signatureCaseId,
-    getRequestsByCaseId,
-    addSignedAttachment,
-    updateRequest,
-    attachmentsById,
-    removeFromBundle,
-    bundleItems,
-  ]);
+    }
+    return map;
+  }, [signedSignatureRequests]);
+
+  const caseFullySigned = isCaseFullySigned(signatureCaseId);
+
+  // Invalidate the case useQuery when the case transitions to
+  // fully-signed so the freshly-populated signedPdfStoragePath +
+  // signedPdfGeneratedAt on the case row are visible to consumers
+  // (the Download CTA, the submit-page preview). Without this the
+  // useQuery cache stays stale for up to 60s and the editor would
+  // briefly show "Untitled document" while the response loaded —
+  // the root cause of the post-signing blank state.
+  const queryClient = useQueryClient();
+  useEffect(() => {
+    if (caseFullySigned && caseId && caseId !== "default-case") {
+      queryClient.invalidateQueries({ queryKey: ["case", effectiveCaseId] });
+    }
+  }, [caseFullySigned, caseId, effectiveCaseId, queryClient]);
 
   // Fetch the case so the editor knows which backend-generated template to
   // load. caseId is the only thing the route gives us — case_type code +
@@ -344,7 +363,17 @@ export default function CaseDocumentEditor() {
     // back: bundle/currentDocId are restored from the saved draft, but
     // docxBytes is local React state and starts fresh at null. Without
     // this trigger the editor would render "No document loaded".
+    //
+    // Guard: only attempt the load when documentsById has the doc's
+    // url ready. A draft restored from localStorage may have bundle
+    // items pointing at refIds that aren't yet populated in
+    // documentsById (the seed effect runs *after* caseRecord loads).
+    // Without this guard, the auto-open fires too early, loadDocument
+    // silently no-ops on a missing url, and the editor sticks on
+    // "No document loaded" until the next bundle change re-triggers
+    // the effect.
     if (nextDocId && (nextDocId !== currentDocId || !docxBytes)) {
+      if (!documentsById[nextDocId]?.url) return;
       loadDocument(nextDocId);
     }
   }, [bundleItems, currentDocId, docxBytes, documentsById, loadDocument, setCurrentDocId]);
@@ -360,15 +389,137 @@ export default function CaseDocumentEditor() {
     }
   };
 
+  // Track the last HTML we shipped to the backend so the auto-save
+  // loop can skip when nothing changed. Stored on a ref so React
+  // doesn't re-render on every keystroke.
+  const lastSavedHtmlRef = useRef<string>("");
+  const autoSaveInFlightRef = useRef<boolean>(false);
+
+  // Persist the editor's current HTML state to cases.edited_html on
+  // the backend. Skips when:
+  //   - We're not in a real case (default-case fallback)
+  //   - The pages haven't rendered yet (snapshot would be empty)
+  //   - The snapshot is identical to the last shipped one
+  //   - Another auto-save is already in flight (avoid stampede)
+  // Errors are logged + swallowed; the next blur/interval retries.
+  const persistEditedHtml = useCallback(async () => {
+    if (!caseId || caseId === "default-case") return;
+    if (renderedPages.length === 0) return;
+    if (autoSaveInFlightRef.current) return;
+    const snapshot = buildEditorSnapshot(renderedPages);
+    if (!snapshot || snapshot === lastSavedHtmlRef.current) return;
+
+    autoSaveInFlightRef.current = true;
+    try {
+      await casesApi.saveEditedHtml(effectiveCaseId, snapshot);
+      lastSavedHtmlRef.current = snapshot;
+    } catch (err) {
+      console.error("[AUTO SAVE FAILED]", {
+        caseId: effectiveCaseId,
+        message: err instanceof Error ? err.message : String(err),
+      });
+    } finally {
+      autoSaveInFlightRef.current = false;
+    }
+  }, [caseId, effectiveCaseId, renderedPages]);
+
+  // Keep the ref pointing at the latest closure so the long-lived
+  // blur/interval listeners above always call the fresh function.
+  useEffect(() => {
+    persistEditedHtmlRef.current = persistEditedHtml;
+  }, [persistEditedHtml]);
+
   const handleSaveDraft = () => {
     if (currentDocId && activeEditorRef) {
       saveDocumentJSON(currentDocId, activeEditorRef.getJSON());
     }
     saveDraft(effectiveCaseId);
+    // Manual Save Draft also pushes the latest HTML to the backend so
+    // the lawyer can recover the case on a different device.
+    void persistEditedHtml();
   };
 
   const handleDownload = () => {
     setIsDownloadModalOpen(true);
+  };
+
+  // Right-click "Send for Signature" fast path. Builds the API payload
+  // straight from the clicked page + chosen signer and posts via the
+  // store (which refreshes the per-page badges on success). The
+  // editor's DOM is NOT touched — the request travels through the
+  // network, not through the rendered .docx-wrapper, so the user's
+  // hard formatting-preservation invariant holds.
+  const sendPageForSignature = async (
+    pageIndex: number,
+    signer: "client" | "lawyer" | "both"
+  ) => {
+    if (!caseId || caseId === "default-case") return;
+    if (renderedPages.length === 0) return;
+
+    // Client signing needs a known recipient — bail with an actionable
+    // message rather than firing a 400 the lawyer can't fix without
+    // the context.
+    const needsClient = signer === "client" || signer === "both";
+    if (needsClient && !caseRecord?.clientEmail) {
+      setSignatureToast({
+        tone: "error",
+        message:
+          "Add a client email on this case before sending for client signature.",
+      });
+      return;
+    }
+
+    const signers: SignerRole[] =
+      signer === "both" ? ["client", "lawyer"] : [signer];
+
+    try {
+      await createSignatureRequests(effectiveCaseId, {
+        clientEmail: needsClient ? caseRecord!.clientEmail! : undefined,
+        pageAssignments: [{ pageIndex, signers }],
+        documentHtmlSnapshot: buildEditorSnapshot(renderedPages),
+      });
+      const label =
+        signer === "both"
+          ? "client + lawyer"
+          : signer === "client"
+            ? "client"
+            : "lawyer";
+      setSignatureToast({
+        tone: "success",
+        message: `Signature request sent to ${label} for page ${pageIndex + 1}.`,
+      });
+    } catch (err) {
+      setSignatureToast({
+        tone: "error",
+        message: getSignaturesErrorMessage(err),
+      });
+    }
+  };
+
+  // Auto-dismiss the toast after 4s so it doesn't loiter while the
+  // lawyer keeps editing. Clicking the toast still dismisses it
+  // immediately via the inline onClick handler below.
+  useEffect(() => {
+    if (!signatureToast) return;
+    const t = window.setTimeout(() => setSignatureToast(null), 4000);
+    return () => window.clearTimeout(t);
+  }, [signatureToast]);
+
+  // Fetch a short-lived signed URL for the compiled signed-case PDF
+  // and open it in a new tab. URLs expire in 5 minutes so we always
+  // ask the server fresh — no client-side caching.
+  const handleDownloadSignedPdf = async () => {
+    try {
+      const { downloadUrl } = await signaturesApi.downloadSignedPdf(
+        signatureCaseId
+      );
+      window.open(downloadUrl, "_blank", "noopener,noreferrer");
+    } catch (err) {
+      // 409 = signing not complete yet (button shouldn't have shown);
+      // anything else = transport or storage misconfig. Surface the
+      // server's message rather than swallowing.
+      alert(getSignaturesErrorMessage(err));
+    }
   };
 
   const handleAddAttachment = () => {
@@ -491,6 +642,11 @@ export default function CaseDocumentEditor() {
             navigate({ to: `/lawyer-submit-case/${effectiveCaseId}` })
           }
           onAddAttachment={handleAddAttachment}
+          // Download signed PDF: only surfaced once every required
+          // signature is in. Backend compiles synchronously on the last
+          // signer's submit, so by the time this is true the PDF is
+          // already in Storage. Click → short-lived signed URL → new tab.
+          onDownloadSignedPdf={caseFullySigned ? handleDownloadSignedPdf : undefined}
         />
 
         <div className="flex flex-1 overflow-hidden">
@@ -504,6 +660,7 @@ export default function CaseDocumentEditor() {
             }}
             caseId={caseId}
             pages={renderedPages}
+            signatureStatusByPageIndex={signatureStatusByPageIndex}
             onSendPageToClient={() => {
               // Opens the signature panel. Per-page extraction (DOCX →
               // PDF for one page) is wired up in the next sub-phase;
@@ -511,6 +668,9 @@ export default function CaseDocumentEditor() {
               // lawyer sees the flow.
               setIsSignaturePanelOpen(true);
             }}
+            onPageContextMenu={(pageIndex, x, y) =>
+              setPageMenu({ pageIndex, x, y })
+            }
           />
           {isAttachmentView && selectedAttachment ? (
             <div className="flex-1 overflow-auto bg-white p-6">
@@ -594,10 +754,25 @@ export default function CaseDocumentEditor() {
               <div className="flex-1 overflow-hidden">
                 <DocxPreviewSurface
                   arrayBuffer={docxBytes}
+                  editedHtml={caseRecord?.editedHtml ?? null}
                   isLoading={isLoading}
                   onPagesReady={setRenderedPages}
                   onImageDropped={handleImageDropped}
+                  onPageContextMenu={(pageIndex, x, y) =>
+                    setPageMenu({ pageIndex, x, y })
+                  }
                   editable
+                />
+                {/* Read-only signature overlay layer. Renders the
+                    captured signature PNGs at their page-fractional
+                    placements as the lawyer edits — so the editor view
+                    matches what the compiled signed PDF will look like.
+                    Updates whenever the 15s poll surfaces new signed
+                    rows; pointer-events: none keeps the underlying
+                    contenteditable text fully accessible. */}
+                <SignatureOverlayLayer
+                  pages={renderedPages}
+                  signedRequests={signedSignatureRequests}
                 />
               </div>
             </div>
@@ -612,13 +787,51 @@ export default function CaseDocumentEditor() {
           selectedAttachmentId={selectedAttachmentId}
         />
 
-        {/* Signature Request Panel */}
+        {/* Signature Request Panel — bulk / multi-page flow, opened
+            from the Signatures toolbar button. The right-click menu
+            uses its own one-click fast-path (sendPageForSignature)
+            and never opens this panel. */}
         {isSignaturePanelOpen && (
           <SignatureRequestPanel
             caseId={effectiveCaseId}
-            bundleItems={bundleItems}
+            pages={renderedPages}
             onClose={() => setIsSignaturePanelOpen(false)}
           />
+        )}
+
+        {/* Right-click context menu. Sidebar AND canvas both surface the
+            same {pageIndex, x, y} into pageMenu; this component handles
+            closing on outside-click / Escape / scroll. The three signer
+            options (Client / Lawyer / Both) fire the API call directly
+            via sendPageForSignature — no panel, fewest clicks. The
+            advanced multi-page bulk flow stays on the Signatures
+            toolbar button (SignatureRequestPanel). */}
+        {pageMenu && (
+          <PageContextMenu
+            state={pageMenu}
+            onClose={() => setPageMenu(null)}
+            onSend={(pageIndex, signer) => {
+              void sendPageForSignature(pageIndex, signer);
+            }}
+          />
+        )}
+
+        {/* Bottom-center toast for the right-click send result.
+            Auto-dismisses after 4s; tap to dismiss earlier. Lives
+            outside the document editor's main flex so it doesn't
+            push pages around. */}
+        {signatureToast && (
+          <button
+            type="button"
+            onClick={() => setSignatureToast(null)}
+            className={`fixed bottom-6 left-1/2 z-[120] -translate-x-1/2 rounded-lg px-4 py-2.5 text-sm font-medium shadow-lg ${
+              signatureToast.tone === "success"
+                ? "bg-emerald-600 text-white"
+                : "bg-rose-600 text-white"
+            }`}
+          >
+            {signatureToast.message}
+          </button>
         )}
 
         {/* Hidden file input for attachment uploads (PNG/JPG only) */}

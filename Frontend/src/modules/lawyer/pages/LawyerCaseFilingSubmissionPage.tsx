@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
 import {
   AlertCircle,
   CheckCircle2,
@@ -17,7 +18,9 @@ import { Table, TableCell, TableHeader, TableRow } from "@tiptap/extension-table
 import type { JSONContent } from "@tiptap/react";
 import { AttachmentBlock } from "../extensions/AttachmentBlock";
 import { ImageAttachment } from "../extensions/ImageAttachment";
-import { pdfjs } from "react-pdf";
+import { Document, Page, pdfjs } from "react-pdf";
+import { casesApi } from "../api/cases.api";
+import { signaturesApi, getSignaturesErrorMessage } from "../signatures/api/signatures.api";
 import LawyerLayout from "../components/LawyerLayout";
 import { useDocumentEditorStore } from "../store/documentEditor.store";
 import { useSignatureRequestsStore } from "../signatures/store/signatureRequests.store";
@@ -99,9 +102,9 @@ async function buildSubmittedPreviewFromWorkspace(
   bundle: CompiledCaseBundle
 ): Promise<SubmittedCaseFilePreview> {
   useDocumentEditorStore.getState().loadDraft(caseId);
-  const signatureRequests = useSignatureRequestsStore
-    .getState()
-    .getRequestsByCaseId(caseId);
+  // Signature linkage temporarily unused while the new per-signer-per-row
+  // model is rewired into the submission preview (Phase 2).
+  void useSignatureRequestsStore;
   const editorState = useDocumentEditorStore.getState();
 
   const {
@@ -118,17 +121,15 @@ async function buildSubmittedPreviewFromWorkspace(
   const docByTitle = new Map(
     bundle.orderedDocuments.map((doc) => [normalizeTitle(doc.title), doc])
   );
-  const signatureRequestByBundleItemId = new Map(
-    signatureRequests.map((req) => [req.bundleItemId, req] as const)
-  );
-  const signatureRequestBySignedAttachmentId = new Map(
-    signatureRequests
-      .filter((req) => req.signedAttachmentId)
-      .map((req) => [req.signedAttachmentId as string, req] as const)
-  );
-  const signatureRequestByDocTitle = new Map(
-    signatureRequests.map((req) => [normalizeTitle(req.docTitle), req] as const)
-  );
+  // Signature linkage rewired in Phase 2 — the new per-signer-per-row
+  // model doesn't have bundleItemId / signedAttachmentId, and the
+  // signed PDF lives on cases.signed_pdf (one per case) rather than
+  // per-request. Until that wiring lands, the preview falls back to
+  // "no signature linked" for every item, which matches the data
+  // available right now.
+  const signatureRequestByBundleItemId = new Map<string, never>();
+  const signatureRequestBySignedAttachmentId = new Map<string, never>();
+  const signatureRequestByDocTitle = new Map<string, never>();
 
   const resolveDocHtmlAsync = async (docId: string) => {
     if (docId === currentDocId && activeEditorRef) {
@@ -163,28 +164,24 @@ async function buildSubmittedPreviewFromWorkspace(
       signatureRequestBySignedAttachmentId.get(item.refId) ||
       signatureRequestByDocTitle.get(normalizeTitle(item.title));
 
-    const signedRequired =
-      linkedRequest != null
-        ? linkedRequest.requiresClientSignature || linkedRequest.requiresLawyerSignature
-        : bundleDoc?.signedRequired || false;
-    const signedByClient = linkedRequest?.clientSigned || false;
-    const signedByLawyer = linkedRequest?.lawyerSigned || false;
-    const signedCompleted =
-      linkedRequest != null
-        ? (!linkedRequest.requiresClientSignature || linkedRequest.clientSigned) &&
-          (!linkedRequest.requiresLawyerSignature || linkedRequest.lawyerSigned)
-        : bundleDoc?.signedCompleted || false;
-    const signedDataUrl =
-      linkedRequest?.lawyerSignedPdfDataUrl ||
-      linkedRequest?.pdfDataUrl ||
-      linkedRequest?.signedPdfDataUrl;
+    // Phase 1: per-bundle-item signature linkage is gone; signature_requests
+    // now key off page indices, and the final signed artifact lives on
+    // cases.signed_pdf (one per case, populated in Phase 2). For preview
+    // purposes we fall back to bundleDoc's own flags and stop trying to
+    // pull request-level state.
+    void linkedRequest;
+    const signedRequired = bundleDoc?.signedRequired || false;
+    const signedByClient = false;
+    const signedByLawyer = false;
+    const signedCompleted = bundleDoc?.signedCompleted || false;
+    const signedDataUrl: string | undefined = undefined;
 
     if (signedDataUrl) {
       previewItems.push({
         id: item.id,
         title: item.title.toLowerCase().endsWith(".pdf")
           ? item.title
-          : `${linkedRequest?.docTitle || item.title}-Signed.pdf`,
+          : `${item.title}-Signed.pdf`,
         type: "ATTACHMENT",
         source: bundleDoc?.source || "evidence",
         signedRequired,
@@ -277,6 +274,84 @@ export default function LawyerCaseFilingSubmissionPage() {
     (item) => item.caseId === selectedCaseId
   );
 
+  // Pull the backend case record so we can detect whether the signing
+  // workflow finished (signedPdfStoragePath is set on the row only after
+  // every signature_request reaches status='signed' AND the puppeteer +
+  // pdf-lib compile job posts the artifact to Supabase Storage). The
+  // editor invalidates this query on caseFullySigned so by the time the
+  // lawyer lands here, the field is fresh.
+  const { data: backendCase } = useQuery({
+    queryKey: ["case", selectedCaseId],
+    queryFn: () => casesApi.getCase(selectedCaseId),
+    enabled: Boolean(selectedCaseId) && selectedCaseId !== "default-case",
+    staleTime: 1000 * 30,
+  });
+
+  // Signed PDF preview state. Resolved lazily once we know the case is
+  // signed — the signed URL is a short-lived (5-min) Supabase Storage
+  // link, so we ask the server only when we're about to render. PDF
+  // bytes are pulled into memory once and rendered with react-pdf,
+  // matching how the attachment-PDF preview in the editor sidebar works.
+  const signedPdfStoragePath = backendCase?.signedPdfStoragePath ?? null;
+  const [signedPdfUrl, setSignedPdfUrl] = useState<string | null>(null);
+  const [signedPdfError, setSignedPdfError] = useState<string | null>(null);
+  const [signedPdfNumPages, setSignedPdfNumPages] = useState(0);
+  const [signedPdfContainerWidth, setSignedPdfContainerWidth] = useState(0);
+  const signedPdfContainerRef = useRef<HTMLDivElement | null>(null);
+
+  // Refetch a fresh signed URL whenever the signed-pdf path appears /
+  // changes on the case row. Storage paths can rotate if the lawyer
+  // somehow re-collects signatures, so we key the effect on the path
+  // (not just a boolean).
+  useEffect(() => {
+    if (!signedPdfStoragePath) {
+      setSignedPdfUrl(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const { downloadUrl } = await signaturesApi.downloadSignedPdf(
+          selectedCaseId
+        );
+        if (cancelled) return;
+        setSignedPdfUrl(downloadUrl);
+        setSignedPdfError(null);
+      } catch (err) {
+        if (cancelled) return;
+        setSignedPdfError(getSignaturesErrorMessage(err));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedCaseId, signedPdfStoragePath]);
+
+  // Observe the PDF container so each page renders at the natural
+  // column width — keeps the signed file legible without needing a
+  // horizontal scrollbar.
+  useEffect(() => {
+    const element = signedPdfContainerRef.current;
+    if (!element) return;
+    const observer = new ResizeObserver(() => {
+      const nextWidth = element.clientWidth;
+      setSignedPdfContainerWidth((prev) =>
+        Math.abs(prev - nextWidth) > 2 ? nextWidth : prev
+      );
+    });
+    observer.observe(element);
+    setSignedPdfContainerWidth(element.clientWidth);
+    return () => observer.disconnect();
+  }, [signedPdfUrl]);
+
+  const signedPdfPages = useMemo(
+    () =>
+      signedPdfNumPages > 0 && signedPdfContainerWidth > 0
+        ? Array.from({ length: signedPdfNumPages }, (_, i) => i + 1)
+        : [],
+    [signedPdfNumPages, signedPdfContainerWidth]
+  );
+
   const canSubmit = Boolean(
     filingCase &&
       bundle &&
@@ -288,10 +363,6 @@ export default function LawyerCaseFilingSubmissionPage() {
 
     useDocumentEditorStore.getState().loadDraft(selectedCaseId);
     const editorState = useDocumentEditorStore.getState();
-    const signatureRequests = useSignatureRequestsStore
-      .getState()
-      .getRequestsByCaseId(selectedCaseId);
-
     const editorItems = editorState.bundleItems.map((item) => {
       const attachment = editorState.attachmentsById[item.refId];
       return {
@@ -306,7 +377,11 @@ export default function LawyerCaseFilingSubmissionPage() {
     const derivedTitle = getCaseDisplayTitle(filingCase?.title, selectedCaseId);
 
     ensureCaseContext(selectedCaseId, derivedTitle);
-    refreshBundleFromWorkspace(selectedCaseId, editorItems, signatureRequests);
+    // Phase 1: the new signature_requests shape doesn't match the
+    // submission-bundle's legacy SignatureRequestInput (bundleItemId,
+    // requiresClient*, etc). Pass an empty list; Phase 2 will rebuild
+    // the linkage once cases.signed_pdf is wired.
+    refreshBundleFromWorkspace(selectedCaseId, editorItems, []);
   }, [ensureCaseContext, filingCase?.title, refreshBundleFromWorkspace, selectedCaseId]);
 
   useEffect(() => {
@@ -633,6 +708,75 @@ export default function LawyerCaseFilingSubmissionPage() {
 
         {filingCase && bundle && (
           <>
+            {/* Signed PDF preview — only shown when the case is fully
+                signed and the backend compile has finished posting the
+                artifact to Supabase Storage. This *replaces* the editable
+                document list as the canonical case-file preview because
+                once it exists, the signed PDF is the legally-frozen
+                artifact the registrar receives. */}
+            {signedPdfStoragePath && (
+              <div className="rounded-xl border border-emerald-200 bg-white p-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <div className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-700">
+                      <CheckCircle2 className="h-3.5 w-3.5" />
+                      Signed Case File
+                    </div>
+                    <h2 className="mt-2 text-base font-semibold text-gray-900">
+                      Final PDF — All Signatures Collected
+                    </h2>
+                    {backendCase?.signedPdfGeneratedAt && (
+                      <p className="mt-1 text-xs text-gray-500">
+                        Compiled {formatFilingDateTime(backendCase.signedPdfGeneratedAt)}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                {signedPdfError && (
+                  <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
+                    {signedPdfError}
+                  </div>
+                )}
+
+                <div
+                  ref={signedPdfContainerRef}
+                  className="mt-4 max-h-[70vh] overflow-y-auto overflow-x-hidden rounded-lg border border-gray-200 bg-gray-50 p-3"
+                >
+                  {signedPdfUrl ? (
+                    <Document
+                      file={signedPdfUrl}
+                      onLoadSuccess={(doc) => setSignedPdfNumPages(doc.numPages)}
+                      onLoadError={(err) => setSignedPdfError(err.message)}
+                      loading={
+                        <div className="p-4 text-sm text-gray-500">
+                          Loading signed PDF…
+                        </div>
+                      }
+                    >
+                      {signedPdfPages.map((pageNumber) => (
+                        <div
+                          key={`signed-pdf-page-${pageNumber}`}
+                          className="mx-auto mb-4 w-full bg-white shadow-sm"
+                        >
+                          <Page
+                            pageNumber={pageNumber}
+                            width={Math.max(signedPdfContainerWidth - 24, 320)}
+                            renderTextLayer={false}
+                            renderAnnotationLayer={false}
+                          />
+                        </div>
+                      ))}
+                    </Document>
+                  ) : (
+                    <div className="p-4 text-sm text-gray-500">
+                      Preparing signed PDF preview…
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
             <div className="rounded-xl border border-gray-200 bg-white p-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h2 className="text-base font-semibold text-gray-900">
