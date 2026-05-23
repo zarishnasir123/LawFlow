@@ -41,6 +41,15 @@ function mapCase(row) {
     // bytes", non-null means "rehydrate this HTML directly into the
     // docx-preview host".
     editedHtml: row.edited_html,
+    // Signed-PDF artifact: populated by the background compile in
+    // signatures.service.js once every signature_request on the case
+    // reaches status='signed'. The frontend uses this to:
+    //   1. Decide whether to surface "Download signed PDF" in the editor
+    //   2. Preview the signed PDF on the submit-to-registrar page
+    // The path is internal-only; downloads always go through a 5-min
+    // signed URL minted on demand.
+    signedPdfStoragePath: row.signed_pdf_storage_path,
+    signedPdfGeneratedAt: row.signed_pdf_generated_at,
     status: row.status,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -135,6 +144,9 @@ function selectCaseWithType() {
     cases.client_email,
     cases.client_phone,
     cases.opposite_party_name,
+    cases.edited_html,
+    cases.signed_pdf_storage_path,
+    cases.signed_pdf_generated_at,
     cases.status,
     cases.created_at,
     cases.updated_at,

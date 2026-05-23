@@ -28,6 +28,13 @@ export type ApiCase = {
   clientEmail: string | null;
   clientPhone: string | null;
   oppositePartyName: string;
+  // Lawyer's saved HTML edit state. NULL until first edit.
+  editedHtml: string | null;
+  // Signed-PDF artifact populated when every signature_request on the
+  // case reaches status='signed' and the background compile finishes.
+  // The path is internal; downloads go through short-lived signed URLs.
+  signedPdfStoragePath: string | null;
+  signedPdfGeneratedAt: string | null;
   status: CaseStatus;
   createdAt: string;
   updatedAt: string;
@@ -99,6 +106,24 @@ export const casesApi = {
       payload
     );
     return data.case;
+  },
+
+  // Persist the editor's current HTML state to cases.edited_html.
+  // Called by the auto-save loop in CaseDocumentEditor (on blur, on
+  // 30s interval, and on manual Save Draft). The backend endpoint
+  // lives in the signatures router (PUT /api/cases/:caseId/document)
+  // because the snapshot flow originated there; functionally it's a
+  // case-edit operation. Returns the row's updatedAt so the editor
+  // can render "Saved 2m ago" in the title bar.
+  saveEditedHtml: async (
+    caseId: string,
+    editedHtml: string
+  ): Promise<{ updatedAt: string }> => {
+    const { data } = await apiClient.put<{ updatedAt: string }>(
+      `/cases/${caseId}/document`,
+      { editedHtml }
+    );
+    return data;
   },
 };
 

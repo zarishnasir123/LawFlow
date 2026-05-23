@@ -1,11 +1,14 @@
-import { useMemo } from "react";
-import { useNavigate, useSearch } from "@tanstack/react-router";
-import { CalendarClock, FileSignature } from "lucide-react";
+import { useEffect, useState } from "react";
+import { useNavigate } from "@tanstack/react-router";
+import { CalendarClock, FileSignature, Loader2 } from "lucide-react";
+
 import ClientLayout from "../components/ClientLayout";
 import Card from "../../../shared/components/dashboard/Card";
-import { useSignatureRequestsStore } from "../../lawyer/signatures/store/signatureRequests.store";
-import { useCaseFilingStore } from "../../lawyer/store/caseFiling.store";
-import { getCaseDisplayTitle } from "../../../shared/utils/caseDisplay";
+import {
+  mySignaturesApi,
+  type ApiPendingSignature,
+  getMySignaturesErrorMessage,
+} from "../../../shared/api/mySignatures.api";
 
 function Badge({ text, color }: { text: string; color?: string }) {
   return (
@@ -43,34 +46,39 @@ function formatDateOnly(value?: string) {
   });
 }
 
+// Client-side "Pending Signatures" view (FE-5).
+//
+// Lists every signature_request where:
+//   - recipient_user_id === current client
+//   - status === 'pending'
+//   - not expired
+// Sourced live from /api/me/signature-requests; the row's "Open" button
+// drops the client into the in-app signing viewer.
 export default function CaseTracking() {
   const navigate = useNavigate();
-  const { caseId } = useSearch({ strict: false }) as {
-    caseId?: string;
-  };
-  const signatureCaseId = caseId || "default-case";
+  const [pendingRequests, setPendingRequests] = useState<ApiPendingSignature[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const { getPendingRequests, getCompletedRequests } = useSignatureRequestsStore();
-  const filingCases = useCaseFilingStore((state) => state.cases);
-
-  const pendingRequests = useMemo(
-    () => (caseId ? getPendingRequests(signatureCaseId) : getPendingRequests()),
-    [caseId, getPendingRequests, signatureCaseId]
-  );
-  const completedRequests = useMemo(
-    () => (caseId ? getCompletedRequests(signatureCaseId) : getCompletedRequests()),
-    [caseId, getCompletedRequests, signatureCaseId]
-  );
-
-  const caseTitleById = useMemo(
-    () =>
-      new Map(
-        filingCases.map(
-          (item) => [item.id, getCaseDisplayTitle(item.title, item.id)] as const
-        )
-      ),
-    [filingCases]
-  );
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    mySignaturesApi
+      .listPending()
+      .then((rows) => {
+        if (!cancelled) setPendingRequests(rows);
+      })
+      .catch((err) => {
+        if (!cancelled) setError(getMySignaturesErrorMessage(err));
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   return (
     <ClientLayout
@@ -85,92 +93,81 @@ export default function CaseTracking() {
               <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-amber-700">
                 Signature queue
               </p>
-              <h3 className="mt-1 text-lg font-semibold text-gray-900">Pending Signatures</h3>
+              <h3 className="mt-1 text-lg font-semibold text-gray-900">
+                Pending Signatures
+              </h3>
             </div>
-            <Badge text={`${pendingRequests.length} Pending`} color="bg-amber-100 text-amber-800" />
+            <Badge
+              text={`${pendingRequests.length} Pending`}
+              color="bg-amber-100 text-amber-800"
+            />
           </div>
 
-          {pendingRequests.length === 0 ? (
+          {loading ? (
+            <div className="flex items-center justify-center gap-2 rounded-xl border border-dashed border-amber-200/70 bg-white/70 p-6 text-sm text-gray-500">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Loading your signature requestsâ€¦
+            </div>
+          ) : error ? (
+            <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-center text-sm text-red-700">
+              {error}
+            </div>
+          ) : pendingRequests.length === 0 ? (
             <div className="rounded-xl border border-dashed border-amber-200/70 bg-white/70 p-6 text-center text-sm text-gray-600">
               No documents are waiting for your signature right now.
             </div>
           ) : (
             <div className="space-y-3">
-              {pendingRequests.map((doc) => (
-                <div
-                  key={doc.id}
-                  className="flex flex-wrap items-start justify-between gap-3 rounded-xl border border-amber-100 bg-white p-4 shadow-[0_10px_25px_-22px_rgba(120,53,15,0.4)]"
-                >
-                  <div className="flex items-start gap-3">
-                    <div className="mt-0.5 rounded-lg bg-amber-50 p-2 text-amber-700 shadow-sm">
-                      <FileSignature className="h-4 w-4" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-semibold text-gray-900">{doc.docTitle}</p>
-                      <p className="text-xs text-gray-500">
-                        {caseTitleById.get(doc.caseId) || "Case File"} • Sent by {doc.requestedBy || "Lawyer"}
-                      </p>
-                      <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-gray-500">
-                        <span className="inline-flex items-center gap-1">
-                          <CalendarClock className="h-3.5 w-3.5" />
-                          Requested {formatDateTime(doc.requestedAt)}
-                        </span>
-                        <span className="text-gray-300">•</span>
-                        <span>Due {formatDateOnly(doc.dueAt)}</span>
+              {pendingRequests.map((req) => {
+                const pageCount = req.pageIndices?.length || 0;
+                return (
+                  <div
+                    key={req.id}
+                    className="flex flex-wrap items-start justify-between gap-3 rounded-xl border border-amber-100 bg-white p-4 shadow-[0_10px_25px_-22px_rgba(120,53,15,0.4)]"
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className="mt-0.5 rounded-lg bg-amber-50 p-2 text-amber-700 shadow-sm">
+                        <FileSignature className="h-4 w-4" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold text-gray-900">
+                          {req.caseTitle}
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          {pageCount > 0
+                            ? `${pageCount} page${pageCount === 1 ? "" : "s"} â€¢ Sent by ${req.requestingLawyerName}`
+                            : `Sent by ${req.requestingLawyerName}`}
+                        </p>
+                        <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-gray-500">
+                          <span className="inline-flex items-center gap-1">
+                            <CalendarClock className="h-3.5 w-3.5" />
+                            Requested {formatDateTime(req.createdAt)}
+                          </span>
+                          <span className="text-gray-300">â€¢</span>
+                          <span>Expires {formatDateOnly(req.expiresAt)}</span>
+                        </div>
                       </div>
                     </div>
+                    <div className="flex items-center gap-2">
+                      <Badge
+                        text="Pending Signature"
+                        color="bg-amber-100 text-amber-700"
+                      />
+                      <button
+                        onClick={() =>
+                          navigate({ to: `/client-signatures/${req.id}` })
+                        }
+                        className="rounded-lg border border-amber-200 px-3 py-1 text-xs font-semibold text-amber-800 hover:bg-amber-50"
+                      >
+                        Open
+                      </button>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <Badge text="Pending Signature" color="bg-amber-100 text-amber-700" />
-                    <button
-                      onClick={() => navigate({ to: `/client-signatures/${doc.id}` })}
-                      className="rounded-lg border border-amber-200 px-3 py-1 text-xs font-semibold text-amber-800 hover:bg-amber-50"
-                    >
-                      Open
-                    </button>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </Card>
-
-        {completedRequests.length > 0 && (
-          <Card className="border border-emerald-100/80 bg-gradient-to-br from-white via-emerald-50/40 to-white p-6 shadow-[0_18px_45px_-32px_rgba(16,185,129,0.4)]">
-            <div className="mb-4 flex items-center justify-between">
-              <div>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-emerald-700">
-                  Completed
-                </p>
-                <h3 className="mt-1 text-lg font-semibold text-gray-900">Signed Documents</h3>
-              </div>
-              <Badge text={`${completedRequests.length} Signed`} color="bg-emerald-100 text-emerald-700" />
-            </div>
-            <div className="space-y-3">
-              {completedRequests.map((doc) => (
-                <div
-                  key={doc.id}
-                  className="flex flex-wrap items-start justify-between gap-3 rounded-xl border border-emerald-100 bg-white p-4 shadow-[0_10px_25px_-22px_rgba(16,185,129,0.35)]"
-                >
-                  <div className="flex items-start gap-3">
-                    <div className="mt-0.5 rounded-lg bg-emerald-50 p-2 text-emerald-600 shadow-sm">
-                      <FileSignature className="h-4 w-4" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-semibold text-gray-900">{doc.docTitle}</p>
-                      <p className="text-xs text-gray-500">Signed by {doc.clientSignatureName || "Client"}</p>
-                      <p className="mt-1 inline-flex items-center gap-1 text-xs text-gray-500">
-                        <CalendarClock className="h-3.5 w-3.5" />
-                        Signed {formatDateTime(doc.clientSignedAt)}
-                      </p>
-                    </div>
-                  </div>
-                  <Badge text="Signed" color="bg-emerald-100 text-emerald-700" />
-                </div>
-              ))}
-            </div>
-          </Card>
-        )}
       </div>
     </ClientLayout>
   );

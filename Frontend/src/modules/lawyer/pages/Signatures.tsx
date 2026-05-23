@@ -1,50 +1,55 @@
-import { useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { CheckCircle2, FileText, PenLine, Send } from "lucide-react";
-import LawyerLayout from "../components/LawyerLayout";
-import { useSignatureRequestsStore } from "../signatures/store/signatureRequests.store";
-import { lawyerDashboardCases } from "../data/dashboard.mock";
+import { Loader2, PenLine } from "lucide-react";
 
+import LawyerLayout from "../components/LawyerLayout";
+import {
+  mySignaturesApi,
+  type ApiPendingSignature,
+  getMySignaturesErrorMessage,
+} from "../../../shared/api/mySignatures.api";
+
+// Lawyer's own pending-signatures inbox.
+//
+// FE-7: when a lawyer composes a batch where they themselves are a
+// signer (signer_role='lawyer'), a row appears here. Clicking opens the
+// in-app lawyer signature viewer. The backend's /api/me/signature-requests
+// endpoint returns rows where recipient_user_id === current user, so
+// the same API powers both this page and the client's pending list.
 export default function Signatures() {
   const navigate = useNavigate();
-  const { requests, updateRequest } = useSignatureRequestsStore();
-  const [selectedCaseIds, setSelectedCaseIds] = useState<Record<string, string>>(
-    {}
-  );
+  const [pending, setPending] = useState<ApiPendingSignature[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const pendingLawyerRequests = useMemo(
-    () =>
-      requests.filter(
-        (req) => req.requiresLawyerSignature && !req.lawyerSigned
-      ),
-    [requests]
-  );
-
-  const signedRequests = useMemo(
-    () => requests.filter((req) => req.clientSigned && req.sentToLawyerAt),
-    [requests]
-  );
-
-  const pendingSend = useMemo(
-    () => requests.filter((req) => req.clientSigned && !req.sentToLawyerAt),
-    [requests]
-  );
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    mySignaturesApi
+      .listPending()
+      .then((rows) => {
+        if (!cancelled) {
+          // Filter to lawyer rows only — clients shouldn't normally land
+          // here, but a defensive filter keeps the page coherent if a
+          // lawyer is also a signer on a batch they didn't create.
+          setPending(rows.filter((r) => r.signerRole === "lawyer"));
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) setError(getMySignaturesErrorMessage(err));
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   return (
-    <LawyerLayout
-      brandTitle="LawFlow"
-      brandSubtitle="Signatures"
-    >
+    <LawyerLayout brandTitle="LawFlow" brandSubtitle="Signatures">
       <div className="space-y-6">
-        <div className="rounded-xl border border-emerald-100 bg-white p-6">
-          <h2 className="text-lg font-semibold text-gray-900">
-            Client Signed Documents
-          </h2>
-          <p className="mt-2 text-sm text-gray-600">
-            Review signed documents and attach them to the correct case file.
-          </p>
-        </div>
-
         <div className="rounded-xl border border-slate-200 bg-white p-5">
           <div className="flex items-center justify-between gap-3">
             <div>
@@ -57,156 +62,67 @@ export default function Signatures() {
               </p>
             </div>
             <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">
-              {pendingLawyerRequests.length} pending
+              {pending.length} pending
             </span>
           </div>
 
-          {pendingLawyerRequests.length === 0 ? (
+          {loading ? (
+            <div className="mt-4 flex items-center justify-center gap-2 rounded-lg border border-dashed border-slate-200 py-6 text-sm text-slate-500">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Loading your signature inbox…
+            </div>
+          ) : error ? (
+            <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+              {error}
+            </div>
+          ) : pending.length === 0 ? (
             <div className="mt-4 rounded-lg border border-dashed border-slate-200 py-6 text-center text-sm text-slate-500">
               No documents waiting for your signature.
             </div>
           ) : (
             <div className="mt-4 grid gap-3 lg:grid-cols-2">
-              {pendingLawyerRequests.map((req) => (
-                <div
-                  key={req.id}
-                  className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-semibold text-gray-900">
-                        {req.docTitle}
-                      </p>
-                      <p className="mt-1 text-xs text-gray-500">
-                        Case ID {req.caseId || "N/A"} | Requested{" "}
-                        {req.requestedAt
-                          ? new Date(req.requestedAt).toLocaleString()
-                          : "Recently"}
-                      </p>
-                      {req.clientSigned && (
-                        <span className="mt-2 inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
-                          Client signed
-                        </span>
-                      )}
-                    </div>
-                    <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700">
-                      Pending
-                    </span>
-                  </div>
-
-                  <button
-                    onClick={() =>
-                      navigate({ to: `/lawyer-signatures/${req.id}` })
-                    }
-                    className="mt-4 inline-flex items-center gap-2 rounded-lg bg-[#01411C] px-3 py-2 text-xs font-semibold text-white hover:bg-[#024a23]"
+              {pending.map((req) => {
+                const pageCount = req.pageIndices?.length || 0;
+                return (
+                  <div
+                    key={req.id}
+                    className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
                   >
-                    <PenLine className="h-4 w-4" />
-                    Review & Sign
-                  </button>
-                </div>
-              ))}
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-gray-900">
+                          {req.caseTitle}
+                        </p>
+                        <p className="mt-1 text-xs text-gray-500">
+                          {pageCount > 0
+                            ? `${pageCount} page${pageCount === 1 ? "" : "s"} • `
+                            : ""}
+                          Requested{" "}
+                          {req.createdAt
+                            ? new Date(req.createdAt).toLocaleString()
+                            : "Recently"}
+                        </p>
+                      </div>
+                      <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700">
+                        Pending
+                      </span>
+                    </div>
+
+                    <button
+                      onClick={() =>
+                        navigate({ to: `/lawyer-signatures/${req.id}` })
+                      }
+                      className="mt-4 inline-flex items-center gap-2 rounded-lg bg-[#01411C] px-3 py-2 text-xs font-semibold text-white hover:bg-[#024a23]"
+                    >
+                      <PenLine className="h-4 w-4" />
+                      Review & Sign
+                    </button>
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
-
-        {pendingSend.length > 0 && (
-          <div className="rounded-xl border border-amber-200 bg-amber-50 p-5">
-            <p className="text-sm font-medium text-amber-800">
-              {pendingSend.length} signed document{pendingSend.length !== 1 ? "s" : ""} waiting to be sent by the client.
-            </p>
-          </div>
-        )}
-
-        {signedRequests.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-gray-200 bg-white p-6 text-center text-sm text-gray-500">
-            No signed documents received yet.
-          </div>
-        ) : (
-          <div className="grid gap-4 lg:grid-cols-2">
-            {signedRequests.map((req) => {
-              const selectedCaseId =
-                selectedCaseIds[req.id] || String(req.caseId || lawyerDashboardCases[0]?.id || 1);
-
-              return (
-                <div
-                  key={req.id}
-                  className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-semibold text-gray-900">
-                        {req.docTitle}
-                      </p>
-                      <p className="mt-1 text-xs text-gray-500">
-                        Signed by {req.clientSignatureName || "Client"} •{" "}
-                        {req.clientSignedAt ? new Date(req.clientSignedAt).toLocaleString() : "Recently"}
-                      </p>
-                    </div>
-                    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700">
-                      <CheckCircle2 className="h-3.5 w-3.5" />
-                      Signed
-                    </span>
-                  </div>
-
-                  <div className="mt-4 space-y-3">
-                    <label className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                      Attach to case
-                    </label>
-                    <select
-                      value={selectedCaseId}
-                      onChange={(event) =>
-                        setSelectedCaseIds((prev) => ({
-                          ...prev,
-                          [req.id]: event.target.value,
-                        }))
-                      }
-                      className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
-                    >
-                      {lawyerDashboardCases.map((caseItem) => (
-                        <option key={caseItem.id} value={caseItem.id}>
-                          {caseItem.caseNumber} • {caseItem.title}
-                        </option>
-                      ))}
-                    </select>
-
-                    <div className="flex flex-wrap gap-2">
-                      <button
-                        onClick={() => {
-                          updateRequest(req.id, {
-                            caseId: selectedCaseId,
-                          });
-                          navigate({ to: `/lawyer-case-editor/${selectedCaseId}` });
-                        }}
-                        className="inline-flex items-center gap-2 rounded-lg bg-[#01411C] px-3 py-2 text-xs font-semibold text-white hover:bg-[#024a23]"
-                      >
-                        <FileText className="h-4 w-4" />
-                        Open Case Editor
-                      </button>
-
-                      <button
-                        onClick={() => {
-                          updateRequest(req.id, {
-                            caseId: selectedCaseId,
-                          });
-                        }}
-                        className="inline-flex items-center gap-2 rounded-lg border border-emerald-200 px-3 py-2 text-xs font-semibold text-emerald-700 hover:bg-emerald-50"
-                      >
-                        <Send className="h-4 w-4" />
-                        Attach to Case
-                      </button>
-
-                      {req.signedAttachmentId && (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-600">
-                          Attached
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
       </div>
     </LawyerLayout>
   );

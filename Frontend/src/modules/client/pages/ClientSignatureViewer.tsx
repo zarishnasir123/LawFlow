@@ -1,382 +1,364 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "@tanstack/react-router";
-import { Document, Page, pdfjs } from "react-pdf";
-import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
-import { Rnd } from "react-rnd";
-import { ImagePlus, Type, CheckCircle2, Download, RotateCcw } from "lucide-react";
+import {
+  CheckCircle2,
+  Loader2,
+  Pencil,
+  Type as TypeIcon,
+  Upload,
+} from "lucide-react";
+
 import ClientLayout from "../components/ClientLayout";
-import { useSignatureRequestsStore } from "../../lawyer/signatures/store/signatureRequests.store";
+import {
+  filterSnapshotToPages,
+  mySignaturesApi,
+  type ApiSignatureRequestDetail,
+  type SignaturePlacement,
+  getMySignaturesErrorMessage,
+} from "../../../shared/api/mySignatures.api";
+// Reusing the lawyer editor's floating-image utility — same drag/resize/
+// select gestures the lawyer uses for image attachments are what we want
+// for placing a signature on the page. Cross-module import is fine; this
+// helper has no React/lawyer-store coupling, it just attaches DOM
+// listeners to an HTMLElement.
+import { mountFloatingImage } from "../../lawyer/utils/floatingImage";
 
-pdfjs.GlobalWorkerOptions.workerSrc = new URL(
-  "pdfjs-dist/build/pdf.worker.min.mjs",
-  import.meta.url
-).toString();
+// =====================================================================
+// Client signing viewer (FE-6).
+//
+// Direct-render mode: the lawyer's HTML snapshot is mounted into a real
+// div (not an iframe) so we can drop the signature ON TOP of the page
+// as a draggable / resizable floating element, exactly like the editor
+// does with image attachments. When the client submits, we capture both
+// the signature PNG and its placement as page-relative percentages so
+// Phase 2's PDF compile can embed at the same spot.
+//
+// Trust note: we use dangerouslySetInnerHTML on the snapshot. The HTML
+// originates from the lawyer's editor (docx-preview output + our own
+// framing CSS) — no script tags ever pass through. The trade-off vs
+// the previous iframe is that we accept the lawyer as a trusted source
+// in exchange for drag-on-paper UX.
+// =====================================================================
 
-type SignatureBox = {
-  page: number;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-};
+type SignMode = "type" | "upload";
 
-type PageMetrics = {
-  pdfWidth: number;
-  pdfHeight: number;
-  renderWidth: number;
-  renderHeight: number;
-};
+// Cursive signature fonts shipped via Google Fonts. Loaded once per
+// page load via a <link> the component injects. The font-family value
+// is what we pass to the canvas ctx.font, with serif fallback.
+const SIGNATURE_FONTS = [
+  { id: "dancing", label: "Dancing Script", family: "'Dancing Script', cursive" },
+  { id: "great-vibes", label: "Great Vibes", family: "'Great Vibes', cursive" },
+  { id: "sacramento", label: "Sacramento", family: "'Sacramento', cursive" },
+  { id: "allura", label: "Allura", family: "'Allura', cursive" },
+] as const;
 
-function dataUrlToBytes(dataUrl: string): Uint8Array {
-  const base64 = dataUrl.split(",")[1] || "";
-  const binary = atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i += 1) {
-    bytes[i] = binary.charCodeAt(i);
-  }
-  return bytes;
+const GOOGLE_FONTS_HREF =
+  "https://fonts.googleapis.com/css2?family=Dancing+Script:wght@500;700&family=Great+Vibes&family=Sacramento&family=Allura&display=swap";
+
+function ensureSignatureFontsLoaded() {
+  if (typeof document === "undefined") return;
+  if (document.getElementById("lawflow-signature-fonts")) return;
+  const link = document.createElement("link");
+  link.id = "lawflow-signature-fonts";
+  link.rel = "stylesheet";
+  link.href = GOOGLE_FONTS_HREF;
+  document.head.appendChild(link);
 }
 
-function createTypedSignatureDataUrl(name: string): string {
+// Render a typed name onto a transparent canvas in the chosen font and
+// return as PNG data URL. Transparent so it composites cleanly over
+// the page background.
+function createTypedSignatureDataUrl(name: string, fontFamily: string): string {
   const canvas = document.createElement("canvas");
+  canvas.width = 600;
+  canvas.height = 140;
   const ctx = canvas.getContext("2d");
   if (!ctx) return "";
-  const fontSize = 64;
-  const fontFamily =
-    '"Brush Script MT","Segoe Script","Lucida Handwriting","Snell Roundhand",cursive';
-  ctx.font = `${fontSize}px ${fontFamily}`;
-  const textWidth = Math.ceil(ctx.measureText(name).width);
-  canvas.width = Math.max(textWidth + 60, 360);
-  canvas.height = 160;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-  ctx.save();
-  ctx.translate(24, canvas.height / 2 + 6);
-  ctx.rotate(-0.02);
-  ctx.font = `${fontSize}px ${fontFamily}`;
-  ctx.fillStyle = "#000000";
+  ctx.fillStyle = "#01411C";
+  ctx.font = `60px ${fontFamily}`;
   ctx.textBaseline = "middle";
-  ctx.lineWidth = 0.6;
-  ctx.strokeStyle = "rgba(0,0,0,0.35)";
-  ctx.strokeText(name, 0, 0);
-  ctx.fillText(name, 0, 0);
-  ctx.restore();
-
+  // Center vertically; leave a small left margin.
+  ctx.fillText(name, 16, canvas.height / 2);
   return canvas.toDataURL("image/png");
 }
 
-function formatDateTime(value?: string) {
-  if (!value) return "N/A";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
+async function fileToDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
   });
-}
-
-function wrapText(
-  text: string,
-  font: Awaited<ReturnType<typeof PDFDocument.prototype.embedFont>>,
-  fontSize: number,
-  maxWidth: number
-): string[] {
-  const words = text.replace(/\s+/g, " ").trim().split(" ");
-  const lines: string[] = [];
-  let line = "";
-
-  words.forEach((word) => {
-    const testLine = line ? `${line} ${word}` : word;
-    const width = font.widthOfTextAtSize(testLine, fontSize);
-    if (width > maxWidth && line) {
-      lines.push(line);
-      line = word;
-    } else {
-      line = testLine;
-    }
-  });
-
-  if (line) lines.push(line);
-  return lines;
-}
-
-function extractTextFromHtml(html: string): string {
-  const div = document.createElement("div");
-  div.innerHTML = html;
-  return div.textContent || div.innerText || "";
-}
-
-async function generatePdfFromText(
-  docTitle: string,
-  bodyText: string
-): Promise<Uint8Array> {
-  const pdfDoc = await PDFDocument.create();
-  let page = pdfDoc.addPage([595, 842]);
-  const font = await pdfDoc.embedFont(StandardFonts.TimesRoman);
-  const fontBold = await pdfDoc.embedFont(StandardFonts.TimesRomanBold);
-
-  const marginX = 72;
-  const marginTop = 770;
-  const marginBottom = 120;
-  const maxWidth = 450;
-  const lineHeight = 16;
-
-  const headerLines = wrapText(docTitle.toUpperCase(), fontBold, 18, maxWidth);
-  let cursorY = marginTop;
-  headerLines.forEach((line) => {
-    page.drawText(line, {
-      x: marginX,
-      y: cursorY,
-      size: 18,
-      font: fontBold,
-      color: rgb(0.1, 0.1, 0.1),
-    });
-    cursorY -= 22;
-  });
-  cursorY -= 10;
-
-  const lines = wrapText(bodyText, font, 12, maxWidth);
-  lines.forEach((line) => {
-    if (cursorY < marginBottom) {
-      page = pdfDoc.addPage([595, 842]);
-      cursorY = marginTop;
-    }
-    page.drawText(line, {
-      x: marginX,
-      y: cursorY,
-      size: 12,
-      font,
-      color: rgb(0.2, 0.2, 0.2),
-    });
-    cursorY -= lineHeight;
-  });
-
-  if (cursorY < marginBottom + 40) {
-    page = pdfDoc.addPage([595, 842]);
-    cursorY = marginTop;
-  }
-  page.drawText("Signature Required:", {
-    x: marginX,
-    y: cursorY,
-    size: 12,
-    font: fontBold,
-    color: rgb(0.12, 0.12, 0.12),
-  });
-  page.drawLine({
-    start: { x: marginX, y: cursorY - 20 },
-    end: { x: marginX + 280, y: cursorY - 20 },
-    thickness: 1,
-    color: rgb(0.2, 0.2, 0.2),
-  });
-  return pdfDoc.save();
-}
-
-async function generateMockPdf(docTitle: string): Promise<Uint8Array> {
-  const body =
-    "This document is provided for client review and signature. " +
-    "Please verify the details and sign in the designated area.";
-  return generatePdfFromText(docTitle, body);
 }
 
 export default function ClientSignatureViewer() {
   const navigate = useNavigate();
-  const { requestId } = useParams({ strict: false }) as {
-    requestId?: string;
-  };
+  const { requestId } = useParams({ strict: false }) as { requestId?: string };
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  // Container the snapshot HTML is injected into. We don't use React's
+  // children for the snapshot because docx-preview's serialized output
+  // contains attributes (e.g., style with vendor prefixes) that React's
+  // reconciler would warn about.
+  const documentHostRef = useRef<HTMLDivElement>(null);
+  // The currently-mounted floating signature wrapper. Tracked so:
+  //   - subsequent signature changes replace the old one rather than stacking
+  //   - submit can read its final position/size and the page it sits on
+  const floatingRef = useRef<HTMLSpanElement | null>(null);
 
-  const {
-    requests,
-    updateRequest,
-  } = useSignatureRequestsStore();
+  const [request, setRequest] = useState<ApiSignatureRequestDetail | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const request = useMemo(
-    () => requests.find((item) => item.id === requestId) || null,
-    [requests, requestId]
-  );
-
-  const [pdfUrl, setPdfUrl] = useState<string | null>(null);
-  const [pdfBytes, setPdfBytes] = useState<Uint8Array | null>(null);
-  const [numPages, setNumPages] = useState<number>(0);
-  const [pageMetrics, setPageMetrics] = useState<Record<number, PageMetrics>>(
-    {}
-  );
-  const [signatureImage, setSignatureImage] = useState<string>("");
+  const [mode, setMode] = useState<SignMode>("type");
   const [typedName, setTypedName] = useState("");
-  const [signatureBox, setSignatureBox] = useState<SignatureBox | null>(null);
-  const [signedPdfUrl, setSignedPdfUrl] = useState<string | null>(null);
-  const [isLocallySigned, setIsLocallySigned] = useState(false);
-  const isSigned = isLocallySigned || Boolean(request?.clientSigned);
-  const displayPdfUrl = signedPdfUrl || request?.signedPdfDataUrl || pdfUrl;
-  const isInteractingRef = useRef(false);
-  const interactionCooldownRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const pageContainerRef = useRef<HTMLDivElement>(null);
-  const [pageWidth, setPageWidth] = useState<number>(0);
+  const [fontId, setFontId] = useState<(typeof SIGNATURE_FONTS)[number]["id"]>(
+    "dancing"
+  );
+  const [signatureDataUrl, setSignatureDataUrl] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [signedSuccessfully, setSignedSuccessfully] = useState(false);
 
   useEffect(() => {
-    const element = pageContainerRef.current;
-    if (!element) return;
-    const observer = new ResizeObserver(() => {
-      setPageWidth(element.clientWidth);
-    });
-    observer.observe(element);
-    setPageWidth(element.clientWidth);
-    return () => observer.disconnect();
+    ensureSignatureFontsLoaded();
   }, []);
 
   useEffect(() => {
-    let url: string | null = null;
-    const run = async () => {
-      if (!request) return;
-    // The client view receives a baked PDF data-URL whenever the lawyer
-    // initiates a signature request — that's the normal path. If the
-    // request lacks a PDF (e.g., follow-up request without re-rendering),
-    // fall back to a text-snapshot rendering and finally a placeholder.
-    const bytes =
-      request.pdfDataUrl && request.pdfDataUrl.startsWith("data:application/pdf")
-        ? dataUrlToBytes(request.pdfDataUrl)
-        : await (async () => {
-            if (request.docHtmlSnapshot) {
-              const text = extractTextFromHtml(request.docHtmlSnapshot).trim();
-              if (text) {
-                return await generatePdfFromText(request.docTitle, text);
-              }
-            }
-            return await generateMockPdf(request.docTitle);
-          })();
-
-      setPdfBytes(bytes);
-      const blob = new Blob([bytes as BlobPart], { type: "application/pdf" });
-      url = URL.createObjectURL(blob);
-      setPdfUrl(url);
-      if (!request.pdfDataUrl) {
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          const result = typeof reader.result === "string" ? reader.result : "";
-          updateRequest(request.id, { pdfDataUrl: result });
-        };
-        reader.readAsDataURL(blob);
-      }
-    };
-    run();
+    if (!requestId) {
+      setError("No signature request selected.");
+      setLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    mySignaturesApi
+      .getOne(requestId)
+      .then((data) => {
+        if (!cancelled) setRequest(data);
+      })
+      .catch((err) => {
+        if (!cancelled) setError(getMySignaturesErrorMessage(err));
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
     return () => {
-      if (url) URL.revokeObjectURL(url);
+      cancelled = true;
     };
-  }, [request, updateRequest]);
+  }, [requestId]);
 
-  const handleFileUpload = (file?: File) => {
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      const result = typeof reader.result === "string" ? reader.result : "";
-      setSignatureImage(result);
-      setSignatureBox(null);
-      setIsLocallySigned(false);
+  const filteredSnapshot = useMemo(
+    () =>
+      request
+        ? filterSnapshotToPages(request.documentHtmlSnapshot, request.pageIndices)
+        : "",
+    [request]
+  );
+
+  // Inject the snapshot HTML into the host once the request loads.
+  useEffect(() => {
+    const host = documentHostRef.current;
+    if (!host || !filteredSnapshot) return;
+    // The snapshot is a full <!doctype html>...</html> document. We
+    // strip down to the inner body content so it sits inside our
+    // viewer chrome. Stylesheets in the snapshot's <head> get injected
+    // into our document head so docx-preview's per-page CSS applies.
+    const parsed = new DOMParser().parseFromString(filteredSnapshot, "text/html");
+    // Move <style> tags from the parsed head into our host so the
+    // wrapper-scoped CSS that docx-preview generated takes effect
+    // without polluting the rest of the app.
+    const styleHtml = Array.from(parsed.head.querySelectorAll("style"))
+      .map((s) => s.outerHTML)
+      .join("\n");
+    const bodyHtml = parsed.body.innerHTML;
+    host.innerHTML = `${styleHtml}${bodyHtml}`;
+  }, [filteredSnapshot]);
+
+  // Live-render the typed signature into a canvas any time the name
+  // or the chosen font changes. Stays in sync without an explicit
+  // "regenerate" button.
+  useEffect(() => {
+    if (mode !== "type") return;
+    const trimmed = typedName.trim();
+    if (!trimmed) {
+      setSignatureDataUrl(null);
+      return;
+    }
+    const font = SIGNATURE_FONTS.find((f) => f.id === fontId);
+    if (!font) return;
+    // Wait one tick for the Google Fonts to load — first paint may use
+    // serif fallback, then re-render. document.fonts.ready resolves
+    // once the requested faces are available.
+    let cancelled = false;
+    const render = () => {
+      if (cancelled) return;
+      setSignatureDataUrl(createTypedSignatureDataUrl(trimmed, font.family));
     };
-    reader.readAsDataURL(file);
-  };
+    if (typeof document !== "undefined" && "fonts" in document) {
+      (document as Document & {
+        fonts: { ready: Promise<unknown> };
+      }).fonts.ready.then(render).catch(render);
+    } else {
+      render();
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [mode, typedName, fontId]);
 
-  const handleCreateTypedSignature = () => {
-    if (!typedName.trim()) return;
-    const imageUrl = createTypedSignatureDataUrl(typedName.trim());
-    setSignatureImage(imageUrl);
-    setSignatureBox(null);
-    setIsLocallySigned(false);
-  };
+  // Whenever the signature data URL changes, mount it onto the first
+  // assigned page so the user can drag it where they want.
+  useEffect(() => {
+    if (!signatureDataUrl) return;
+    const host = documentHostRef.current;
+    if (!host) return;
+    const firstPage = host.querySelector<HTMLElement>(
+      ".docx-wrapper > section.docx"
+    );
+    if (!firstPage) return;
 
-  const handlePageClick = (pageNumber: number, event: React.MouseEvent) => {
-    if (!signatureImage || isSigned || isInteractingRef.current) return;
-    const metrics = pageMetrics[pageNumber];
-    if (!metrics) return;
-    const rect = (event.currentTarget as HTMLDivElement).getBoundingClientRect();
-    const clickX = event.clientX - rect.left;
-    const clickY = event.clientY - rect.top;
-    const defaultWidth = Math.min(220, metrics.renderWidth * 0.4);
-    const defaultHeight = Math.max(60, defaultWidth * 0.35);
-    const clampedX = Math.max(0, Math.min(clickX - defaultWidth / 2, metrics.renderWidth - defaultWidth));
-    const clampedY = Math.max(0, Math.min(clickY - defaultHeight / 2, metrics.renderHeight - defaultHeight));
+    // Replace any previously-mounted signature so re-typing or
+    // re-uploading doesn't stack copies on the page.
+    if (floatingRef.current && floatingRef.current.parentElement) {
+      floatingRef.current.remove();
+      floatingRef.current = null;
+    }
 
-    setSignatureBox({
-      page: pageNumber,
-      x: clampedX,
-      y: clampedY,
+    // Default placement: just above the bottom-right corner of the
+    // first assigned page. Reads like a real signature on a real
+    // document and gives the user something to drag from rather than
+    // appearing in a default top-left position they have to move.
+    const pageRect = firstPage.getBoundingClientRect();
+    const defaultWidth = Math.min(260, pageRect.width * 0.4);
+    const left = Math.max(0, pageRect.width - defaultWidth - 60);
+    const top = Math.max(0, pageRect.height - 120);
+
+    floatingRef.current = mountFloatingImage({
+      src: signatureDataUrl,
+      alt: "Signature",
+      page: firstPage,
+      left,
+      top,
       width: defaultWidth,
-      height: defaultHeight,
     });
+  }, [signatureDataUrl]);
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      setError("Please upload a PNG or JPG image of your signature.");
+      return;
+    }
+    try {
+      const dataUrl = await fileToDataUrl(file);
+      setSignatureDataUrl(dataUrl);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to read file");
+    }
   };
 
-  const handleConfirmSignature = async () => {
-    if (!request || !pdfBytes || !signatureImage || !signatureBox) return;
-    const metrics = pageMetrics[signatureBox.page];
-    if (!metrics) return;
+  // Read the floating signature's final position + size + which page
+  // it ended up on. Returns null if the signature was never placed.
+  const computePlacement = (): SignaturePlacement | null => {
+    if (!floatingRef.current || !request) return null;
+    const wrapper = floatingRef.current;
+    const page = wrapper.parentElement as HTMLElement | null;
+    if (!page) return null;
+    const pageWidth = page.clientWidth || 1;
+    const pageHeight = page.clientHeight || 1;
+    const left = parseFloat(wrapper.style.left) || 0;
+    const top = parseFloat(wrapper.style.top) || 0;
+    const width = wrapper.offsetWidth;
+    const height = wrapper.offsetHeight;
 
-    const pdfDoc = await PDFDocument.load(pdfBytes);
-    const page = pdfDoc.getPage(signatureBox.page - 1);
-    const imageBytes = dataUrlToBytes(signatureImage);
-    const embed =
-      signatureImage.startsWith("data:image/png")
-        ? await pdfDoc.embedPng(imageBytes)
-        : await pdfDoc.embedJpg(imageBytes);
+    // Figure out the ABSOLUTE page index in the original document.
+    // The filtered snapshot only contains the assigned pages, so the
+    // order of section.docx elements maps 1:1 to request.pageIndices.
+    const host = documentHostRef.current;
+    if (!host) return null;
+    const sections = Array.from(
+      host.querySelectorAll<HTMLElement>(".docx-wrapper > section.docx")
+    );
+    const sectionIdx = sections.indexOf(page);
+    if (sectionIdx < 0) return null;
+    const absolutePageIndex =
+      request.pageIndices && request.pageIndices[sectionIdx] !== undefined
+        ? request.pageIndices[sectionIdx]
+        : sectionIdx;
 
-    const scaleX = metrics.pdfWidth / metrics.renderWidth;
-    const scaleY = metrics.pdfHeight / metrics.renderHeight;
-    const pdfX = signatureBox.x * scaleX;
-    const pdfY =
-      metrics.pdfHeight - (signatureBox.y + signatureBox.height) * scaleY;
-    const pdfWidth = signatureBox.width * scaleX;
-    const pdfHeight = signatureBox.height * scaleY;
-
-    page.drawImage(embed, {
-      x: pdfX,
-      y: pdfY,
-      width: pdfWidth,
-      height: pdfHeight,
-    });
-
-    const signedBytes = await pdfDoc.save();
-    const signedBlob = new Blob([signedBytes as BlobPart], {
-      type: "application/pdf",
-    });
-    const signedUrl = URL.createObjectURL(signedBlob);
-    setSignedPdfUrl(signedUrl);
-    setIsLocallySigned(true);
-    setSignatureBox(null);
-    const signedDataUrl = await new Promise<string>((resolve) => {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        resolve(typeof reader.result === "string" ? reader.result : "");
-      };
-      reader.readAsDataURL(signedBlob);
-    });
-    updateRequest(request.id, {
-      clientSigned: true,
-      clientSignedAt: new Date().toISOString(),
-      clientSignatureName: typedName.trim() || request.clientSignatureName,
-      // Keep canonical PDF data in sync so the next signer always sees
-      // the latest signed version, even if a secondary field is missing.
-      pdfDataUrl: signedDataUrl,
-      signedPdfDataUrl: signedDataUrl,
-    });
+    return {
+      pageIndex: absolutePageIndex,
+      xPct: left / pageWidth,
+      yPct: top / pageHeight,
+      widthPct: width / pageWidth,
+      heightPct: height / pageHeight,
+    };
   };
 
-  if (!request) {
+  const handleSubmit = async () => {
+    if (!requestId || !signatureDataUrl) return;
+    const placement = computePlacement();
+    setSubmitting(true);
+    setError(null);
+    try {
+      await mySignaturesApi.submit(requestId, signatureDataUrl, placement);
+      setSignedSuccessfully(true);
+    } catch (err) {
+      setError(getMySignaturesErrorMessage(err));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (loading) {
     return (
-      <ClientLayout brandSubtitle="Pending Signatures">
-        <div className="mx-auto max-w-2xl rounded-xl border bg-white p-8 text-center">
-          <h2 className="text-lg font-semibold text-gray-900">
-            Signature request not found
+      <ClientLayout brandSubtitle="Sign Document">
+        <div className="flex items-center justify-center gap-2 rounded-xl border border-dashed border-gray-200 bg-white p-10 text-sm text-gray-500">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Loading signature request…
+        </div>
+      </ClientLayout>
+    );
+  }
+
+  if (error && !request) {
+    return (
+      <ClientLayout brandSubtitle="Sign Document">
+        <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-sm text-red-700">
+          {error}
+          <div className="mt-3">
+            <button
+              onClick={() => navigate({ to: "/case-tracking" })}
+              className="rounded-md border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100"
+            >
+              Back to pending signatures
+            </button>
+          </div>
+        </div>
+      </ClientLayout>
+    );
+  }
+
+  if (!request) return null;
+
+  if (signedSuccessfully) {
+    return (
+      <ClientLayout brandSubtitle="Sign Document">
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-10 text-center">
+          <CheckCircle2 className="mx-auto h-12 w-12 text-emerald-600" />
+          <h2 className="mt-3 text-lg font-semibold text-emerald-900">
+            Signature submitted
           </h2>
-          <p className="mt-2 text-sm text-gray-500">
-            The document you are trying to access is unavailable.
+          <p className="mt-1 text-sm text-emerald-800">
+            Your signature has been recorded for {request.caseTitle}.
           </p>
           <button
-            onClick={() => navigate({ to: "/case-tracking", search: { view: "pending" } })}
-            className="mt-5 rounded-lg bg-[#01411C] px-4 py-2 text-sm font-medium text-white hover:bg-[#024a23]"
+            onClick={() => navigate({ to: "/case-tracking" })}
+            className="mt-4 rounded-md bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700"
           >
-            Back to Pending Signatures
+            Back to pending signatures
           </button>
         </div>
       </ClientLayout>
@@ -384,309 +366,203 @@ export default function ClientSignatureViewer() {
   }
 
   return (
-    <ClientLayout brandSubtitle="Review & Sign">
-      <div className="grid gap-6 px-4 py-6 lg:grid-cols-[1.4fr_0.9fr] lg:px-6">
-        <div className="space-y-4">
-          <div className="rounded-2xl border border-emerald-100 bg-white p-4 shadow-sm">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-emerald-700">
-                  Document for signature
-                </p>
-                <h2 className="mt-1 text-lg font-semibold text-gray-900">
-                  {request.docTitle}
-                </h2>
-                <p className="mt-1 text-xs text-gray-500">
-                  Sent by {request.requestedBy || "Lawyer"} • Requested{" "}
-                  {formatDateTime(request.requestedAt)}
-                </p>
-              </div>
-              <div className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
-                {isSigned ? "Signed" : "Awaiting signature"}
-              </div>
-            </div>
-          </div>
+    <ClientLayout brandSubtitle={request.caseTitle}>
+      <div className="space-y-4">
+        <header className="rounded-xl border border-gray-200 bg-white p-5">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-500">
+            Signature request
+          </p>
+          <h1 className="mt-1 text-lg font-semibold text-gray-900">
+            {request.caseTitle}
+          </h1>
+          <p className="mt-1 text-xs text-gray-500">
+            {request.pageIndices?.length || 0} page
+            {request.pageIndices?.length === 1 ? "" : "s"} need your signature.
+            Drag the signature on the page to where you want it, then submit.
+          </p>
+        </header>
 
-          <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
+          {/* Document with the signature placed as a floating draggable. */}
+          <div
+            className="rounded-xl border border-gray-200 bg-[#f5f5f5] p-4 overflow-auto"
+            style={{ maxHeight: "82vh" }}
+          >
+            {/* Styles for the floating signature wrapper + its corner
+                resize handles. mountFloatingImage creates the elements
+                but the editor owns the CSS — we duplicate the rules
+                here so the signing viewer shows handles. Handles are
+                ALWAYS visible (not just on hover) so first-time
+                signers can see the resize affordance immediately. */}
+            <style>{`
+              .lawflow-floating-image {
+                outline: 1.5px solid rgba(1, 65, 28, 0.5);
+                transition: outline-color 0.15s ease;
+              }
+              .lawflow-floating-image:hover,
+              .lawflow-floating-image.lawflow-floating-image-selected {
+                outline: 2px solid #01411C;
+              }
+              .lawflow-resize-handle {
+                position: absolute;
+                width: 12px;
+                height: 12px;
+                background: #01411C;
+                border: 2px solid white;
+                border-radius: 50%;
+                box-shadow: 0 0 0 1px rgba(1, 65, 28, 0.25);
+                opacity: 1;
+                z-index: 2;
+              }
+              .lawflow-resize-handle-nw { top: -7px; left: -7px;  cursor: nwse-resize; }
+              .lawflow-resize-handle-ne { top: -7px; right: -7px; cursor: nesw-resize; }
+              .lawflow-resize-handle-sw { bottom: -7px; left: -7px; cursor: nesw-resize; }
+              .lawflow-resize-handle-se { bottom: -7px; right: -7px; cursor: nwse-resize; }
+            `}</style>
             <div
-              ref={pageContainerRef}
-              className="space-y-6"
-            >
-              {displayPdfUrl ? (
-                <Document
-                  file={displayPdfUrl}
-                  onLoadSuccess={(doc) => setNumPages(doc.numPages)}
-                  loading={<p className="text-sm text-gray-500">Loading PDF...</p>}
-                >
-                  {Array.from({ length: numPages }, (_, index) => {
-                    const pageNumber = index + 1;
-                    return (
-                      <div
-                        key={`page-${pageNumber}`}
-                        className="relative mx-auto w-full overflow-hidden rounded-xl border border-gray-100 bg-gray-50 p-2"
-                        onClick={(event) => handlePageClick(pageNumber, event)}
-                      >
-                        <Page
-                          pageNumber={pageNumber}
-                          width={pageWidth ? pageWidth - 32 : undefined}
-                          renderAnnotationLayer={false}
-                          renderTextLayer={false}
-                          onLoadSuccess={(page) => {
-                            const viewport = page.getViewport({ scale: 1 });
-                            const renderWidth = pageWidth ? pageWidth - 32 : viewport.width;
-                            const scale = renderWidth / viewport.width;
-                            setPageMetrics((prev) => ({
-                              ...prev,
-                              [pageNumber]: {
-                                pdfWidth: viewport.width,
-                                pdfHeight: viewport.height,
-                                renderWidth,
-                                renderHeight: viewport.height * scale,
-                              },
-                            }));
-                          }}
-                        />
-
-                        {!isSigned && signatureBox && signatureBox.page === pageNumber && (
-                          <Rnd
-                            bounds="parent"
-                            size={{ width: signatureBox.width, height: signatureBox.height }}
-                            position={{ x: signatureBox.x, y: signatureBox.y }}
-                            lockAspectRatio
-                            onMouseDown={(event: MouseEvent) =>
-                              event.stopPropagation()
-                            }
-                            onTouchStart={(event: TouchEvent) =>
-                              event.stopPropagation()
-                            }
-                            onClick={(event: MouseEvent) =>
-                              event.stopPropagation()
-                            }
-                            onDragStart={() => {
-                              isInteractingRef.current = true;
-                            }}
-                            onDragStop={(_, data) => {
-                              isInteractingRef.current = false;
-                              if (interactionCooldownRef.current) {
-                                clearTimeout(interactionCooldownRef.current);
-                              }
-                              interactionCooldownRef.current = setTimeout(() => {
-                                isInteractingRef.current = false;
-                              }, 150);
-                              setSignatureBox((prev) =>
-                                prev
-                                  ? { ...prev, x: data.x, y: data.y }
-                                  : prev
-                              );
-                            }}
-                            onResizeStart={() => {
-                              isInteractingRef.current = true;
-                            }}
-                            onResize={(_, __, ref, ___, position) =>
-                              setSignatureBox((prev) =>
-                                prev
-                                  ? {
-                                      ...prev,
-                                      width: ref.offsetWidth,
-                                      height: ref.offsetHeight,
-                                      x: position.x,
-                                      y: position.y,
-                                    }
-                                  : prev
-                              )
-                            }
-                            onResizeStop={() => {
-                              isInteractingRef.current = false;
-                              if (interactionCooldownRef.current) {
-                                clearTimeout(interactionCooldownRef.current);
-                              }
-                              interactionCooldownRef.current = setTimeout(() => {
-                                isInteractingRef.current = false;
-                              }, 150);
-                            }}
-                          >
-                            <div className="h-full w-full border-2 border-emerald-500 bg-white/80 shadow-sm">
-                              {signatureImage && (
-                                <img
-                                  src={signatureImage}
-                                  alt="Signature"
-                                  className="h-full w-full object-contain"
-                                />
-                              )}
-                            </div>
-                          </Rnd>
-                        )}
-
-                      </div>
-                    );
-                  })}
-                </Document>
-              ) : (
-                <div className="rounded-xl border border-dashed border-gray-200 p-6 text-center text-sm text-gray-500">
-                  Loading document preview...
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-
-        <div className="space-y-6 lg:sticky lg:top-6 lg:self-start">
-          <div className="rounded-3xl border border-emerald-100/80 bg-gradient-to-br from-white via-emerald-50/30 to-white p-6 shadow-[0_18px_45px_-32px_rgba(16,185,129,0.35)]">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.26em] text-emerald-700">
-                  Signature Setup
-                </p>
-                <h3 className="mt-2 text-base font-semibold text-gray-900">
-                  Add your signature
-                </h3>
-                <p className="mt-1 text-xs text-gray-600">
-                  Upload an image or type your name to create a signature.
-                </p>
-              </div>
-              <span className="rounded-full bg-emerald-100 px-3 py-1 text-[11px] font-semibold text-emerald-700">
-                Step 1
-              </span>
-            </div>
-
-            <div className="mt-4 space-y-4">
-              <div className="rounded-2xl border border-dashed border-emerald-200/80 bg-white/70 p-4">
-                <label className="flex cursor-pointer items-center gap-3 text-sm font-semibold text-emerald-800">
-                  <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700 shadow-sm">
-                    <ImagePlus className="h-4 w-4" />
-                  </span>
-                  Upload signature image
-                  <input
-                    type="file"
-                    accept="image/png,image/jpeg"
-                    className="hidden"
-                    onChange={(event) => handleFileUpload(event.target.files?.[0])}
-                  />
-                </label>
-                <p className="mt-2 text-xs text-gray-500">
-                  PNG or JPG recommended.
-                </p>
-              </div>
-
-              <div className="rounded-2xl border border-emerald-100/70 bg-white p-4 shadow-sm">
-                <label className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-500">
-                  Type your name
-                </label>
-                <div className="mt-2 flex items-center gap-2">
-                  <input
-                    value={typedName}
-                    onChange={(event) => setTypedName(event.target.value)}
-                    placeholder="Your full name"
-                    className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm"
-                  />
-                  <button
-                    onClick={handleCreateTypedSignature}
-                    className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-3 py-2 text-xs font-semibold text-white shadow-sm hover:bg-emerald-700"
-                  >
-                    <Type className="h-4 w-4" />
-                    Create
-                  </button>
-                </div>
-              </div>
-
-              {signatureImage && !isSigned && (
-                <div className="rounded-2xl border border-emerald-100 bg-emerald-50/60 p-4">
-                  <p className="text-xs font-semibold text-emerald-800">
-                    Signature preview
-                  </p>
-                  <div className="mt-3 rounded-xl border border-emerald-100 bg-white p-3">
-                    <img
-                      src={signatureImage}
-                      alt="Signature preview"
-                      className="max-h-24 w-full object-contain"
-                    />
-                  </div>
-                  <p className="mt-2 text-xs text-gray-500">
-                    Click on the document to place. Drag to move and resize.
-                  </p>
-                </div>
-              )}
-            </div>
+              ref={documentHostRef}
+              // docx-preview-host class enables the floatingImage utility's
+              // click-outside-to-deselect + Delete-to-remove keyboard
+              // shortcuts (it walks up looking for this class).
+              className="docx-preview-host"
+            />
           </div>
 
-          <div className="rounded-3xl border border-gray-100 bg-white p-6 shadow-[0_18px_45px_-32px_rgba(15,23,42,0.15)]">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.26em] text-gray-500">
-                  Final Step
-                </p>
-                <h3 className="mt-2 text-base font-semibold text-gray-900">
-                  Confirm signature
-                </h3>
-                <p className="mt-1 text-xs text-gray-600">
-                  Finalize and embed your signature into the PDF.
-                </p>
-              </div>
-              <span className="rounded-full bg-gray-100 px-3 py-1 text-[11px] font-semibold text-gray-600">
-                Step 2
-              </span>
-            </div>
+          {/* Signing sidebar */}
+          <aside className="lg:sticky lg:top-4 lg:self-start">
+            <div className="rounded-xl border border-gray-200 bg-white p-5">
+              <h2 className="text-sm font-semibold text-gray-900">
+                Your signature
+              </h2>
+              <p className="mt-1 text-xs text-gray-500">
+                {signatureDataUrl
+                  ? "Drag it on the page to position. Drag corners to resize."
+                  : "Type your name or upload an image, then drag onto the page."}
+              </p>
 
-            <div className="mt-4 space-y-3">
-              <button
-                onClick={handleConfirmSignature}
-                disabled={!signatureBox || isSigned}
-                className={`flex w-full items-center justify-center gap-2 rounded-2xl px-4 py-2.5 text-sm font-semibold transition-all ${
-                  signatureBox && !isSigned
-                    ? "bg-[#01411C] text-white shadow-[0_14px_30px_-18px_rgba(1,65,28,0.8)] hover:bg-[#024a23]"
-                    : "bg-gray-100 text-gray-400"
-                }`}
-              >
-                <CheckCircle2 className="h-4 w-4" />
-                {isSigned ? "Signed" : "Confirm & Embed Signature"}
-              </button>
-
-              {isSigned && (
+              <div className="mt-4 flex gap-2">
                 <button
-                  onClick={() => {
-                    if (!request) return;
-                    updateRequest(request.id, {
-                      sentToLawyerAt: new Date().toISOString(),
-                    });
-                  }}
-                  disabled={Boolean(request?.sentToLawyerAt)}
-                  className={`flex w-full items-center justify-center gap-2 rounded-2xl px-4 py-2 text-sm font-semibold transition-all ${
-                    request?.sentToLawyerAt
-                      ? "bg-emerald-50 text-emerald-600"
-                      : "border border-emerald-200 bg-white text-emerald-800 shadow-[0_12px_26px_-20px_rgba(16,185,129,0.6)] hover:bg-emerald-50"
+                  type="button"
+                  onClick={() => setMode("type")}
+                  className={`flex flex-1 items-center justify-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-semibold ${
+                    mode === "type"
+                      ? "border-emerald-300 bg-emerald-50 text-emerald-800"
+                      : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
                   }`}
                 >
-                  <CheckCircle2 className="h-4 w-4" />
-                  {request?.sentToLawyerAt
-                    ? "Sent to Lawyer"
-                    : "Send Signed PDF to Lawyer"}
+                  <TypeIcon className="h-3.5 w-3.5" />
+                  Type
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setMode("upload")}
+                  className={`flex flex-1 items-center justify-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-semibold ${
+                    mode === "upload"
+                      ? "border-emerald-300 bg-emerald-50 text-emerald-800"
+                      : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
+                  }`}
+                >
+                  <Upload className="h-3.5 w-3.5" />
+                  Upload
+                </button>
+              </div>
+
+              {mode === "type" ? (
+                <div className="mt-3 space-y-3">
+                  <input
+                    type="text"
+                    placeholder="Type your full name"
+                    value={typedName}
+                    onChange={(e) => setTypedName(e.target.value)}
+                    className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                  />
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+                      Style
+                    </p>
+                    <div className="mt-2 grid grid-cols-2 gap-2">
+                      {SIGNATURE_FONTS.map((f) => (
+                        <button
+                          key={f.id}
+                          type="button"
+                          onClick={() => setFontId(f.id)}
+                          className={`rounded-md border px-2 py-2 text-center text-xs transition-colors ${
+                            fontId === f.id
+                              ? "border-emerald-400 bg-emerald-50 ring-1 ring-emerald-300"
+                              : "border-gray-200 bg-white hover:bg-gray-50"
+                          }`}
+                          style={{
+                            fontFamily: f.family,
+                            fontSize: "18px",
+                            color: "#01411C",
+                            lineHeight: 1.2,
+                          }}
+                        >
+                          {typedName.trim() || f.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-3">
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/png,image/jpeg"
+                    onChange={handleFileUpload}
+                    className="hidden"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-sm hover:bg-gray-50"
+                  >
+                    <Upload className="h-4 w-4" />
+                    Choose image
+                  </button>
+                </div>
+              )}
+
+              {signatureDataUrl && (
+                <div className="mt-4">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+                    Preview
+                  </p>
+                  <div className="mt-2 rounded-md border border-gray-200 bg-gray-50 p-3">
+                    <img
+                      src={signatureDataUrl}
+                      alt="Signature preview"
+                      className="max-h-20 mx-auto"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {error && (
+                <p className="mt-3 text-xs text-red-700">{error}</p>
               )}
 
               <button
-                onClick={() => setSignatureBox(null)}
-                className="flex w-full items-center justify-center gap-2 rounded-2xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 transition-all hover:bg-gray-50"
+                type="button"
+                onClick={handleSubmit}
+                disabled={!signatureDataUrl || submitting}
+                className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-md bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50 hover:bg-emerald-700"
               >
-                <RotateCcw className="h-4 w-4" />
-                Clear placement
+                {submitting ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Submitting…
+                  </>
+                ) : (
+                  <>
+                    <Pencil className="h-4 w-4" />
+                    Submit signature
+                  </>
+                )}
               </button>
-
-              {signedPdfUrl && (
-                <button
-                  onClick={() => {
-                    const link = document.createElement("a");
-                    link.href = signedPdfUrl;
-                    link.download = `${request.docTitle}-signed.pdf`;
-                    link.click();
-                  }}
-                  className="flex w-full items-center justify-center gap-2 rounded-2xl border border-emerald-200 bg-white px-4 py-2 text-sm font-semibold text-emerald-800 shadow-[0_12px_26px_-20px_rgba(16,185,129,0.6)] transition-all hover:bg-emerald-50"
-                >
-                  <Download className="h-4 w-4" />
-                  Download Signed PDF
-                </button>
-              )}
             </div>
-          </div>
+          </aside>
         </div>
       </div>
     </ClientLayout>

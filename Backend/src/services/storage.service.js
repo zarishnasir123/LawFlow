@@ -160,6 +160,83 @@ export async function deleteLawyerDocuments({ storagePaths }) {
   }
 }
 
+// =====================================================================
+// Signed case-file PDFs.
+//
+// Separate from the verification-documents bucket because they have a
+// different lifecycle (final artifact, not a draft upload) and
+// different access rules (lawyer-only, never registrar). The bucket
+// `case-signed-pdfs` is configured via SUPABASE_CASE_PDF_BUCKET.
+// Path convention: lawyers/{lawyerUserId}/cases/{caseId}/signed.pdf.
+// =====================================================================
+
+function buildSignedCasePdfPath({ lawyerUserId, caseId }) {
+  return `lawyers/${lawyerUserId}/cases/${caseId}/signed.pdf`;
+}
+
+export async function uploadSignedCasePdf({ lawyerUserId, caseId, pdfBuffer }) {
+  if (!pdfBuffer || pdfBuffer.length === 0) {
+    throw new ApiError(500, "Signed PDF buffer is empty");
+  }
+
+  const config = getSupabaseStorageConfig();
+  const supabase = getSupabaseClient();
+  if (!supabase) {
+    throw new ApiError(
+      503,
+      `Signed-PDF storage is not configured. Missing or placeholder values: ${config.issues.join(", ")}`
+    );
+  }
+
+  const storagePath = buildSignedCasePdfPath({ lawyerUserId, caseId });
+
+  // upsert: true so a re-compile (e.g. lawyer-triggered) overwrites the
+  // previous artifact in place rather than orphaning the old object.
+  const { error } = await supabase.storage
+    .from(config.casePdfBucket)
+    .upload(storagePath, pdfBuffer, {
+      contentType: "application/pdf",
+      upsert: true
+    });
+
+  if (error) {
+    throw new ApiError(
+      502,
+      `Failed to upload signed PDF to storage: ${error.message}`
+    );
+  }
+
+  return { storagePath };
+}
+
+export async function getSignedCasePdfDownloadUrl({
+  storagePath,
+  expiresInSeconds
+}) {
+  if (!storagePath) return null;
+
+  const config = getSupabaseStorageConfig();
+  const supabase = getSupabaseClient();
+  if (!supabase) return null;
+
+  // Short TTL — the lawyer's download CTA reads this then opens in a
+  // new tab right away. 5 minutes is plenty for a click-to-download
+  // flow and short enough that a leaked URL has minimal blast radius.
+  const ttl = Number.isFinite(expiresInSeconds) && expiresInSeconds > 0
+    ? expiresInSeconds
+    : 300;
+
+  const { data, error } = await supabase.storage
+    .from(config.casePdfBucket)
+    .createSignedUrl(storagePath, ttl);
+
+  if (error || !data?.signedUrl) {
+    return null;
+  }
+
+  return { downloadUrl: data.signedUrl, expiresInSeconds: ttl };
+}
+
 // Recursively lists every object under lawyers/{lawyerKey}/ and removes them.
 // Used when a lawyer is rejected or when re-registering after a prior rejection.
 export async function deleteLawyerStorageFolder({ lawyerKey }) {

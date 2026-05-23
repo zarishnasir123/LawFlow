@@ -1,438 +1,428 @@
-import { useState, useMemo } from "react";
-import { X, Send, AlertCircle } from "lucide-react";
-import { generateHTML } from "@tiptap/core";
-import StarterKit from "@tiptap/starter-kit";
-import TextAlign from "@tiptap/extension-text-align";
-import { Table, TableRow, TableHeader, TableCell } from "@tiptap/extension-table";
-import type { JSONContent } from "@tiptap/react";
+import { useEffect, useMemo, useState } from "react";
+import { AlertCircle, CheckCircle2, Loader2, Send, X } from "lucide-react";
+
 import { useSignatureRequestsStore } from "../store/signatureRequests.store";
-import { useDocumentEditorStore } from "../../store/documentEditor.store";
-import type { BundleItem } from "../../store/documentEditor.store";
-import { AttachmentBlock } from "../../extensions/AttachmentBlock";
-import { ImageAttachment } from "../../extensions/ImageAttachment";
+import {
+  getSignaturesErrorMessage,
+  type ApiSignatureRequest,
+  type SignerRole,
+} from "../api/signatures.api";
+import { buildEditorSnapshot } from "../../utils/editorSnapshot";
+
+// Lawyer-side signature panel (FE-1, FE-2, FE-3, FE-4 entry surface).
+//
+// - FE-1: per-page checkbox list driven by the case editor's
+//   `renderedPages` (the live <section.docx> DOM refs).
+// - FE-2: per-page signer selector — client / lawyer / both.
+// - FE-3: clicking Send posts the batch to the backend, which creates
+//   1 or 2 signature_request rows + queues an in-app notification to
+//   the recipient (email follow-up lands in Phase 2).
+// - FE-4: existing batches for the case are listed below the form with
+//   per-row signer + status. The Signatures button badge on the editor
+//   toolbar reads from the same store cache, so the count stays in
+//   sync after every send + every signer action.
 
 interface SignatureRequestPanelProps {
   caseId: string;
-  bundleItems: BundleItem[];
+  // Rendered DOM refs from CaseDocumentEditor → DocxPreviewSurface.
+  // The panel reads each page's first heading/paragraph to label the
+  // checkbox, mirroring how DocumentPagesPanel derives page titles.
+  pages: HTMLElement[];
+  // Pre-tick this page index when the panel opens — set by the
+  // right-click context menu so "Send for Signature" on page N opens
+  // the panel with page N already selected. Undefined = no pre-tick.
+  initialSelectedPageIndex?: number;
   onClose: () => void;
+}
+
+type SignerChoice = SignerRole | "both";
+
+function derivePageLabel(page: HTMLElement, fallback: string): string {
+  const heading = page.querySelector("h1, h2, h3, h4, h5, h6");
+  if (heading?.textContent?.trim()) {
+    return heading.textContent.trim().replace(/[─—-]+/g, "").trim();
+  }
+  const paragraphs = page.querySelectorAll("p");
+  for (const p of Array.from(paragraphs)) {
+    const text = p.textContent?.trim() || "";
+    if (/^[─—-]{2,}\s*.+?\s*[─—-]{2,}$/.test(text)) {
+      return text.replace(/[─—-]+/g, "").trim();
+    }
+  }
+  for (const p of Array.from(paragraphs)) {
+    const text = p.textContent?.trim();
+    if (text && text.length > 2) {
+      return text.length > 40 ? `${text.slice(0, 40)}…` : text;
+    }
+  }
+  return fallback;
+}
+
+// The snapshot helper used to live here; auto-save in
+// CaseDocumentEditor now reuses the same logic, so it moved to
+// utils/editorSnapshot.ts. Behaviour unchanged.
+
+function statusBadge(status: ApiSignatureRequest["status"]) {
+  switch (status) {
+    case "signed":
+      return { label: "Signed", className: "bg-emerald-100 text-emerald-700" };
+    case "pending":
+      return { label: "Pending", className: "bg-amber-100 text-amber-800" };
+    case "expired":
+      return { label: "Expired", className: "bg-gray-100 text-gray-600" };
+    case "cancelled":
+      return { label: "Cancelled", className: "bg-red-100 text-red-700" };
+  }
 }
 
 export default function SignatureRequestPanel({
   caseId,
-  bundleItems,
+  pages,
+  initialSelectedPageIndex,
   onClose,
 }: SignatureRequestPanelProps) {
   const {
+    loadForCase,
+    create,
+    cancel,
     getRequestsByCaseId,
-    getCompletedRequests,
-    getPendingRequests,
-    sendSignatureRequestsForCase,
-    updateRequest,
   } = useSignatureRequestsStore();
-  const {
-    addSignedAttachment,
-    attachmentsById,
-    documentsById,
-    currentDocId,
-    activeEditorRef,
-  } = useDocumentEditorStore();
 
-  const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
-  const [signerByItemId, setSignerByItemId] = useState<
-    Record<string, "client" | "lawyer" | "both">
-  >({});
-  const [showSuccess, setShowSuccess] = useState(false);
-
-  const exportExtensions = useMemo(
-    () => [
-      StarterKit,
-      TextAlign.configure({
-        types: ["heading", "paragraph"],
-        alignments: ["left", "center", "right", "justify"],
-      }),
-      Table.configure({
-        resizable: true,
-        HTMLAttributes: {
-          class: "border-collapse table-auto w-full",
-        },
-      }),
-      TableRow,
-      TableHeader.configure({
-        HTMLAttributes: {
-          class: "border border-gray-300 px-4 py-2 bg-gray-100 font-bold",
-        },
-      }),
-      TableCell.configure({
-        HTMLAttributes: {
-          class: "border border-gray-300 px-4 py-2",
-        },
-      }),
-      AttachmentBlock,
-      ImageAttachment,
-    ],
-    []
+  // Per-page UI state. selectedPages stores the page indices ticked;
+  // signerByPage maps pageIndex → client/lawyer/both. Defaults to
+  // "client" when a page is first ticked so the lawyer doesn't have to
+  // think about it for the common case.
+  //
+  // When the panel was opened via the right-click "Send for Signature"
+  // path, initialSelectedPageIndex points at the clicked page — we
+  // pre-tick that one row and default it to "client" so the lawyer
+  // sees the captured intent reflected immediately.
+  const [selectedPages, setSelectedPages] = useState<Set<number>>(
+    initialSelectedPageIndex != null
+      ? new Set([initialSelectedPageIndex])
+      : new Set()
   );
-
-  const resolveDocHtml = (docId: string): string => {
-    if (activeEditorRef && currentDocId === docId) {
-      return activeEditorRef.getHTML();
-    }
-    const doc = documentsById[docId];
-    if (doc?.contentJSON) {
-      return generateHTML(doc.contentJSON as JSONContent, exportExtensions);
-    }
-    if (doc?.legacyHtml) return doc.legacyHtml;
-    return "";
-  };
-
-  const bundleItemIdSet = useMemo(
-    () => new Set(bundleItems.map((item) => item.id)),
-    [bundleItems]
+  const [signerByPage, setSignerByPage] = useState<Record<number, SignerChoice>>(
+    initialSelectedPageIndex != null
+      ? { [initialSelectedPageIndex]: "client" }
+      : {}
   );
+  const [clientEmail, setClientEmail] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-  const existingRequests = useMemo(
-    () => getRequestsByCaseId(caseId),
-    [caseId, getRequestsByCaseId]
-  );
+  // Load the existing batch list once the panel opens. CaseDocumentEditor
+  // also loads on mount, but this guarantees freshness when the panel
+  // reopens after a long session.
+  useEffect(() => {
+    loadForCase(caseId);
+  }, [caseId, loadForCase]);
 
-  const pendingRequests = useMemo(
-    () => existingRequests.filter((req) => !req.clientSigned),
-    [existingRequests]
-  );
-  const requestByBundleItemId = useMemo(
+  const requests = getRequestsByCaseId(caseId);
+
+  const pageItems = useMemo(
     () =>
-      new Map(existingRequests.map((req) => [req.bundleItemId, req] as const)),
-    [existingRequests]
+      pages.map((page, index) => ({
+        index,
+        label: derivePageLabel(page, `Page ${index + 1}`),
+      })),
+    [pages]
   );
-  const requestBySignedAttachmentId = useMemo(
+
+  // Any page that requires a client signature means we need an email.
+  const needsClientEmail = useMemo(
     () =>
-      new Map(
-        existingRequests
-          .filter((req) => req.signedAttachmentId)
-          .map((req) => [req.signedAttachmentId as string, req] as const)
-      ),
-    [existingRequests]
-  );
-  const requestedBundleItemIds = useMemo(
-    () => new Set(pendingRequests.map((req) => req.bundleItemId)),
-    [pendingRequests]
+      Array.from(selectedPages).some((idx) => {
+        const choice = signerByPage[idx] || "client";
+        return choice === "client" || choice === "both";
+      }),
+    [selectedPages, signerByPage]
   );
 
-  const pendingCount = useMemo(() => {
-    const pending = getPendingRequests(caseId);
-    if (bundleItemIdSet.size === 0) return 0;
-    return pending.filter((req) => bundleItemIdSet.has(req.bundleItemId)).length;
-  }, [caseId, getPendingRequests, bundleItemIdSet]);
-
-  const signedRequests = useMemo(
-    () =>
-      getCompletedRequests(caseId).filter(
-        (req) =>
-          req.clientSigned &&
-          req.sentToLawyerAt &&
-          bundleItemIdSet.has(req.bundleItemId)
-      ),
-    [caseId, getCompletedRequests, bundleItemIdSet]
-  );
-
-  const handleToggleItem = (bundleItemId: string) => {
-    setSelectedItems((prev) => {
+  const togglePage = (index: number) => {
+    setSelectedPages((prev) => {
       const next = new Set(prev);
-      if (next.has(bundleItemId)) {
-        next.delete(bundleItemId);
+      if (next.has(index)) {
+        next.delete(index);
       } else {
-        next.add(bundleItemId);
+        next.add(index);
       }
       return next;
     });
+    setSignerByPage((prev) => {
+      if (prev[index]) return prev;
+      return { ...prev, [index]: "client" };
+    });
   };
 
-  const handleSendRequests = () => {
-    const selectedBundleItems = bundleItems.filter((item) =>
-      selectedItems.has(item.id)
-    );
-
-    sendSignatureRequestsForCase(
-      caseId,
-      Array.from(selectedItems),
-      selectedBundleItems.map((item) => ({
-        id: item.id,
-        title: item.title,
-        type: item.type as "DOC" | "ATTACHMENT",
-        requiresClientSignature:
-          (signerByItemId[item.id] || "client") !== "lawyer",
-        requiresLawyerSignature:
-          (signerByItemId[item.id] || "client") !== "client",
-        // Capture HTML snapshot for documents to preserve formatting
-        docHtmlSnapshot:
-          item.type === "DOC" ? resolveDocHtml(item.refId) : undefined,
-      }))
-    );
-
-    setShowSuccess(true);
-    setSelectedItems(new Set());
-    setTimeout(() => setShowSuccess(false), 3000);
+  const setSigner = (index: number, choice: SignerChoice) => {
+    setSignerByPage((prev) => ({ ...prev, [index]: choice }));
   };
 
-  const canSend = selectedItems.size > 0;
-
-  const getSignerSelection = (itemId: string) => {
-    const manual = signerByItemId[itemId];
-    if (manual) return manual;
-    const existing = requestByBundleItemId.get(itemId);
-    if (existing) {
-      if (existing.requiresClientSignature && existing.requiresLawyerSignature) {
-        return "both";
-      }
-      if (existing.requiresLawyerSignature) {
-        return "lawyer";
-      }
+  const handleSend = async () => {
+    if (selectedPages.size === 0) {
+      setError("Pick at least one page that needs to be signed.");
+      return;
     }
-    return "client";
+    if (needsClientEmail && !clientEmail.trim()) {
+      setError("Enter the client's email address to send signature requests.");
+      return;
+    }
+
+    const pageAssignments = Array.from(selectedPages)
+      .sort((a, b) => a - b)
+      .map((pageIndex) => {
+        const choice = signerByPage[pageIndex] || "client";
+        const signers: SignerRole[] =
+          choice === "both" ? ["client", "lawyer"] : [choice];
+        return { pageIndex, signers };
+      });
+
+    // Snapshot the live editor HTML at this exact moment so the
+    // recipient sees what the lawyer was looking at — including any
+    // unsaved edits, inserted images, alignment changes, etc.
+    const documentHtmlSnapshot = buildEditorSnapshot(pages);
+    if (!documentHtmlSnapshot) {
+      setError("Couldn't capture the document. Reopen the editor and try again.");
+      return;
+    }
+
+    setSubmitting(true);
+    setError(null);
+    setSuccessMessage(null);
+    try {
+      const created = await create(caseId, {
+        clientEmail: clientEmail.trim().toLowerCase() || undefined,
+        pageAssignments,
+        documentHtmlSnapshot,
+      });
+      setSelectedPages(new Set());
+      setSignerByPage({});
+      setClientEmail("");
+      const clientRow = created.find((r) => r.signerRole === "client");
+      const lawyerRow = created.find((r) => r.signerRole === "lawyer");
+      const parts: string[] = [];
+      if (clientRow) parts.push("client");
+      if (lawyerRow) parts.push("you (lawyer)");
+      setSuccessMessage(
+        `Signature request sent. Pending signatures from ${parts.join(" + ")}.`
+      );
+    } catch (err) {
+      setError(getSignaturesErrorMessage(err));
+    } finally {
+      setSubmitting(false);
+    }
   };
 
-  const getRequestForItem = (item: BundleItem) =>
-    requestByBundleItemId.get(item.id) ||
-    (item.type === "ATTACHMENT"
-      ? requestBySignedAttachmentId.get(item.refId)
-      : undefined);
+  const handleCancel = async (requestId: string) => {
+    try {
+      await cancel(caseId, requestId);
+    } catch (err) {
+      setError(getSignaturesErrorMessage(err));
+    }
+  };
 
   return (
-    <div className="fixed right-0 top-0 h-screen w-full sm:w-[26rem] bg-slate-50 border-l border-slate-200 shadow-2xl z-40 flex flex-col overflow-hidden">
-      {/* Header */}
-      <div className="sticky top-0 bg-white/95 backdrop-blur border-b border-slate-200 px-5 py-4 flex items-center justify-between">
+    <div className="fixed inset-y-0 right-0 z-40 flex w-full max-w-md flex-col border-l border-gray-200 bg-white shadow-2xl">
+      <header className="flex items-center justify-between border-b border-gray-200 px-5 py-4">
         <div>
-          <h2 className="text-lg font-semibold text-slate-900">
-            Request Client Signature
-          </h2>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Choose files that require client approval
+          <h2 className="text-base font-semibold text-gray-900">Signatures</h2>
+          <p className="mt-0.5 text-xs text-gray-500">
+            Pick pages, assign signers, then send.
           </p>
         </div>
         <button
+          type="button"
           onClick={onClose}
-          className="p-1.5 text-slate-500 hover:bg-slate-100 rounded-md transition-colors"
-          aria-label="Close signature request panel"
+          className="rounded-md p-1.5 text-gray-500 hover:bg-gray-100"
+          aria-label="Close panel"
         >
-          <X className="w-5 h-5" />
+          <X className="h-4 w-4" />
         </button>
-      </div>
+      </header>
 
-      {/* Content */}
-      <div className="flex-1 overflow-y-auto px-5 py-5 space-y-4">
-        {/* Pending Count */}
-        {pendingCount > 0 && (
-          <div className="bg-amber-50 border border-amber-200 rounded-xl p-3.5 flex items-start gap-2">
-            <AlertCircle className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />
-            <div>
-              <p className="text-xs font-medium text-amber-700">Pending</p>
-              <p className="text-sm text-amber-800">{pendingCount} document{pendingCount !== 1 ? 's' : ''} awaiting client signature</p>
-            </div>
-          </div>
-        )}
-
-        {/* Success Message */}
-        {showSuccess && (
-          <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3.5">
-            <p className="text-sm text-emerald-800 font-medium">
-              Success: Signature requests sent to client.
-            </p>
-          </div>
-        )}
-
-        {/* Documents List */}
-        <div>
-          <h3 className="text-sm font-medium text-gray-700 mb-3">
-            Select documents for client signature:
+      <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
+        <section>
+          <h3 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-gray-500">
+            Pages
           </h3>
-
-          {bundleItems.length === 0 ? (
-            <div className="bg-white border border-slate-200 rounded-xl p-4 text-center">
-              <p className="text-sm text-gray-600">No documents in bundle</p>
+          {pageItems.length === 0 ? (
+            <div className="mt-3 rounded-lg border border-dashed border-gray-200 p-4 text-center text-xs text-gray-500">
+              The document hasn't finished rendering yet. Close the panel and
+              reopen it once the pages are visible.
             </div>
           ) : (
-            <div className="space-y-2">
-              {bundleItems.map((item) => {
-                const isSelected = selectedItems.has(item.id);
-                const request = getRequestForItem(item);
-                const isRequested =
-                  requestedBundleItemIds.has(item.id) ||
-                  Boolean(request && !request.clientSigned);
-                const signerSelection = getSignerSelection(item.id);
-
-                if (request?.clientSigned) {
-                  return null;
-                }
-
+            <ul className="mt-3 space-y-2">
+              {pageItems.map((item) => {
+                const ticked = selectedPages.has(item.index);
+                const signer = signerByPage[item.index] || "client";
                 return (
-                  <label
-                    key={item.id}
-                    className={`flex items-start gap-3 p-3.5 rounded-xl border cursor-pointer transition-all ${
-                      isSelected
-                        ? "bg-emerald-50 border-emerald-300 ring-2 ring-emerald-200/60"
-                        : isRequested
-                          ? "bg-amber-50/50 border-amber-200"
-                          : "bg-white border-slate-200 hover:border-slate-300 hover:shadow-sm"
+                  <li
+                    key={item.index}
+                    className={`rounded-lg border p-3 transition-colors ${
+                      ticked
+                        ? "border-emerald-300 bg-emerald-50/40"
+                        : "border-gray-200 bg-white"
                     }`}
                   >
-                    <input
-                      type="checkbox"
-                      checked={isSelected}
-                      onChange={() => handleToggleItem(item.id)}
-                      className="mt-1 w-4 h-4 rounded border-slate-300 accent-emerald-600 cursor-pointer"
-                    />
-
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-slate-900 truncate">
-                        {item.title}
-                      </p>
-                      <div className="flex items-center gap-2 mt-1">
-                        <span className="inline-block px-2 py-0.5 text-xs font-medium bg-slate-100 text-slate-700 rounded-full">
-                          {item.type === "DOC" ? "Document" : "Attachment"}
-                        </span>
-                        {isRequested && (
-                          <span className="inline-block px-2 py-0.5 text-xs font-medium bg-amber-100 text-amber-800 rounded-full">
-                            Pending
-                          </span>
+                    <label className="flex items-start gap-3 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={ticked}
+                        onChange={() => togglePage(item.index)}
+                        className="mt-1 h-4 w-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-gray-900 truncate">
+                          {item.index + 1}. {item.label}
+                        </p>
+                        {ticked && (
+                          <div className="mt-2 flex items-center gap-2">
+                            <span className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+                              Signer
+                            </span>
+                            <select
+                              value={signer}
+                              onChange={(e) =>
+                                setSigner(
+                                  item.index,
+                                  e.target.value as SignerChoice
+                                )
+                              }
+                              className="rounded-md border border-gray-300 px-2 py-1 text-xs"
+                            >
+                              <option value="client">Client</option>
+                              <option value="lawyer">Lawyer</option>
+                              <option value="both">Both</option>
+                            </select>
+                          </div>
                         )}
                       </div>
-                      <div className="mt-2">
-                        <label className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
-                          Signature required
-                        </label>
-                        <select
-                          value={signerSelection}
-                          onChange={(event) => {
-                            setSignerByItemId((prev) => ({
-                              ...prev,
-                              [item.id]: event.target.value as
-                                | "client"
-                                | "lawyer"
-                                | "both",
-                            }));
-                            setSelectedItems((prev) => {
-                              const next = new Set(prev);
-                              next.add(item.id);
-                              return next;
-                            });
-                          }}
-                          className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700"
-                        >
-                          <option value="client">Client signature</option>
-                          <option value="lawyer">Lawyer signature</option>
-                          <option value="both">Client + Lawyer</option>
-                        </select>
-                      </div>
-                    </div>
-                  </label>
+                    </label>
+                  </li>
                 );
               })}
-            </div>
+            </ul>
           )}
-        </div>
+        </section>
 
-        {/* Selected Count */}
-        {selectedItems.size > 0 && (
-          <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3.5">
-            <p className="text-sm text-emerald-900">
-              <strong>{selectedItems.size}</strong> document{selectedItems.size !== 1 ? 's' : ''} selected
+        {needsClientEmail && (
+          <section>
+            <label
+              htmlFor="client-email"
+              className="text-[11px] font-semibold uppercase tracking-[0.08em] text-gray-500"
+            >
+              Client email
+            </label>
+            <input
+              id="client-email"
+              type="email"
+              value={clientEmail}
+              onChange={(e) => setClientEmail(e.target.value)}
+              placeholder="client@example.com"
+              className="mt-2 w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+            />
+            <p className="mt-1 text-[11px] text-gray-500">
+              The client must already have a LawFlow account. They'll see the
+              pending pages in their dashboard.
             </p>
+          </section>
+        )}
+
+        {error && (
+          <div className="flex items-start gap-2 rounded-md border border-red-200 bg-red-50 p-3 text-xs text-red-700">
+            <AlertCircle className="h-4 w-4 flex-shrink-0" />
+            <span>{error}</span>
           </div>
         )}
 
-        {signedRequests.length > 0 && (
-          <div>
-            <h3 className="text-sm font-medium text-gray-700 mb-3">
-              Client signed documents
-            </h3>
-            <div className="space-y-3">
-              {signedRequests.map((req) => {
-                const isAttached = Boolean(
-                  req.signedAttachmentId &&
-                    attachmentsById[req.signedAttachmentId]
-                );
+        {successMessage && (
+          <div className="flex items-start gap-2 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-700">
+            <CheckCircle2 className="h-4 w-4 flex-shrink-0" />
+            <span>{successMessage}</span>
+          </div>
+        )}
 
+        <section>
+          <h3 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-gray-500">
+            Active signature requests
+          </h3>
+          {requests.length === 0 ? (
+            <div className="mt-3 rounded-lg border border-dashed border-gray-200 p-4 text-center text-xs text-gray-500">
+              None yet. Pick pages above and hit Send.
+            </div>
+          ) : (
+            <ul className="mt-3 space-y-2">
+              {requests.map((req) => {
+                const badge = statusBadge(req.status);
+                const pageCount = req.pageIndices?.length || 0;
                 return (
-                  <div
+                  <li
                     key={req.id}
-                    className="rounded-xl border border-emerald-100 bg-white p-3.5"
+                    className="rounded-lg border border-gray-200 bg-white p-3"
                   >
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <p className="text-sm font-semibold text-slate-900">
-                          {req.docTitle}
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-semibold text-gray-900">
+                          {req.signerRole === "client" ? "Client" : "Lawyer"} •{" "}
+                          {pageCount} page{pageCount === 1 ? "" : "s"}
                         </p>
-                        <p className="mt-1 text-xs text-slate-500">
-                          Signed by {req.clientSignatureName || "Client"}
+                        <p className="mt-0.5 text-[11px] text-gray-500">
+                          Created{" "}
+                          {new Date(req.createdAt).toLocaleDateString(undefined, {
+                            month: "short",
+                            day: "numeric",
+                          })}
                         </p>
                       </div>
-                      <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-700">
-                        Signed
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${badge.className}`}
+                      >
+                        {badge.label}
                       </span>
                     </div>
-
-                    <div className="mt-3 flex flex-wrap gap-2">
+                    {req.status === "pending" && (
                       <button
-                        type="button"
-                        onClick={() => {
-                          const signedDataUrl =
-                            req.lawyerSignedPdfDataUrl ||
-                            req.signedPdfDataUrl ||
-                            (req.lawyerSigned ? req.pdfDataUrl : undefined);
-                          if (!signedDataUrl || isAttached) return;
-                          const base64 = signedDataUrl.split(",")[1] || "";
-                          const sizeBytes = Math.floor((base64.length * 3) / 4);
-                          const attachmentId = addSignedAttachment(
-                            {
-                              name: `${req.docTitle}-Signed.pdf`,
-                              type: "application/pdf",
-                              size: sizeBytes,
-                              url: signedDataUrl,
-                            },
-                            req.bundleItemId
-                          );
-                          updateRequest(req.id, { signedAttachmentId: attachmentId });
-                        }}
-                        className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold ${
-                          isAttached
-                            ? "bg-emerald-50 text-emerald-600"
-                            : "border border-emerald-200 text-emerald-700 hover:bg-emerald-50"
-                        }`}
-                        disabled={isAttached}
+                        onClick={() => handleCancel(req.id)}
+                        className="mt-2 text-[11px] font-medium text-red-600 hover:underline"
                       >
-                        {isAttached ? "Attached to case" : "Attach to case file"}
+                        Cancel request
                       </button>
-                    </div>
-                  </div>
+                    )}
+                  </li>
                 );
               })}
-            </div>
-          </div>
-        )}
+            </ul>
+          )}
+        </section>
       </div>
 
-      {/* Footer - Action Buttons */}
-      <div className="sticky bottom-0 bg-white/95 backdrop-blur border-t border-slate-200 px-5 py-4 space-y-2">
+      <footer className="border-t border-gray-200 px-5 py-4">
         <button
-          onClick={handleSendRequests}
-          disabled={!canSend}
-          className={`w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-semibold text-sm transition-colors ${
-            canSend
-              ? "bg-emerald-600 text-white hover:bg-emerald-700 shadow-lg shadow-emerald-200/60"
-              : "bg-slate-100 text-slate-400 cursor-not-allowed"
-          }`}
+          type="button"
+          onClick={handleSend}
+          disabled={submitting || selectedPages.size === 0}
+          className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-[var(--primary)] px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[var(--primary)]/90 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          <Send className="w-4 h-4" />
-          Send to Client ({selectedItems.size})
+          {submitting ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Sending…
+            </>
+          ) : (
+            <>
+              <Send className="h-4 w-4" />
+              Send for signature
+            </>
+          )}
         </button>
-
-        <button
-          onClick={onClose}
-          className="w-full px-4 py-2.5 rounded-xl font-medium text-sm border border-slate-200 text-slate-700 hover:bg-slate-50 transition-colors"
-        >
-          Close
-        </button>
-      </div>
+        <p className="mt-2 text-[11px] text-gray-500 text-center">
+          {selectedPages.size === 0
+            ? "Tick at least one page above."
+            : `${selectedPages.size} page${selectedPages.size === 1 ? "" : "s"} selected.`}
+        </p>
+      </footer>
     </div>
   );
 }

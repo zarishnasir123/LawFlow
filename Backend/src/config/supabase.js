@@ -23,6 +23,11 @@ export function getSupabaseStorageConfig() {
   const url = process.env.SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   const bucket = process.env.SUPABASE_LAWYER_BUCKET || "lawyer-verification-documents";
+  // Separate bucket for compiled signed case PDFs — different access
+  // rules (lawyer-only) and lifecycle (final artifact, not draft uploads)
+  // from the verification-documents bucket, so they don't share a
+  // namespace.
+  const casePdfBucket = process.env.SUPABASE_CASE_PDF_BUCKET || "case-signed-pdfs";
   const previewUrlExpiresIn = Number(process.env.SUPABASE_PREVIEW_URL_EXPIRES_IN || 900);
 
   const issues = [];
@@ -35,6 +40,7 @@ export function getSupabaseStorageConfig() {
     url,
     serviceRoleKey,
     bucket,
+    casePdfBucket,
     previewUrlExpiresIn: Number.isFinite(previewUrlExpiresIn) && previewUrlExpiresIn > 0
       ? previewUrlExpiresIn
       : 900

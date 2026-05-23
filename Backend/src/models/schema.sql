@@ -370,6 +370,16 @@ CREATE TABLE cases (
   -- HTML, so a single column captures the entire edit state.
   edited_html     TEXT,
 
+  -- Final compiled signed PDF metadata. The Phase 2 compiler renders
+  -- the edited_html via puppeteer, then pdf-lib stamps the captured
+  -- signature PNGs at each request's signature_placement on the right
+  -- page. The PDF itself lives in Supabase Storage (private bucket
+  -- `case-signed-pdfs`); we only store the object key + a generation
+  -- timestamp here. Path is never returned to the client — lawyer
+  -- downloads via a short-lived signed URL minted on demand.
+  signed_pdf_storage_path  TEXT,
+  signed_pdf_generated_at  TIMESTAMP,
+
   -- draft = lawyer is still drafting / editing
   -- submitted = sent to registrar, awaiting review
   -- returned = registrar bounced it back with remarks
@@ -383,58 +393,65 @@ CREATE TABLE cases (
 );
 
 -- =====================================================================
--- Signature requests: a single workflow item where the lawyer sends a
--- snapshot of the case document to a recipient (typically the client)
--- for e-signature. The snapshot is intentionally frozen at send time so
--- the lawyer can keep editing the live document without disturbing an
--- in-flight signature request.
+-- Signature requests: ONE row PER SIGNER per "Send for signature" action.
+-- When a lawyer marks pages with "client + lawyer" both as required
+-- signers and hits Send, the backend creates TWO rows — one with
+-- signer_role='client' (recipient_user_id = the client's user account)
+-- and one with signer_role='lawyer' (recipient_user_id = the lawyer
+-- themselves). Each row owns its own slice of page_indices.
 --
--- Lifecycle:
---   pending           → request created, awaiting first signer
---   partially_signed  → at least one required signature collected
---   fully_signed      → all required signatures collected
---   expired           → past expires_at without completion
---   cancelled         → lawyer revoked the request before completion
+-- Both signers must be registered LawFlow users (the signing UIs are
+-- in-app, authenticated views — no public token URLs). The lawyer
+-- composes the request inside the editor, the recipient signs from
+-- their own logged-in dashboard. Email is a notification only.
+--
+-- Lifecycle (per-row, single signer):
+--   pending    → row created, awaiting the signer
+--   signed     → signer has signed (signature_image + signed_at set)
+--   expired    → past expires_at without signing
+--   cancelled  → lawyer revoked the request before signing
+--
+-- The case-level "all signatures complete" state is derived: a case is
+-- fully signed when every signature_request for it has status='signed'.
+-- When that happens, the backend compiles cases.signed_pdf (Phase 2).
 -- =====================================================================
 CREATE TABLE signature_requests (
   id                         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   case_id                    UUID NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
   created_by_user_id         UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
 
-  recipient_email            VARCHAR(200) NOT NULL,
-  recipient_name             VARCHAR(200),
+  -- The signer this row is FOR. Resolved at create-time by looking up
+  -- the user by email (client) or by created_by_user_id (lawyer). The
+  -- in-app viewers verify req.user.sub === recipient_user_id before
+  -- letting anyone sign, so it doubles as the access-control check.
+  recipient_user_id          UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  signer_role                VARCHAR(20) NOT NULL
+                             CHECK (signer_role IN ('client', 'lawyer')),
 
-  -- Frozen snapshot of the document HTML at the moment of send. The
-  -- public signing page renders this verbatim so the client sees the
-  -- same content the lawyer sent, even if the lawyer keeps editing.
+  -- Groups rows created together in one "Send" action so the lawyer
+  -- editor's panel can display them as one batch with per-signer status.
+  -- Nullable for future flexibility (e.g., re-sending a single signer
+  -- without spawning a new batch); typically populated.
+  case_batch_id              UUID,
+
+  -- Frozen snapshot of the document HTML at send time so the in-app
+  -- signing viewer renders exactly what the lawyer sent, even if the
+  -- lawyer keeps editing the live cases.edited_html afterwards.
   document_html_snapshot     TEXT NOT NULL,
 
-  -- Which pages were sent (0-based indices into the rendered document).
-  -- NULL means the whole document. Stored as JSONB so we can filter
-  -- requests by page if a "per-section status" UI ever needs it.
+  -- 0-based page indices into the rendered document for THIS signer's
+  -- assigned pages. NULL = entire document. JSONB to allow filtering
+  -- per-page status badges in the editor if needed.
   page_indices               JSONB,
 
-  -- Token for the public signing link. We store only the SHA-256 hash so
-  -- a leaked database dump can't grant signing access — the plaintext
-  -- token only ever exists in the email body and the URL the client
-  -- clicks. Same pattern as auth_sessions.refresh_token_hash.
-  token_hash                 VARCHAR(64) NOT NULL UNIQUE,
-
-  -- Required signers. Defaults reflect the common case: client signs,
-  -- lawyer signs separately later (or not at all).
-  requires_client_signature  BOOLEAN NOT NULL DEFAULT TRUE,
-  requires_lawyer_signature  BOOLEAN NOT NULL DEFAULT FALSE,
-
-  -- Captured signatures, as base64 PNG data URLs from the signature pad
-  -- canvas. Stored inline because they're tiny (a few KB each) and
-  -- tightly coupled to the request row.
-  client_signature_image     TEXT,
-  client_signed_at           TIMESTAMP,
-  lawyer_signature_image     TEXT,
-  lawyer_signed_at           TIMESTAMP,
+  -- Captured signature image (base64 PNG data URL from the signing
+  -- canvas — either typed-name-on-canvas or a user-uploaded PNG/JPG
+  -- converted to data URL). NULL until the signer signs.
+  signature_image            TEXT,
+  signed_at                  TIMESTAMP,
 
   status                     VARCHAR(30) NOT NULL DEFAULT 'pending'
-                             CHECK (status IN ('pending', 'partially_signed', 'fully_signed', 'expired', 'cancelled')),
+                             CHECK (status IN ('pending', 'signed', 'expired', 'cancelled')),
 
   expires_at                 TIMESTAMP NOT NULL,
 
@@ -485,14 +502,23 @@ CREATE INDEX idx_case_types_category ON case_types(category, sort_order);
 CREATE INDEX idx_cases_lawyer_user_id ON cases(lawyer_user_id);
 CREATE INDEX idx_cases_status         ON cases(status);
 
--- token_hash already gets a UNIQUE index implicitly; only add what's
--- needed for real query patterns.
+-- Lawyer's editor lists per-case + groups by batch.
 CREATE INDEX idx_signature_requests_case_id ON signature_requests(case_id);
 CREATE INDEX idx_signature_requests_case_status
   ON signature_requests(case_id, status);
+CREATE INDEX idx_signature_requests_case_batch_id
+  ON signature_requests(case_batch_id)
+  WHERE case_batch_id IS NOT NULL;
+
+-- Client/lawyer dashboards list "my pending signatures" by recipient_user_id.
+CREATE INDEX idx_signature_requests_recipient_status
+  ON signature_requests(recipient_user_id, status)
+  WHERE status = 'pending';
+
+-- Lazy expiry sweep target (status check filter shrinks the index).
 CREATE INDEX idx_signature_requests_expires_at
   ON signature_requests(expires_at)
-  WHERE status IN ('pending', 'partially_signed');
+  WHERE status = 'pending';
 
 -- =====================================================================
 -- Row Level Security: deny by default on every table.

@@ -9,7 +9,7 @@ import casesRoutes from "./modules/cases/cases.routes.js";
 import registrarRoutes from "./modules/registrar/registrar.routes.js";
 import {
   caseSignatureRoutes,
-  publicSigningRoutes,
+  mySignatureRoutes,
 } from "./modules/signatures/signatures.routes.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 import { notFoundHandler } from "./middleware/notFoundHandler.js";
@@ -69,10 +69,10 @@ app.use("/api/cases", casesRoutes);
 // layer. The mergeParams option on the router lets the nested route
 // see :caseId from the parent mount.
 app.use("/api/cases/:caseId", caseSignatureRoutes);
-// Public signing endpoints — no auth middleware, the URL token IS
-// the credential. Mounted at /api/signing so the audit trail is clear
-// (any access through this path is unauthenticated by design).
-app.use("/api/signing", publicSigningRoutes);
+// Recipient-side signature endpoints — authenticated as the signer
+// (client OR lawyer). Each row's recipient_user_id is the auth target,
+// so the same handlers serve both roles without role-based middleware.
+app.use("/api/me", mySignatureRoutes);
 app.use("/api/registrars", registrarRoutes);
 
 app.use(notFoundHandler);

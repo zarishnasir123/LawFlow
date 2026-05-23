@@ -1,16 +1,22 @@
 import {
   cancelSignatureRequest,
-  createSignatureRequest,
-  getSignatureRequestByToken,
+  createSignatureRequestBatch,
+  getSignatureRequestForSigner,
+  getSignedCasePdfDownload,
+  isCaseFullySigned,
+  listPendingForRecipient,
   listSignatureRequestsForCase,
   saveEditedDocument,
-  submitClientSignature,
+  submitSignature,
 } from "./signatures.service.js";
 
-// Lawyer-side: PUT the current edited HTML state of a case document.
+// =====================================================================
+// Lawyer-auth endpoints (mounted under /api/cases/:caseId)
+// =====================================================================
+
+// Lawyer saves the current edited HTML state of a case document.
 // Frontend calls this on Save Draft (manual) and on a debounced interval
-// while editing. Body: { editedHtml: string }. Returns updatedAt so the
-// editor can show "Saved 2m ago".
+// while editing. Body: { editedHtml: string }.
 export async function putEditedDocument(req, res) {
   const { caseId } = req.params;
   const { editedHtml } = req.body;
@@ -22,80 +28,106 @@ export async function putEditedDocument(req, res) {
   return res.status(200).json(result);
 }
 
-// Lawyer-side: create a new signature request on a case. The plaintext
-// signing token is returned here once — never persisted — so the caller
-// can compose an email body containing the signing URL.
+// Lawyer creates a batch of signature requests in one "Send" action.
+// Body shape:
+//   {
+//     clientEmail: "client@example.com",
+//     pageAssignments: [
+//       { pageIndex: 0, signers: ["client"] },
+//       { pageIndex: 3, signers: ["client", "lawyer"] }
+//     ]
+//   }
+// Returns: { batchId, signatureRequests: [...] }
 export async function postSignatureRequest(req, res) {
   const { caseId } = req.params;
-  const {
-    recipientEmail,
-    recipientName,
-    documentHtmlSnapshot,
-    pageIndices,
-    requiresClientSignature = true,
-    requiresLawyerSignature = false,
-  } = req.body;
+  const { clientEmail, pageAssignments, documentHtmlSnapshot } = req.body;
 
-  const { request, token } = await createSignatureRequest({
+  const { batchId, requests } = await createSignatureRequestBatch({
     caseId,
     lawyerUserId: req.user.sub,
-    recipientEmail: recipientEmail.trim().toLowerCase(),
-    recipientName: recipientName?.trim() || null,
+    clientEmail: clientEmail?.trim().toLowerCase(),
+    pageAssignments,
     documentHtmlSnapshot,
-    pageIndices: pageIndices ?? null,
-    requiresClientSignature,
-    requiresLawyerSignature,
   });
 
-  // Build the public signing URL. Frontend may also build this from
-  // the token itself, but returning it from the server keeps the
-  // canonical link assembly in one place.
-  const baseUrl = (
-    process.env.PUBLIC_APP_URL || "http://localhost:5173"
-  ).replace(/\/$/, "");
-  const signingUrl = `${baseUrl}/sign/${token}`;
-
   return res.status(201).json({
-    signatureRequest: request,
-    signingUrl,
-    // Plaintext token returned ONCE. Never log it.
-    token,
+    batchId,
+    signatureRequests: requests,
   });
 }
 
-// Lawyer-side: list all signature requests for a case. Used by the
-// editor's poll loop (every 10s while open) to refresh per-page badges.
+// Lawyer lists every signature request on a case + the rolled-up
+// "is everything signed?" state. The editor sidebar polls this every
+// few seconds while open.
 export async function getCaseSignatureRequests(req, res) {
   const { caseId } = req.params;
   const requests = await listSignatureRequestsForCase({
     caseId,
     lawyerUserId: req.user.sub,
   });
-  return res.status(200).json({ signatureRequests: requests });
+  const completion = await isCaseFullySigned({
+    caseId,
+    lawyerUserId: req.user.sub,
+  });
+  return res.status(200).json({ signatureRequests: requests, completion });
 }
 
-// Public side: client opens the signing link. Returns the frozen HTML
-// snapshot and request metadata (no auth required).
-export async function getPublicSigningRequest(req, res) {
-  const { token } = req.params;
-  const request = await getSignatureRequestByToken(token);
-  return res.status(200).json({ signatureRequest: request });
+// Lawyer requests a short-lived download URL for the compiled signed
+// PDF. Returns 409 if the case isn't fully signed yet so the lawyer
+// editor can suppress the button in that state.
+export async function getSignedPdfDownloadUrl(req, res) {
+  const { caseId } = req.params;
+  const result = await getSignedCasePdfDownload({
+    caseId,
+    lawyerUserId: req.user.sub,
+  });
+  return res.status(200).json(result);
 }
 
-// Public side: client submits their signature.
-export async function postClientSignature(req, res) {
-  const { token } = req.params;
-  const { signatureImage } = req.body;
-  const updated = await submitClientSignature({ token, signatureImage });
-  return res.status(200).json({ signatureRequest: updated });
-}
-
-// Lawyer-side: cancel a request before completion.
+// Lawyer cancels a request before signing happens.
 export async function deleteSignatureRequest(req, res) {
   const { requestId } = req.params;
   const updated = await cancelSignatureRequest({
     requestId,
     lawyerUserId: req.user.sub,
+  });
+  return res.status(200).json({ signatureRequest: updated });
+}
+
+// =====================================================================
+// Recipient-auth endpoints (mounted under /api/me — works for both
+// client and lawyer recipients, since each row has exactly one signer)
+// =====================================================================
+
+// "What signatures am I asked to provide?" — drives both the client
+// dashboard's Pending Signatures view and the lawyer's "self-sign"
+// inbox. Filters server-side to status='pending' AND not expired.
+export async function getMyPendingSignatures(req, res) {
+  const requests = await listPendingForRecipient({ userId: req.user.sub });
+  return res.status(200).json({ signatureRequests: requests });
+}
+
+// Recipient fetches one signature request with its frozen HTML snapshot.
+// Access gated by recipient_user_id === req.user.sub.
+export async function getMySignatureRequest(req, res) {
+  const { requestId } = req.params;
+  const request = await getSignatureRequestForSigner({
+    requestId,
+    userId: req.user.sub,
+  });
+  return res.status(200).json({ signatureRequest: request });
+}
+
+// Recipient submits their signature image (typed name canvas OR uploaded
+// PNG/JPG, both produced as base64 data URLs client-side).
+export async function postSignature(req, res) {
+  const { requestId } = req.params;
+  const { signatureImage, signaturePlacement } = req.body;
+  const updated = await submitSignature({
+    requestId,
+    userId: req.user.sub,
+    signatureImage,
+    signaturePlacement,
   });
   return res.status(200).json({ signatureRequest: updated });
 }

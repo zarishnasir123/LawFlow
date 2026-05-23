@@ -1,222 +1,143 @@
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
 
-export interface SignatureRequest {
-  id: string;
-  caseId: string;
-  bundleItemId: string;
-  docTitle: string;
-  docType: "DOC" | "ATTACHMENT";
-  requestedAt: string;
-  requestedBy?: string;
-  dueAt?: string;
-  requiresClientSignature: boolean;
-  requiresLawyerSignature: boolean;
-  clientSigned: boolean;
-  clientSignedAt?: string;
-  clientSignatureName?: string;
-  pdfDataUrl?: string;
-  docHtmlSnapshot?: string;
-  signedPdfDataUrl?: string;
-  lawyerSigned: boolean;
-  lawyerSignedAt?: string;
-  lawyerSignatureName?: string;
-  lawyerSignedPdfDataUrl?: string;
-  signedAttachmentId?: string;
-  sentToLawyerAt?: string;
-}
+import {
+  signaturesApi,
+  type ApiSignatureRequest,
+  type CaseSignatureCompletion,
+  type CreateSignatureRequestPayload,
+} from "../api/signatures.api";
+
+// Backend-synced cache for signature requests.
+//
+// Replaces the previous Zustand+persist store that lived entirely in
+// localStorage. The case editor's `loadForCase(caseId)` action hits
+// the backend on mount + after every mutation; the rest of the methods
+// are pure selectors over the in-memory cache. There is no localStorage
+// persistence — refreshing the page re-fetches from the server, which
+// is the right behaviour now that the server is the source of truth.
+
+export type { ApiSignatureRequest, CaseSignatureCompletion };
 
 interface SignatureRequestsState {
-  requests: SignatureRequest[];
+  // Cached rows, keyed by caseId so the editor can re-render fast when
+  // it switches between cases without re-fetching.
+  requestsByCaseId: Record<string, ApiSignatureRequest[]>;
+  completionByCaseId: Record<string, CaseSignatureCompletion>;
+  loadingCaseId: string | null;
+  loadError: string | null;
 
-  addRequest: (request: Omit<SignatureRequest, "id" | "requestedAt">) => string;
-  updateRequest: (id: string, updates: Partial<SignatureRequest>) => void;
-  deleteRequest: (id: string) => void;
+  // Pull the latest server state for a case + the rolled-up completion.
+  // Called eagerly when the editor mounts and after every mutation.
+  loadForCase: (caseId: string) => Promise<void>;
 
-  getRequestsByCaseId: (caseId?: string) => SignatureRequest[];
-  getPendingRequests: (caseId?: string) => SignatureRequest[];
-  getPendingLawyerRequests: (caseId?: string) => SignatureRequest[];
-  getCompletedRequests: (caseId?: string) => SignatureRequest[];
-  countPendingSignatures: (caseId?: string) => number;
-  countCompletedSignatures: (caseId?: string) => number;
-
-  sendSignatureRequestsForCase: (
+  // Create a batch of signature requests (one row per signer). Returns
+  // the new rows from the server so the caller can show success state.
+  create: (
     caseId: string,
-    bundleItemIds: string[],
-    bundleItems: Array<{
-      id: string;
-      title: string;
-      type: "DOC" | "ATTACHMENT";
-      requiresClientSignature: boolean;
-      requiresLawyerSignature: boolean;
-      docHtmlSnapshot?: string;
-    }>
-  ) => void;
+    payload: CreateSignatureRequestPayload
+  ) => Promise<ApiSignatureRequest[]>;
+
+  // Cancel a single request (lawyer-only). Removes from cache + flips
+  // status='cancelled'.
+  cancel: (caseId: string, requestId: string) => Promise<void>;
+
+  // ----- Pure selectors -----
+
+  getRequestsByCaseId: (caseId: string) => ApiSignatureRequest[];
+
+  // Pending = waiting for the signer. Includes both client and lawyer
+  // pending rows.
+  getPendingRequests: (caseId: string) => ApiSignatureRequest[];
+
+  // Just the lawyer's own pending rows — drives the self-sign inbox in
+  // the editor's signature panel.
+  getPendingLawyerRequests: (caseId: string) => ApiSignatureRequest[];
+
+  // Signed (per row). The case-level "fully signed" is on completion.
+  getSignedRequests: (caseId: string) => ApiSignatureRequest[];
+
+  // Convenience counters for badges.
+  countPendingSignatures: (caseId: string) => number;
+  countSignedSignatures: (caseId: string) => number;
+
+  // Has every non-cancelled request reached signed? Cached from the
+  // server response so we don't recompute client-side.
+  isCaseFullySigned: (caseId: string) => boolean;
 }
 
-function generateRequestId(): string {
-  return `sig-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-}
+export const useSignatureRequestsStore = create<SignatureRequestsState>(
+  (set, get) => ({
+    requestsByCaseId: {},
+    completionByCaseId: {},
+    loadingCaseId: null,
+    loadError: null,
 
-export const useSignatureRequestsStore = create<SignatureRequestsState>()(
-  persist(
-    (set, get) => ({
-      requests: [],
-
-    addRequest: (request) => {
-      const id = generateRequestId();
-      const fullRequest: SignatureRequest = {
-        ...request,
-        requiresClientSignature:
-          request.requiresClientSignature ?? true,
-        requiresLawyerSignature:
-          request.requiresLawyerSignature ?? false,
-        id,
-        requestedAt: new Date().toISOString(),
-        lawyerSigned: request.lawyerSigned ?? false,
-      };
-      set((state) => ({
-        requests: [...state.requests, fullRequest],
-      }));
-      return id;
-    },
-
-    updateRequest: (id, updates) => {
-      set((state) => ({
-        requests: state.requests.map((req) =>
-          req.id === id ? { ...req, ...updates } : req
-        ),
-      }));
-    },
-
-    deleteRequest: (id) => {
-      set((state) => ({
-        requests: state.requests.filter((req) => req.id !== id),
-      }));
-    },
-
-    getRequestsByCaseId: (caseId) => {
-      return get().requests.filter((req) => !caseId || req.caseId === caseId);
-    },
-
-    getPendingRequests: (caseId) => {
-      return get().requests.filter(
-        (req) => {
-          const requiresClient = req.requiresClientSignature !== false;
-          return (!caseId || req.caseId === caseId) && requiresClient && !req.clientSigned;
-        }
-      );
-    },
-
-    getPendingLawyerRequests: (caseId) => {
-      return get().requests.filter(
-        (req) => {
-          const requiresLawyer = req.requiresLawyerSignature === true;
-          return (!caseId || req.caseId === caseId) && requiresLawyer && !req.lawyerSigned;
-        }
-      );
-    },
-
-    getCompletedRequests: (caseId) => {
-      const isClientComplete = (req: SignatureRequest) => {
-        const requiresClient = req.requiresClientSignature !== false;
-        return !requiresClient || req.clientSigned;
-      };
-      const isLawyerComplete = (req: SignatureRequest) => {
-        const requiresLawyer = req.requiresLawyerSignature === true;
-        return !requiresLawyer || req.lawyerSigned;
-      };
-      return get().requests.filter(
-        (req) =>
-          (!caseId || req.caseId === caseId) &&
-          isClientComplete(req) &&
-          isLawyerComplete(req)
-      );
-    },
-
-    countPendingSignatures: (caseId) => {
-      return get()
-        .requests.filter(
-          (req) => {
-            const requiresClient = req.requiresClientSignature !== false;
-            return (!caseId || req.caseId === caseId) && requiresClient && !req.clientSigned;
-          }
-        )
-        .length;
-    },
-
-    countCompletedSignatures: (caseId) => {
-      const isClientComplete = (req: SignatureRequest) => {
-        const requiresClient = req.requiresClientSignature !== false;
-        return !requiresClient || req.clientSigned;
-      };
-      const isLawyerComplete = (req: SignatureRequest) => {
-        const requiresLawyer = req.requiresLawyerSignature === true;
-        return !requiresLawyer || req.lawyerSigned;
-      };
-      return get()
-        .requests.filter(
-          (req) =>
-            (!caseId || req.caseId === caseId) &&
-            isClientComplete(req) &&
-            isLawyerComplete(req)
-        )
-        .length;
-    },
-
-    sendSignatureRequestsForCase: (caseId, bundleItemIds, bundleItems) => {
-      const itemsMap = new Map(bundleItems.map((item) => [item.id, item]));
-      const selectedIds = new Set(bundleItemIds);
-
-      // Remove stale pending requests for items that are no longer selected
-      set((state) => ({
-        requests: state.requests.filter((req) => {
-          if (req.caseId !== caseId) return true;
-          const stillSelected = selectedIds.has(req.bundleItemId);
-          if (stillSelected) return true;
-          const clientComplete = req.clientSigned || req.requiresClientSignature === false;
-          const lawyerComplete = req.lawyerSigned || req.requiresLawyerSignature === false;
-          return clientComplete && lawyerComplete;
-        }),
-      }));
-
-      bundleItemIds.forEach((bundleItemId) => {
-        const item = itemsMap.get(bundleItemId);
-        if (!item) return;
-
-        const existingRequest = get().requests.find(
-          (req) => req.caseId === caseId && req.bundleItemId === bundleItemId
-        );
-
-        if (!existingRequest) {
-          get().addRequest({
-            caseId,
-            bundleItemId,
-            docTitle: item.title,
-            docType: item.type,
-            requestedBy: "Lawyer",
-            requiresClientSignature: item.requiresClientSignature,
-            requiresLawyerSignature: item.requiresLawyerSignature,
-            clientSigned: false,
-            lawyerSigned: false,
-            docHtmlSnapshot: item.docHtmlSnapshot,
-          });
-          return;
-        }
-
-        get().updateRequest(existingRequest.id, {
-          docTitle: item.title,
-          requestedBy: existingRequest.requestedBy ?? "Lawyer",
-          requestedAt: new Date().toISOString(),
-          requiresClientSignature: item.requiresClientSignature,
-          requiresLawyerSignature: item.requiresLawyerSignature,
-          docHtmlSnapshot: item.docHtmlSnapshot || existingRequest.docHtmlSnapshot,
+    loadForCase: async (caseId) => {
+      set({ loadingCaseId: caseId, loadError: null });
+      try {
+        const { signatureRequests, completion } =
+          await signaturesApi.listForCase(caseId);
+        set((state) => ({
+          requestsByCaseId: {
+            ...state.requestsByCaseId,
+            [caseId]: signatureRequests,
+          },
+          completionByCaseId: {
+            ...state.completionByCaseId,
+            [caseId]: completion,
+          },
+          loadingCaseId: null,
+        }));
+      } catch (err) {
+        set({
+          loadingCaseId: null,
+          loadError:
+            err instanceof Error ? err.message : "Failed to load signatures",
         });
-      });
+      }
     },
-    }),
-    {
-      name: "lawflow_signature_requests",
-    }
-  )
+
+    create: async (caseId, payload) => {
+      const { signatureRequests } = await signaturesApi.create(caseId, payload);
+      // Refresh from server so completion + the full list (including any
+      // existing rows) are in sync. Cheaper than reconciling client-side.
+      await get().loadForCase(caseId);
+      return signatureRequests;
+    },
+
+    cancel: async (caseId, requestId) => {
+      await signaturesApi.cancel(caseId, requestId);
+      await get().loadForCase(caseId);
+    },
+
+    getRequestsByCaseId: (caseId) => get().requestsByCaseId[caseId] || [],
+
+    getPendingRequests: (caseId) =>
+      (get().requestsByCaseId[caseId] || []).filter(
+        (r) => r.status === "pending"
+      ),
+
+    getPendingLawyerRequests: (caseId) =>
+      (get().requestsByCaseId[caseId] || []).filter(
+        (r) => r.status === "pending" && r.signerRole === "lawyer"
+      ),
+
+    getSignedRequests: (caseId) =>
+      (get().requestsByCaseId[caseId] || []).filter(
+        (r) => r.status === "signed"
+      ),
+
+    countPendingSignatures: (caseId) =>
+      (get().requestsByCaseId[caseId] || []).filter(
+        (r) => r.status === "pending"
+      ).length,
+
+    countSignedSignatures: (caseId) =>
+      (get().requestsByCaseId[caseId] || []).filter(
+        (r) => r.status === "signed"
+      ).length,
+
+    isCaseFullySigned: (caseId) =>
+      Boolean(get().completionByCaseId[caseId]?.fullySigned),
+  })
 );

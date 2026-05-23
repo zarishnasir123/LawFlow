@@ -7,6 +7,14 @@ interface DocxPreviewSurfaceProps {
   // pinned to a single source of truth — re-passing the same buffer
   // re-renders, which matches the rest of our editor's React semantics.
   arrayBuffer: ArrayBuffer | null;
+  // Previously-saved HTML snapshot for this case (cases.edited_html on
+  // the backend). When present, we restore *this* instead of re-rendering
+  // the pristine .docx — otherwise the lawyer's edits silently vanish
+  // on page refresh. The snapshot already carries docx-preview's
+  // per-page styles inside the snapshot HTML, so the restored view
+  // matches what they last saw byte-for-byte (page sizes, fonts, table
+  // borders, justify). null/empty means "render the .docx bytes".
+  editedHtml?: string | null;
   isLoading: boolean;
   // Fired once docx-preview finishes rendering. The caller uses this to
   // build the page navigator sidebar from the actual rendered DOM —
@@ -23,14 +31,21 @@ interface DocxPreviewSurfaceProps {
   // plus the drop coordinates so it can position the floating image
   // exactly where the lawyer let go.
   onImageDropped?: (refId: string, clientX: number, clientY: number) => void;
+  // Fired when the lawyer right-clicks any rendered <section.docx>.
+  // The parent uses this to position a custom context menu at
+  // (x, y). Matches the same callback shape DocumentPagesPanel uses
+  // for sidebar rows so the parent can route both to one handler.
+  onPageContextMenu?: (pageIndex: number, x: number, y: number) => void;
 }
 
 export default function DocxPreviewSurface({
   arrayBuffer,
+  editedHtml,
   isLoading,
   onPagesReady,
   editable = false,
   onImageDropped,
+  onPageContextMenu,
 }: DocxPreviewSurfaceProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   // onPagesReady is stored in a ref so we don't re-run the render effect
@@ -41,8 +56,18 @@ export default function DocxPreviewSurface({
     onPagesReadyRef.current = onPagesReady;
   }, [onPagesReady]);
 
+  // Keep the latest context-menu callback on a ref so the per-section
+  // listeners attached inside the render effect stay stable. Without
+  // this, every parent re-render would replace the listener and we'd
+  // leak stale closures.
+  const onPageContextMenuRef = useRef(onPageContextMenu);
   useEffect(() => {
-    if (!containerRef.current || !arrayBuffer) return;
+    onPageContextMenuRef.current = onPageContextMenu;
+  }, [onPageContextMenu]);
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+    if (!arrayBuffer && !editedHtml) return;
 
     const container = containerRef.current;
     // Wipe any previous render before doing a fresh one — docx-preview
@@ -52,7 +77,64 @@ export default function DocxPreviewSurface({
 
     let cancelled = false;
 
-    renderAsync(arrayBuffer, container, undefined, {
+    // Saved-snapshot fast path. If the case row has an editedHtml
+    // snapshot, restore *that* — it's exactly what the lawyer last
+    // saw (docx-preview's injected styles + the .docx-wrapper) and
+    // includes every edit the user has made. Without this branch
+    // refreshing the page would silently wipe their work back to the
+    // pristine template.
+    if (editedHtml) {
+      try {
+        const parsed = new DOMParser().parseFromString(
+          editedHtml,
+          "text/html"
+        );
+        // We clone *only* the .docx-wrapper because docx-preview keeps
+        // its per-document styles (page size, fonts, table borders,
+        // theme colors) as <style> tags INSIDE the wrapper — those
+        // come along for free with cloneNode(true). Skipping the head
+        // styles is intentional: the snapshot also embeds the
+        // standalone-viewer framing CSS (body margins, gray page
+        // background) which fights this editor's own JSX <style>
+        // paper-on-desk styling and produces a flat / borderless look
+        // on restore. The editor's framing is already in the DOM, so
+        // copying head styles would just duplicate-and-clobber it.
+        const wrapper = parsed.body.querySelector(".docx-wrapper");
+        if (wrapper) {
+          container.appendChild(wrapper.cloneNode(true));
+        }
+
+        const pages = container.querySelectorAll<HTMLElement>(
+          ".docx-wrapper > section.docx"
+        );
+
+        if (editable) {
+          pages.forEach((page) => {
+            page.setAttribute("contenteditable", "true");
+            page.setAttribute("spellcheck", "false");
+            page.style.outline = "none";
+          });
+        }
+
+        pages.forEach((page, idx) => {
+          page.addEventListener("contextmenu", (e) => {
+            const cb = onPageContextMenuRef.current;
+            if (!cb) return;
+            e.preventDefault();
+            cb(idx, (e as MouseEvent).clientX, (e as MouseEvent).clientY);
+          });
+        });
+
+        onPagesReadyRef.current?.(Array.from(pages));
+      } catch (err) {
+        console.error("[DocxPreview] snapshot restore failed:", err);
+      }
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    renderAsync(arrayBuffer!, container, undefined, {
       // breakPages honours Word's <w:lastRenderedPageBreak/> markers
       // and renders each page as a separately-sized <section class="docx">.
       breakPages: true,
@@ -88,6 +170,20 @@ export default function DocxPreviewSurface({
           });
         }
 
+        // Wire each rendered section as a right-click target. The
+        // index here matches what the sidebar uses, so the parent
+        // can route both surfaces to the same context-menu handler.
+        // Reading from the ref keeps the listener stable across
+        // parent re-renders.
+        pages.forEach((page, idx) => {
+          page.addEventListener("contextmenu", (e) => {
+            const cb = onPageContextMenuRef.current;
+            if (!cb) return;
+            e.preventDefault();
+            cb(idx, (e as MouseEvent).clientX, (e as MouseEvent).clientY);
+          });
+        });
+
         onPagesReadyRef.current?.(Array.from(pages));
       })
       .catch((err) => {
@@ -97,7 +193,7 @@ export default function DocxPreviewSurface({
     return () => {
       cancelled = true;
     };
-  }, [arrayBuffer, editable]);
+  }, [arrayBuffer, editedHtml, editable]);
 
   if (isLoading) {
     return (
@@ -107,7 +203,7 @@ export default function DocxPreviewSurface({
     );
   }
 
-  if (!arrayBuffer) {
+  if (!arrayBuffer && !editedHtml) {
     return (
       <div className="flex items-center justify-center h-full text-sm text-gray-400">
         No document loaded

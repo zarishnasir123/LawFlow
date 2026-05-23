@@ -1,5 +1,5 @@
 import { useNavigate } from "@tanstack/react-router";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import {
   BriefcaseBusiness,
   Calendar,
@@ -20,7 +20,7 @@ import UpcomingHearings from "../../../shared/components/dashboard/UpcomingHeari
 import { useCurrentUser, displayFullName } from "../../auth/hooks/useCurrentUser";
 import { useEnforcePasswordChange } from "../../auth/hooks/useEnforcePasswordChange";
 import { useClientProfileStore } from "../store";
-import { useSignatureRequestsStore } from "../../lawyer/signatures/store/signatureRequests.store";
+import { mySignaturesApi } from "../../../shared/api/mySignatures.api";
 
 import type {
   ActivityItem,
@@ -35,12 +35,29 @@ export default function Dashboard() {
   useEnforcePasswordChange();
   const { data: currentUser } = useCurrentUser();
   const { initializeProfile } = useClientProfileStore();
-  const { countPendingSignatures } = useSignatureRequestsStore();
-  const pendingSignatureCount = countPendingSignatures();
+  // Pending-signatures stat tile pulls live from the backend so the
+  // count matches the dedicated Pending Signatures page. Refreshes on
+  // dashboard mount; the page itself does its own refresh.
+  const [pendingSignatureCount, setPendingSignatureCount] = useState(0);
 
   useEffect(() => {
     initializeProfile();
   }, [initializeProfile]);
+
+  useEffect(() => {
+    let cancelled = false;
+    mySignaturesApi
+      .listPending()
+      .then((rows) => {
+        if (!cancelled) setPendingSignatureCount(rows.length);
+      })
+      .catch(() => {
+        // Quiet fail — leave count at 0 if the endpoint is unreachable.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const displayName = displayFullName(currentUser) || "Client";
   const greeting = currentUser?.firstLoginCompleted ? "Welcome back" : "Welcome";

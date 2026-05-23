@@ -295,10 +295,22 @@ export const useDocumentEditorStore = create<DocumentEditorState>((set, get) => 
           };
         });
 
-        set({
-          ...migratedState,
-          draftLoaded: true,
-        });
+        // Symmetric guard with the v2 path below: if a v1 migration
+        // produces an empty bundle (no docs, no attachments), don't
+        // flip draftLoaded — let initializeDefaultBundle seed the
+        // template instead. Otherwise the editor would be locked in
+        // "no documents" mode forever for any old empty draft.
+        if (
+          migratedState.bundleItems.length === 0 &&
+          migratedState.attachments.length === 0
+        ) {
+          set({ draftLoaded: false });
+        } else {
+          set({
+            ...migratedState,
+            draftLoaded: true,
+          });
+        }
       } else {
         const draftBundleItems = (draft.bundleItems || []) as BundleItem[];
         const draftDocumentsById = (draft.documentsById || {}) as Record<string, DocumentData>;
