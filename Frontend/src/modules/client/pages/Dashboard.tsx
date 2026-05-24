@@ -19,6 +19,7 @@ import UpcomingHearings from "../../../shared/components/dashboard/UpcomingHeari
 
 import { useCurrentUser, displayFullName } from "../../auth/hooks/useCurrentUser";
 import { useEnforcePasswordChange } from "../../auth/hooks/useEnforcePasswordChange";
+import { getStoredAuthUser } from "../../auth/utils/authStorage";
 import { mySignaturesApi } from "../../../shared/api/mySignatures.api";
 
 import type {
@@ -53,7 +54,15 @@ export default function Dashboard() {
     };
   }, []);
 
-  const displayName = displayFullName(currentUser) || "Client";
+  // Three-tier fallback to kill the login-time flicker:
+  //   1. The live `/auth/me` user once Tanstack Query resolves it.
+  //   2. The name we wrote to (local|session)Storage at login —
+  //      available synchronously, so the very first paint already
+  //      has the real name instead of a generic "Client" placeholder.
+  //   3. Empty string as a last resort (the greeting just becomes
+  //      "Welcome" until the query lands).
+  const displayName =
+    displayFullName(currentUser) || getStoredAuthUser()?.name || "";
   const greeting = currentUser?.firstLoginCompleted ? "Welcome back" : "Welcome";
   const signedInEmail = currentUser?.email ?? "";
 

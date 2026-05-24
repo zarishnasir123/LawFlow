@@ -1,24 +1,74 @@
 import { X } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useNavigate } from "@tanstack/react-router";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+
+import { authApi, getAuthErrorMessage } from "../../../auth/api";
+import { clearStoredAuth } from "../../../auth/utils/authStorage";
 
 interface ChangePasswordModalProps {
   isOpen: boolean;
   onClose: () => void;
 }
 
+// Same password rule the backend enforces (auth.validators.js:500):
+// at least 8 characters, at least one digit, at least one
+// non-alphanumeric character. Mirroring it here means the user
+// sees the validation error before a network round-trip, and the
+// backend stays the source of truth — it will still reject
+// anything that slips past us.
+const STRONG_PASSWORD_PATTERN = /^(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$/;
+
+// Key the LoginForm already reads on mount to show a one-shot
+// "Password changed successfully" banner.
+const PASSWORD_CHANGE_SUCCESS_FLAG = "lawflow_password_change_success";
+
 export default function ChangePasswordModal({
   isOpen,
   onClose,
 }: ChangePasswordModalProps) {
-  const [oldPassword, setOldPassword] = useState("");
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+
+  const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
 
-  const validatePassword = (): boolean => {
-    if (!oldPassword || !newPassword || !confirmPassword) {
+  useEffect(() => {
+    if (!isOpen) {
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+      setError("");
+    }
+  }, [isOpen]);
+
+  const mutation = useMutation({
+    mutationFn: authApi.changePassword,
+    onSuccess: () => {
+      // Backend revokes every refresh session in the same transaction
+      // it writes the new hash. Clear local auth so the
+      // redirectIfAuthenticated guard doesn't bounce the user back
+      // into the dashboard with a stale access token.
+      clearStoredAuth();
+      queryClient.clear();
+      try {
+        sessionStorage.setItem(PASSWORD_CHANGE_SUCCESS_FLAG, "1");
+      } catch {
+        // Storage may be disabled (Safari private mode); the banner
+        // is a nicety, not a security signal — swallow the failure.
+      }
+      onClose();
+      navigate({ to: "/login" });
+    },
+    onError: (err) => {
+      setError(getAuthErrorMessage(err));
+    },
+  });
+
+  const validate = (): boolean => {
+    if (!currentPassword || !newPassword || !confirmPassword) {
       setError("All fields are required");
       return false;
     }
@@ -28,46 +78,44 @@ export default function ChangePasswordModal({
       return false;
     }
 
-    if (newPassword.length < 8) {
-      setError("Password must be at least 8 characters long");
+    if (!STRONG_PASSWORD_PATTERN.test(newPassword)) {
+      setError(
+        "New password must be at least 8 characters and include one number and one special character"
+      );
       return false;
     }
 
-    if (oldPassword === newPassword) {
-      setError("New password must be different from old password");
+    if (currentPassword === newPassword) {
+      setError("New password must be different from your current password");
       return false;
     }
 
     return true;
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
-    setSuccess("");
 
-    if (!validatePassword()) {
-      return;
-    }
+    if (!validate()) return;
 
-    setIsLoading(true);
-    // Simulate API call
-    setTimeout(() => {
-      setSuccess("Password changed successfully");
-      setOldPassword("");
-      setNewPassword("");
-      setConfirmPassword("");
-      setIsLoading(false);
-      setTimeout(() => onClose(), 1500);
-    }, 1000);
+    mutation.mutate({
+      currentPassword,
+      newPassword,
+      confirmPassword,
+    });
   };
 
   if (!isOpen) return null;
 
+  const isLoading = mutation.isPending;
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-md"
-      onClick={onClose}
+      onClick={() => {
+        if (!isLoading) onClose();
+      }}
     >
       <div
         className="w-full max-w-md rounded-lg bg-white p-6 shadow-lg"
@@ -79,7 +127,8 @@ export default function ChangePasswordModal({
           </h2>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 transition"
+            disabled={isLoading}
+            className="text-gray-400 hover:text-gray-600 transition disabled:opacity-50"
           >
             <X className="h-5 w-5" />
           </button>
@@ -92,10 +141,12 @@ export default function ChangePasswordModal({
             </label>
             <input
               type="password"
-              value={oldPassword}
-              onChange={(e) => setOldPassword(e.target.value)}
-              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-600"
+              value={currentPassword}
+              onChange={(e) => setCurrentPassword(e.target.value)}
+              disabled={isLoading}
+              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-600 disabled:bg-gray-50"
               placeholder="Enter your current password"
+              autoComplete="current-password"
             />
           </div>
 
@@ -107,8 +158,10 @@ export default function ChangePasswordModal({
               type="password"
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
-              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-600"
+              disabled={isLoading}
+              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-600 disabled:bg-gray-50"
               placeholder="Enter new password"
+              autoComplete="new-password"
             />
           </div>
 
@@ -120,19 +173,16 @@ export default function ChangePasswordModal({
               type="password"
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
-              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-600"
+              disabled={isLoading}
+              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-600 disabled:bg-gray-50"
               placeholder="Confirm new password"
+              autoComplete="new-password"
             />
           </div>
 
           {error && (
             <div className="rounded-md bg-red-50 p-3 text-sm text-red-600">
               {error}
-            </div>
-          )}
-          {success && (
-            <div className="rounded-md bg-green-50 p-3 text-sm text-green-600">
-              {success}
             </div>
           )}
 
@@ -147,7 +197,8 @@ export default function ChangePasswordModal({
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition"
+              disabled={isLoading}
+              className="flex-1 rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 transition"
             >
               Cancel
             </button>
