@@ -80,6 +80,23 @@ CREATE TABLE users (
   -- "Welcome back, ...".
   first_login_at        TIMESTAMP,
 
+  -- Path to the user's avatar in the Supabase `user-avatars` bucket
+  -- (e.g., "users/{uuid}/avatar.png"). NULL when the user hasn't
+  -- uploaded a picture yet — the frontend then falls back to a
+  -- first-letter initial circle. Lives on `users` (not client_profiles)
+  -- so lawyers and registrars can use the same field when their
+  -- profile pages get this feature.
+  avatar_storage_path   TEXT,
+
+  -- Timestamp of the most recent self-service account deactivation.
+  -- NULL means the account has never been self-deactivated (covers
+  -- the active path and admin-imposed inactivity/suspension). When
+  -- set alongside account_status='inactive', login()'s recovery
+  -- window logic engages: ≤30 days → silent reactivation on next
+  -- successful sign-in; >30 days → permanent delete + "account no
+  -- longer exists" response so the user re-registers from scratch.
+  deactivated_at        TIMESTAMP,
+
   created_at TIMESTAMP NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
 
@@ -559,4 +576,4 @@ INSERT INTO case_types (category, code, display_name, governing_law, sort_order)
   ('family', 'family_minor_custody',            'Custody of Minors (Hizanat)',                 'Guardian and Wards Act, 1890 & Family Courts Act, 1964',                 4),
   ('family', 'family_conjugal_rights',          'Restitution of Conjugal Rights',              'Family Courts Act, 1964',                                                5);
 
-
+1

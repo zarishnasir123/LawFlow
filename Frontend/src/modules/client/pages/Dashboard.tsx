@@ -19,7 +19,6 @@ import UpcomingHearings from "../../../shared/components/dashboard/UpcomingHeari
 
 import { useCurrentUser, displayFullName } from "../../auth/hooks/useCurrentUser";
 import { useEnforcePasswordChange } from "../../auth/hooks/useEnforcePasswordChange";
-import { useClientProfileStore } from "../store";
 import { mySignaturesApi } from "../../../shared/api/mySignatures.api";
 
 import type {
@@ -34,15 +33,10 @@ export default function Dashboard() {
   const navigate = useNavigate();
   useEnforcePasswordChange();
   const { data: currentUser } = useCurrentUser();
-  const { initializeProfile } = useClientProfileStore();
   // Pending-signatures stat tile pulls live from the backend so the
   // count matches the dedicated Pending Signatures page. Refreshes on
   // dashboard mount; the page itself does its own refresh.
   const [pendingSignatureCount, setPendingSignatureCount] = useState(0);
-
-  useEffect(() => {
-    initializeProfile();
-  }, [initializeProfile]);
 
   useEffect(() => {
     let cancelled = false;

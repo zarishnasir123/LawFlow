@@ -224,6 +224,52 @@ export const registerClientValidator = [
   })
 ];
 
+// PATCH /auth/me — every field optional so the client can change just
+// the ones they want. Each validator mirrors the registration rules
+// (same CNIC regex, same email domain checks, same length caps) so a
+// value that's legal at sign-up is legal here too.
+export const updateMyProfileValidator = [
+  optionalStringField(["firstName", "first_name"], "First name", { max: 100 }),
+  optionalStringField(["lastName", "last_name"], "Last name", { max: 100 }),
+
+  body("email")
+    .optional()
+    .trim()
+    .isEmail()
+    .withMessage("Valid email is required")
+    .bail()
+    .customSanitizer((value) => value.toLowerCase())
+    .custom(rejectReservedEmailDomain)
+    .bail()
+    .custom(requireReceivableEmailDomain),
+
+  optionalStringField(["phoneNumber", "phone_number", "phone"], "Phone number", { max: 20 }),
+
+  // CNIC stays optional but, when present, must still pass the
+  // Pakistan-format + district-scope checks the registration uses.
+  body().custom((_, { req }) => {
+    const value = getTrimmedField(req.body, "cnic", "CNIC");
+    if (!value) return true;
+    if (!isValidPakistanCnic(value)) {
+      throw new Error("CNIC must follow Pakistan format: 12345-1234567-1");
+    }
+    if (!isAllowedDistrictCnic(value)) {
+      throw new Error("CNIC is not allowed for the configured district scope");
+    }
+    return true;
+  }),
+
+  optionalStringField(["address"], "Address"),
+  optionalStringField(["city"], "City", { max: 100 }),
+  // Tehsil here is intentionally NOT cross-checked against
+  // SUPPORTED_TEHSILS. The PATCH endpoint accepts any string the
+  // client types so they can record their actual tehsil even when
+  // the deployment's routing list only covers a few. The strict
+  // check still applies at registration where the value gates
+  // lawyer-side case routing.
+  optionalStringField(["tehsil"], "Tehsil", { max: 100 })
+];
+
 export const registerLawyerValidator = [
   ...commonRegistrationValidator,
 

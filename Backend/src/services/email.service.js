@@ -493,6 +493,51 @@ export function queueSignatureCompletionEmail(params) {
   );
 }
 
+// Account deactivation confirmation: fired when a user self-
+// deactivates via DELETE /auth/me. Tells them when it happened,
+// when the 30-day recovery window ends, and how to recover the
+// account if they didn't mean to deactivate.
+export function sendAccountDeactivatedEmail({
+  email,
+  firstName,
+  deactivatedAt,
+  recoveryDeadline,
+}) {
+  // Both timestamps are ISO strings / Date objects on the way in.
+  // We render them as "Month dd, yyyy" so the email reads cleanly
+  // across locales; if either is missing we substitute a sensible
+  // placeholder rather than letting the template render "Invalid
+  // Date".
+  const formatLabel = (value, fallback) => {
+    if (!value) return fallback;
+    const date = value instanceof Date ? value : new Date(value);
+    if (!Number.isFinite(date.getTime())) return fallback;
+    return date.toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    });
+  };
+  const deactivatedAtLabel = formatLabel(deactivatedAt, "today");
+  const recoveryDeadlineLabel = formatLabel(
+    recoveryDeadline,
+    "30 days from now"
+  );
+
+  return send(email, "Your LawFlow account has been deactivated", "accountDeactivated", {
+    firstName: firstName || "there",
+    deactivatedAtLabel,
+    recoveryDeadlineLabel,
+    loginUrl: `${getFrontendUrl()}/login`,
+  });
+}
+
+export function queueAccountDeactivatedEmail(params) {
+  return queueEmailTask("account-deactivated", () =>
+    sendAccountDeactivatedEmail(params)
+  );
+}
+
 export async function warmEmailTransport() {
   preloadEmailTemplates(["verificationOtp"]);
 

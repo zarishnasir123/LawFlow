@@ -1,29 +1,49 @@
 import { createHash, randomBytes } from "node:crypto";
 import { pool } from "../../config/db.js";
 import {
+  queueAccountDeactivatedEmail,
   queueLawyerRegistrationDecisionEmail,
   queueLawyerSuspensionEmail
 } from "../../services/email.service.js";
 import {
   deleteLawyerDocuments,
   deleteLawyerStorageFolder,
+  deleteUserAvatar,
   getLawyerDocumentSignedUrl,
-  parseLawyerKeyFromStoragePath
+  getUserAvatarSignedUrl,
+  parseLawyerKeyFromStoragePath,
+  uploadUserAvatar
 } from "../../services/storage.service.js";
 import { ApiError } from "../../utils/apiError.js";
 import { compareHash, hashValue } from "../../utils/hash.js";
+import { deriveLocationFromAddress } from "../../utils/location.js";
 import {
   getRefreshTokenDuration,
   getRefreshTokenExpiryDate,
   signAccessToken,
+  signReactivationToken,
   signRefreshToken,
+  verifyReactivationToken,
   verifyRefreshToken
 } from "../../utils/tokens.js";
 
 const maxFailedLoginAttempts = 5;
 const lockDurationMinutes = 15;
 
-function mapAuthUser(row) {
+async function mapAuthUser(row) {
+  // Sign the avatar's storage path on the fly. Works for both public
+  // and private buckets — the service role key bypasses Supabase's
+  // RLS so the browser can render the URL via <img src=…> without
+  // any auth headers. TTL is 1 hour; the trailing ?v=<updated_at-ms>
+  // cache-busts whenever the user re-uploads, so the browser shows
+  // the new picture immediately even if the URL was within its TTL.
+  const signed = row.avatar_storage_path
+    ? await getUserAvatarSignedUrl(row.avatar_storage_path)
+    : null;
+  const avatarUrl = signed
+    ? `${signed}${signed.includes("?") ? "&" : "?"}v=${row.updated_at ? new Date(row.updated_at).getTime() : Date.now()}`
+    : null;
+
   return {
     id: row.id,
     firstName: row.first_name,
@@ -32,6 +52,20 @@ function mapAuthUser(row) {
     phone: row.phone,
     cnic: row.cnic,
     role: row.role,
+    // Sourced from client_profiles via LEFT JOIN — null for non-client
+    // roles and for clients who haven't filled in their location yet.
+    // The frontend treats null as an empty field.
+    address: row.address || null,
+    city: row.city || null,
+    tehsil: row.tehsil || null,
+    // Public URL to the user's avatar; null when no picture is set.
+    // Render on the frontend as <img src={avatarUrl}> with a fallback
+    // initials circle when null.
+    avatarUrl,
+    // Registration timestamp. The client profile page renders this as
+    // "Member since <date>". Ships as an ISO string so the frontend
+    // can format it for the locale.
+    createdAt: row.created_at,
     emailVerified: row.email_verified,
     accountStatus: row.account_status,
     // Surfaced so the frontend can gate every authenticated screen behind a
@@ -136,6 +170,7 @@ async function findAuthUserByEmail(email) {
       users.auth_provider,
       users.email_verified,
       users.account_status,
+      users.deactivated_at,
       users.must_change_password,
       users.failed_login_attempts,
       users.locked_until,
@@ -162,12 +197,20 @@ async function findAuthUserById(userId) {
       users.cnic,
       users.email_verified,
       users.account_status,
+      users.deactivated_at,
       users.must_change_password,
+      users.avatar_storage_path,
+      users.created_at,
+      users.updated_at,
       roles.name AS role,
-      lawyer_profiles.verification_status AS lawyer_verification_status
+      lawyer_profiles.verification_status AS lawyer_verification_status,
+      client_profiles.address AS address,
+      client_profiles.city AS city,
+      client_profiles.tehsil AS tehsil
     FROM users
     JOIN roles ON roles.id = users.role_id
     LEFT JOIN lawyer_profiles ON lawyer_profiles.user_id = users.id
+    LEFT JOIN client_profiles ON client_profiles.user_id = users.id
     WHERE users.id = $1`,
     [userId]
   );
@@ -201,6 +244,69 @@ async function resetLoginLock(userId) {
     WHERE id = $1`,
     [userId]
   );
+}
+
+// Days inside which a self-deactivated account can sign back in and
+// have it silently flipped to active. Past this window, the next
+// login attempt hard-deletes the row and returns 410. Tunable here
+// if we ever want to lengthen it.
+const DEACTIVATION_RECOVERY_WINDOW_DAYS = 30;
+
+// Shared 30-day recovery / permanent-delete handling for both the
+// password login path (loginUser) and the OAuth path
+// (issueOAuthSession). Call AFTER the caller has proven identity
+// (password verified for local login, OAuth verified upstream for
+// Google).
+//
+// Returns one of:
+//   • null                          → not deactivated, proceed normally
+//   • { reactivationRequired: true, // within window — prompt the user
+//       reactivationToken, deactivatedAt }
+//   • throws 410 / 409              → past window or cascade blocked
+//
+// The two-step prompt is intentional: silent reactivation is
+// surprising UX and removes the user's ability to back out of a
+// recovery they didn't mean to start (someone else logging into an
+// abandoned account, a typo'd email, etc).
+async function handleSelfDeactivationRecovery(user) {
+  if (user.account_status !== "inactive" || !user.deactivated_at) return null;
+
+  const ageMs = Date.now() - new Date(user.deactivated_at).getTime();
+  const ageDays = ageMs / (1000 * 60 * 60 * 24);
+
+  if (ageDays > DEACTIVATION_RECOVERY_WINDOW_DAYS) {
+    // Permanent delete. FK cascades wipe client_profiles +
+    // auth_sessions. If any FK lacks ON DELETE CASCADE
+    // (signature_requests / cases), the query throws 23503; we
+    // surface that as 409 so the user can contact support instead
+    // of leaving the row half-deleted.
+    try {
+      await pool.query(`DELETE FROM users WHERE id = $1`, [user.id]);
+    } catch (err) {
+      if (err.code === "23503") {
+        throw new ApiError(
+          409,
+          "Account is past the 30-day recovery window but still has linked records. Contact support to finish removal."
+        );
+      }
+      throw err;
+    }
+    throw new ApiError(
+      410,
+      "Account no longer exists. Please register again to continue."
+    );
+  }
+
+  // Within window → hand the caller a short-lived token so the
+  // frontend can show the "Continue & Reactivate" dialog. Account
+  // stays inactive until the user explicitly confirms via
+  // POST /auth/reactivate; if they Cancel, nothing changes.
+  const reactivationToken = signReactivationToken({ sub: user.id });
+  return {
+    reactivationRequired: true,
+    reactivationToken,
+    deactivatedAt: user.deactivated_at,
+  };
 }
 
 // SHA-256 of the signed refresh JWT gives an O(1) UNIQUE-indexed lookup at
@@ -314,20 +420,56 @@ export async function loginUser({ email, password, rememberMe = false, expectedR
     throw new ApiError(403, "Your account has been suspended. Contact support.");
   }
 
+  // Self-deactivation handling: when the user previously clicked
+  // "Deactivate Account" we stamped users.deactivated_at. We verify
+  // the password FIRST (so an unauthenticated caller can't probe
+  // for deactivated accounts or trigger any state change), then
+  // either hand back a reactivation prompt (within 30 days), throw
+  // 410 (past 30 days, row already deleted by the helper), or fall
+  // through to the normal login flow (no deactivated_at).
+  let passwordAlreadyVerified = false;
+  if (user.account_status === "inactive" && user.deactivated_at) {
+    const ok = await compareHash(password, user.password_hash);
+    if (!ok) {
+      await recordFailedLogin(user);
+      throw new ApiError(401, "Invalid password. Please try again.");
+    }
+    passwordAlreadyVerified = true;
+
+    // Match the wrong-tab rejection below so a deactivated client
+    // signing in through the lawyer tab still gets a generic error.
+    if (expectedRole && user.role !== expectedRole) {
+      throw new ApiError(401, "Invalid email or password");
+    }
+
+    const recovery = await handleSelfDeactivationRecovery(user);
+    if (recovery?.reactivationRequired) {
+      // Short-circuit: hand the reactivation token back to the
+      // controller so the frontend can show the confirmation
+      // dialog. No session is issued yet — that happens on the
+      // separate POST /auth/reactivate call.
+      return recovery;
+    }
+  }
+
   // A freshly registered lawyer awaiting admin approval has
   // account_status='inactive' (set in registration.service.js). For lawyers
   // we let the flow fall through so the dedicated "pending admin approval"
   // message below fires — much friendlier than the generic inactive one.
-  // For non-lawyers, account_status='inactive' is a real deactivation.
+  // For non-lawyers, account_status='inactive' WITHOUT deactivated_at is
+  // an admin-imposed deactivation (the self-deactivation path above sets
+  // deactivated_at and already handled it).
   if (user.account_status === "inactive" && user.role !== "lawyer") {
     throw new ApiError(403, "Your account is inactive. Contact support.");
   }
 
-  const passwordMatches = await compareHash(password, user.password_hash);
+  if (!passwordAlreadyVerified) {
+    const passwordMatches = await compareHash(password, user.password_hash);
 
-  if (!passwordMatches) {
-    await recordFailedLogin(user);
-    throw new ApiError(401, "Invalid password. Please try again.");
+    if (!passwordMatches) {
+      await recordFailedLogin(user);
+      throw new ApiError(401, "Invalid password. Please try again.");
+    }
   }
 
   // Frontend role tabs pass expectedRole. A correct-credentials wrong-tab
@@ -359,7 +501,7 @@ export async function loginUser({ email, password, rememberMe = false, expectedR
   const tokens = await issueSessionTokens({ user, rememberMe, req });
 
   return {
-    user: mapAuthUser(user),
+    user: await mapAuthUser(user),
     ...tokens,
     rememberMe
   };
@@ -407,7 +549,7 @@ export async function refreshAuthSession({ refreshToken, req }) {
   const tokens = await issueSessionTokens({ user, rememberMe, req });
 
   return {
-    user: mapAuthUser(user),
+    user: await mapAuthUser(user),
     ...tokens,
     rememberMe
   };
@@ -464,9 +606,349 @@ export async function getCurrentUser(userId) {
   }
 
   return {
-    ...mapAuthUser(user),
+    ...(await mapAuthUser(user)),
     firstLoginCompleted: !isFirstLogin
   };
+}
+
+// PATCH /auth/me — apply a partial update to the logged-in user's
+// profile. Fields go to two places:
+//   • first_name, last_name, email, phone, cnic → users
+//   • address                                   → client_profiles
+// Wrapped in a single transaction so a unique-violation on, say,
+// email doesn't leave a half-updated address behind.
+//
+// `patch` is the validated request body. Any key that's undefined
+// is left alone; explicit empty strings on `phone` / `cnic` /
+// `address` are coerced to NULL so the lawyer can clear the value.
+export async function updateCurrentUser({ userId, patch }) {
+  // Whitelist + normalize. `optionalStringField` already trimmed
+  // each value via getTrimmedField at validator time, but the body
+  // can also arrive via Express directly so we re-trim defensively.
+  const trim = (v) => (typeof v === "string" ? v.trim() : v);
+  const normalized = {
+    first_name: patch.firstName !== undefined ? trim(patch.firstName) : undefined,
+    last_name: patch.lastName !== undefined ? trim(patch.lastName) : undefined,
+    email: patch.email !== undefined ? trim(patch.email).toLowerCase() : undefined,
+    phone: patch.phone !== undefined ? trim(patch.phone) : undefined,
+    cnic: patch.cnic !== undefined ? trim(patch.cnic) : undefined,
+    address: patch.address !== undefined ? trim(patch.address) : undefined,
+    city: patch.city !== undefined ? trim(patch.city) : undefined,
+    tehsil: patch.tehsil !== undefined ? trim(patch.tehsil) : undefined
+  };
+
+  // Auto-derive city + tehsil from the address string whenever the
+  // address is being updated and the caller hasn't supplied explicit
+  // values. This keeps the user from having to type their city /
+  // tehsil twice — most Pakistani addresses already end with the
+  // city, and the tehsil is one of a small known set. Explicit
+  // values still win when sent (covers any future UI that DOES want
+  // to override the heuristic).
+  if (normalized.address !== undefined) {
+    const derived = deriveLocationFromAddress(normalized.address);
+    if (normalized.city === undefined) normalized.city = derived.city;
+    if (normalized.tehsil === undefined) normalized.tehsil = derived.tehsil;
+  }
+
+  const usersUpdates = ["first_name", "last_name", "email", "phone", "cnic"]
+    .filter((col) => normalized[col] !== undefined);
+  const profileUpdates = ["address", "city", "tehsil"]
+    .filter((col) => normalized[col] !== undefined);
+
+  // Empty PATCH is a no-op — just return the current state.
+  if (usersUpdates.length === 0 && profileUpdates.length === 0) {
+    const user = await findAuthUserById(userId);
+    if (!user) throw new ApiError(404, "User not found");
+    return await mapAuthUser(user);
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    if (usersUpdates.length > 0) {
+      // Build "col = $1, col2 = $2, ..." with values aligned to params.
+      const setClauses = usersUpdates.map((col, idx) => `${col} = $${idx + 1}`);
+      const values = usersUpdates.map((col) => normalized[col] || null);
+      setClauses.push(`updated_at = NOW()`);
+      values.push(userId);
+      await client.query(
+        `UPDATE users
+         SET ${setClauses.join(", ")}
+         WHERE id = $${values.length}`,
+        values
+      );
+    }
+
+    if (profileUpdates.length > 0) {
+      // Clients have a client_profiles row from registration (the
+      // strategy inserts one even when these fields were blank), but
+      // we can't rely on that for non-client roles or older accounts.
+      // ON CONFLICT (user_id) safely creates-or-updates either way.
+      // We insert NULL for any profile column NOT in this patch on
+      // first-insert (the row is brand new); for an UPDATE we only
+      // overwrite the columns in the patch — the others stay put.
+      const insertCols = ["user_id", ...profileUpdates];
+      const insertValues = [userId, ...profileUpdates.map((c) => normalized[c] || null)];
+      const placeholders = insertValues.map((_, i) => `$${i + 1}`).join(", ");
+      const updateClauses = profileUpdates
+        .map((c) => `${c} = EXCLUDED.${c}`)
+        .concat(["updated_at = NOW()"])
+        .join(", ");
+      await client.query(
+        `INSERT INTO client_profiles (${insertCols.join(", ")})
+         VALUES (${placeholders})
+         ON CONFLICT (user_id) DO UPDATE
+         SET ${updateClauses}`,
+        insertValues
+      );
+    }
+
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+
+    // Surface duplicate-key violations as a clean 409 with a field
+    // hint so the frontend can render an inline error. Mirrors the
+    // pattern used in registration.service.js.
+    if (error.code === "23505") {
+      if (error.constraint === "users_email_key") {
+        throw new ApiError(409, "That email is already in use");
+      }
+      if (error.constraint === "users_cnic_key") {
+        throw new ApiError(409, "That CNIC is already in use");
+      }
+      throw new ApiError(409, "That email or CNIC is already in use");
+    }
+
+    throw error;
+  } finally {
+    client.release();
+  }
+
+  const updated = await findAuthUserById(userId);
+  if (!updated) throw new ApiError(404, "User not found");
+  return await mapAuthUser(updated);
+}
+
+// DELETE /auth/me — self-service account deactivation.
+//
+// Soft delete only: we flip account_status='inactive' on users and
+// revoke every refresh-token row in auth_sessions for the user. The
+// existing access token (a short-lived JWT, ~15 min) stays valid
+// until natural expiry; the next /refresh call rejects because the
+// session row is gone, and subsequent /login attempts are blocked
+// by the inactive check in finalizeLogin.
+//
+// Why not a hard DELETE on users?
+//   1. Cascades would wipe the user's cases, signature_requests,
+//      client_profiles row — destroying audit history other roles
+//      (lawyer, registrar, admin) may still need to reference.
+//   2. Recovery: an admin can flip status back to 'active' without
+//      re-creating identity from scratch.
+//   3. The frontend treats /me 401 as "logged out", and login is
+//      gated on account_status, so soft-delete is functionally
+//      indistinguishable to the user.
+export async function deactivateCurrentUser({ userId }) {
+  const client = await pool.connect();
+  let emailContext = null;
+  try {
+    await client.query("BEGIN");
+
+    // RETURNING the email + name + deactivated_at so we can fire the
+    // confirmation email after commit without a second SELECT. The
+    // timestamp comes back as a Date so we can format it the same
+    // way the recovery-window math does.
+    const result = await client.query(
+      `UPDATE users
+       SET account_status = 'inactive',
+           deactivated_at = NOW(),
+           updated_at = NOW()
+       WHERE id = $1
+       RETURNING email, first_name, deactivated_at`,
+      [userId]
+    );
+    if (result.rowCount === 0) {
+      throw new ApiError(404, "User not found");
+    }
+
+    // Revoke every active session for this user so any other browser
+    // / device they're signed in on can't refresh past expiry. We
+    // DELETE rather than UPDATE is_revoked=true because the rows have
+    // ON DELETE CASCADE from users — leaving them lying around just
+    // wastes a row per deactivation.
+    await client.query(
+      `DELETE FROM auth_sessions WHERE user_id = $1`,
+      [userId]
+    );
+
+    await client.query("COMMIT");
+    emailContext = result.rows[0];
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+
+  // Fire the confirmation email AFTER commit so a delivery failure
+  // never rolls back the deactivation itself. The queue helper
+  // already swallows downstream errors with a console.error, so this
+  // call is purely fire-and-forget.
+  if (emailContext) {
+    const deactivatedAt = emailContext.deactivated_at;
+    const recoveryDeadline = new Date(
+      new Date(deactivatedAt).getTime() +
+        DEACTIVATION_RECOVERY_WINDOW_DAYS * 24 * 60 * 60 * 1000
+    );
+    queueAccountDeactivatedEmail({
+      email: emailContext.email,
+      firstName: emailContext.first_name,
+      deactivatedAt,
+      recoveryDeadline,
+    });
+  }
+}
+
+// POST /auth/me/avatar — replace the user's profile picture. The
+// uploaded buffer goes to the public `user-avatars` Supabase bucket
+// at users/{userId}/avatar.{ext}; we then record the path on
+// users.avatar_storage_path so /auth/me can render the public URL
+// on every subsequent fetch. Re-upload replaces the previous file
+// in place via Supabase's upsert (one slot per user — we don't
+// keep history).
+export async function setMyAvatar({ userId, file }) {
+  if (!file || !file.buffer || file.buffer.length === 0) {
+    throw new ApiError(400, "Profile picture file is required");
+  }
+
+  // Derive extension from mime type. The multer middleware already
+  // rejected anything that isn't image/jpeg or image/png, so this
+  // map is exhaustive.
+  const extension = file.mimetype === "image/png" ? "png" : "jpg";
+
+  const { storagePath } = await uploadUserAvatar({
+    userId,
+    fileBuffer: file.buffer,
+    mimeType: file.mimetype,
+    extension
+  });
+
+  // Bump updated_at so the cache-busting ?v=<timestamp> on the
+  // returned avatar URL flips and the browser fetches the new image
+  // instead of showing the old cached one.
+  await pool.query(
+    `UPDATE users
+     SET avatar_storage_path = $1,
+         updated_at = NOW()
+     WHERE id = $2`,
+    [storagePath, userId]
+  );
+
+  const updated = await findAuthUserById(userId);
+  if (!updated) throw new ApiError(404, "User not found");
+  return await mapAuthUser(updated);
+}
+
+// POST /auth/reactivate — finalize the reactivation flow.
+//
+// The caller hands us the short-lived reactivationToken minted by
+// loginUser / issueOAuthSession. We verify the token (signature +
+// not-expired + purpose=reactivate), look up the user, re-check
+// that the account is still within the 30-day recovery window
+// (defence in depth: the token alone shouldn't be enough — if the
+// account already crossed the window between login and confirm,
+// reactivation is no longer allowed), flip status='active', then
+// issue session tokens and return the same shape login returns.
+export async function reactivateAccount({ reactivationToken, req }) {
+  let claims;
+  try {
+    claims = verifyReactivationToken(reactivationToken);
+  } catch {
+    throw new ApiError(401, "Reactivation link is invalid or expired.");
+  }
+
+  const userId = claims.sub;
+  const user = await findAuthUserById(userId);
+  if (!user) {
+    throw new ApiError(404, "Account not found.");
+  }
+
+  // Account must still be the one we offered to reactivate. If the
+  // user already signed in via another path (unlikely but possible)
+  // we just hand them a fresh session — idempotent. If the row was
+  // hard-deleted in the meantime, findAuthUserById returns null and
+  // we 404 above.
+  if (user.account_status === "inactive" && user.deactivated_at) {
+    const ageMs = Date.now() - new Date(user.deactivated_at).getTime();
+    const ageDays = ageMs / (1000 * 60 * 60 * 24);
+    if (ageDays > DEACTIVATION_RECOVERY_WINDOW_DAYS) {
+      // Window closed between login and reactivate confirmation.
+      // Don't auto-delete here — let the next login attempt go
+      // through the unified delete-or-prompt path.
+      throw new ApiError(
+        410,
+        "The 30-day recovery window has ended. Reactivation is no longer possible."
+      );
+    }
+
+    await pool.query(
+      `UPDATE users
+       SET account_status = 'active',
+           deactivated_at = NULL,
+           updated_at = NOW()
+       WHERE id = $1`,
+      [user.id]
+    );
+    user.account_status = "active";
+    user.deactivated_at = null;
+  } else if (user.account_status !== "active") {
+    // Some other status (suspended, etc.) — reactivation isn't the
+    // right tool. Surface a generic error so we don't leak the
+    // specific gate to whoever holds the token.
+    throw new ApiError(403, "Account cannot be reactivated.");
+  }
+
+  const tokens = await issueSessionTokens({ user, rememberMe: false, req });
+  return {
+    user: await mapAuthUser(user),
+    ...tokens,
+    rememberMe: false,
+  };
+}
+
+// DELETE /auth/me/avatar — drop the user's profile picture so the
+// initials fallback renders again. We clear the DB column first
+// (source of truth for the frontend) then attempt to remove the
+// Supabase object. The storage removal is best-effort: leaving an
+// orphan file is harmless and shouldn't block the user's click.
+export async function removeMyAvatar({ userId }) {
+  // Read the current path so we know what to remove from storage.
+  // If the user has no avatar set, the UPDATE below is a no-op and
+  // we return the user unchanged — frontend sees avatarUrl=null
+  // either way.
+  const existing = await pool.query(
+    `SELECT avatar_storage_path FROM users WHERE id = $1`,
+    [userId]
+  );
+  if (existing.rowCount === 0) throw new ApiError(404, "User not found");
+  const previousPath = existing.rows[0].avatar_storage_path;
+
+  await pool.query(
+    `UPDATE users
+     SET avatar_storage_path = NULL,
+         updated_at = NOW()
+     WHERE id = $1`,
+    [userId]
+  );
+
+  if (previousPath) {
+    await deleteUserAvatar(previousPath);
+  }
+
+  const updated = await findAuthUserById(userId);
+  if (!updated) throw new ApiError(404, "User not found");
+  return await mapAuthUser(updated);
 }
 
 export async function listLawyerRejectionHistory({
@@ -1017,6 +1499,19 @@ export async function issueOAuthSession({ userId, req }) {
     throw new ApiError(500, "Failed to load user after OAuth sign-in");
   }
 
+  // Self-deactivation handling for OAuth users. The upstream
+  // Supabase Auth flow has already verified the caller owns the
+  // Google account, so successful OAuth is the equivalent of a
+  // verified password. Within 30 days the helper returns a
+  // reactivation prompt; past 30 days it deletes the row and
+  // throws 410.
+  if (user.account_status === "inactive" && user.deactivated_at) {
+    const recovery = await handleSelfDeactivationRecovery(user);
+    if (recovery?.reactivationRequired) {
+      return recovery;
+    }
+  }
+
   if (user.account_status !== "active") {
     throw new ApiError(403, "Account is not active");
   }
@@ -1024,7 +1519,7 @@ export async function issueOAuthSession({ userId, req }) {
   const tokens = await issueSessionTokens({ user, rememberMe: false, req });
 
   return {
-    user: mapAuthUser(user),
+    user: await mapAuthUser(user),
     ...tokens,
     rememberMe: false
   };
@@ -1057,7 +1552,7 @@ export async function requestPasswordReset(email) {
   if (user.auth_provider === "google") {
     return {
       isGoogleUser: true,
-      user: mapAuthUser(user)
+      user: await mapAuthUser(user)
     };
   }
 
@@ -1094,7 +1589,7 @@ export async function requestPasswordReset(email) {
 
   return {
     token,
-    user: mapAuthUser(user)
+    user: await mapAuthUser(user)
   };
 }
 

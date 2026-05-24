@@ -209,6 +209,119 @@ export async function uploadSignedCasePdf({ lawyerUserId, caseId, pdfBuffer }) {
   return { storagePath };
 }
 
+// =====================================================================
+// User avatars (public bucket — see config/supabase.js for rationale)
+// =====================================================================
+//
+// Path convention: users/{userId}/avatar.{ext} — one slot per user.
+// `upsert: true` so re-uploading the avatar replaces the old object
+// in place. We DON'T preserve old avatars; one per user is enough.
+
+function buildAvatarPath({ userId, extension }) {
+  const safeExt = (extension || "png").toLowerCase().replace(/[^a-z0-9]/g, "");
+  return `users/${userId}/avatar.${safeExt || "png"}`;
+}
+
+export async function uploadUserAvatar({ userId, fileBuffer, mimeType, extension }) {
+  if (!fileBuffer || fileBuffer.length === 0) {
+    throw new ApiError(400, "Avatar file is empty");
+  }
+
+  const config = getSupabaseStorageConfig();
+  const supabase = getSupabaseClient();
+  if (!supabase) {
+    throw new ApiError(
+      503,
+      `Avatar storage is not configured. Missing or placeholder values: ${config.issues.join(", ")}`
+    );
+  }
+
+  const storagePath = buildAvatarPath({ userId, extension });
+
+  const { error } = await supabase.storage
+    .from(config.avatarBucket)
+    .upload(storagePath, fileBuffer, {
+      contentType: mimeType || "image/png",
+      upsert: true,
+      // Cache for an hour at the CDN; the frontend cache-busts via a
+      // ?v=<updatedAt> query string so users see new avatars immediately
+      // after upload.
+      cacheControl: "3600"
+    });
+
+  if (error) {
+    throw new ApiError(502, `Failed to upload avatar: ${error.message}`);
+  }
+
+  return { storagePath };
+}
+
+// Delete the user's avatar object from the bucket. Idempotent —
+// missing files don't error out, since the caller may also be
+// clearing the DB column when the file already happened to be gone.
+// Used by the "Remove photo" flow on the profile edit page.
+export async function deleteUserAvatar(storagePath) {
+  if (!storagePath) return;
+
+  const supabase = getSupabaseClient();
+  if (!supabase) return; // best-effort: skip when Supabase isn't wired up
+
+  const config = getSupabaseStorageConfig();
+  // remove() takes an array of paths and returns { data, error }; a
+  // missing object is reported as data only, not as an error, so we
+  // don't need to special-case it here. We DO swallow real errors —
+  // the source of truth is the DB column, and leaving an orphaned
+  // object is a much better failure mode than blocking the user's
+  // "Remove photo" click.
+  await supabase.storage.from(config.avatarBucket).remove([storagePath]).catch(() => {});
+}
+
+// Render the public URL for a stored avatar. Kept around for any
+// callers that opted into a public bucket; new code should prefer
+// the signed-URL helper below since it works on private buckets too.
+export function getUserAvatarPublicUrl(storagePath) {
+  if (!storagePath) return null;
+
+  const config = getSupabaseStorageConfig();
+  const supabase = getSupabaseClient();
+  if (!supabase) return null;
+
+  const { data } = supabase.storage
+    .from(config.avatarBucket)
+    .getPublicUrl(storagePath);
+
+  return data?.publicUrl || null;
+}
+
+// Generate a short-lived signed URL for the user's avatar. Works
+// regardless of whether the bucket is configured public or private —
+// the service role key bypasses RLS so we always get a URL the
+// browser can load with <img src=…>.
+//
+// TTL = 1 hour. /auth/me runs on every page load and after mutation
+// invalidations, so the URL refreshes well before expiry in normal
+// use. Returns null when there's no avatar, Supabase isn't wired up,
+// or the signed-URL request fails (we never want a missing avatar
+// to crash the /auth/me response).
+export async function getUserAvatarSignedUrl(storagePath, expiresInSeconds = 3600) {
+  if (!storagePath) return null;
+
+  const config = getSupabaseStorageConfig();
+  const supabase = getSupabaseClient();
+  if (!supabase) return null;
+
+  const ttl = Number.isFinite(expiresInSeconds) && expiresInSeconds > 0
+    ? expiresInSeconds
+    : 3600;
+
+  const { data, error } = await supabase.storage
+    .from(config.avatarBucket)
+    .createSignedUrl(storagePath, ttl);
+
+  if (error || !data?.signedUrl) return null;
+  return data.signedUrl;
+}
+
 export async function getSignedCasePdfDownloadUrl({
   storagePath,
   expiresInSeconds
