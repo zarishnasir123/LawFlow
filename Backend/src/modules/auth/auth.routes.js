@@ -1,7 +1,10 @@
 import { Router } from "express";
 import {
   changePassword,
+  deactivateMe,
+  deleteMyAvatar,
   googleLogin,
+  reactivate,
   googleSession,
   forgotPassword,
   listActiveLawyers,
@@ -19,11 +22,14 @@ import {
   reviewLawyer,
   suspendLawyer,
   supabaseAuthWebhook,
+  updateMe,
+  updateMyAvatar,
   verifyEmail
 } from "./auth.controller.js";
 import { asyncHandler } from "../../middleware/asyncHandler.js";
 import { authenticate } from "../../middleware/authenticate.js";
 import { authorizeRoles } from "../../middleware/authorizeRoles.js";
+import { uploadAvatar } from "../../middleware/uploadAvatar.js";
 import { uploadLawyerDocs } from "../../middleware/uploadLawyerDocs.js";
 import { validateRequest } from "../../middleware/validateRequest.js";
 import {
@@ -44,6 +50,7 @@ import {
   resendVerificationOtpValidator,
   reviewLawyerValidator,
   suspendLawyerValidator,
+  updateMyProfileValidator,
   verifyEmailValidator,
   forgotPasswordValidator,
   resetPasswordValidator
@@ -159,6 +166,12 @@ router.post(
   asyncHandler(resetPassword)
 );
 router.post("/logout", asyncHandler(logout));
+// Second leg of the deactivation-recovery flow. Takes the short-
+// lived reactivationToken minted by /login or /google/session,
+// finalizes the reactivation, and returns a normal session in the
+// same shape as /login. No auth middleware: the token itself proves
+// identity (login already verified the password / OAuth handshake).
+router.post("/reactivate", asyncHandler(reactivate));
 router.post(
   "/change-password",
   authenticate,
@@ -168,6 +181,23 @@ router.post(
   asyncHandler(changePassword)
 );
 router.get("/me", authenticate, asyncHandler(me));
+router.patch(
+  "/me",
+  authenticate,
+  updateMyProfileValidator,
+  validateRequest,
+  asyncHandler(updateMe)
+);
+router.post(
+  "/me/avatar",
+  authenticate,
+  uploadAvatar,
+  asyncHandler(updateMyAvatar)
+);
+router.delete("/me/avatar", authenticate, asyncHandler(deleteMyAvatar));
+// Self-service deactivation. No validator: there's no body. The
+// `authenticate` middleware proves the caller owns the account.
+router.delete("/me", authenticate, asyncHandler(deactivateMe));
 router.get("/google", asyncHandler(googleLogin));
 router.post("/google/session", asyncHandler(googleSession));
 router.post("/webhooks/supabase", asyncHandler(supabaseAuthWebhook));

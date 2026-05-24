@@ -1,16 +1,40 @@
 export type RegisterRole = "client" | "lawyer";
 export type LoginRole = "client" | "lawyer" | "registrar" | "admin";
 
-export type AuthResponse = {
-  message: string;
-  user: AuthUser;
-  accessToken: string;
-  refreshTokenExpiresAt: string;
-  session?: {
-    rememberMe: boolean;
-    expiresAt: string;
-  };
-};
+// The backend's /auth/login returns one of two payload shapes:
+//   • normal success     → message + user + accessToken + …
+//   • reactivation prompt → reactivationRequired + reactivationToken +
+//                           deactivatedAt (account is within the 30-day
+//                           recovery window; frontend pops the
+//                           "Continue & Reactivate Account" dialog)
+//
+// Both arrive as HTTP 200 — discriminating on `reactivationRequired`
+// is how the caller picks the right branch.
+export type AuthResponse =
+  | {
+      reactivationRequired?: false | undefined;
+      message: string;
+      user: AuthUser;
+      accessToken: string;
+      refreshTokenExpiresAt: string;
+      session?: {
+        rememberMe: boolean;
+        expiresAt: string;
+      };
+    }
+  | {
+      reactivationRequired: true;
+      reactivationToken: string;
+      deactivatedAt: string;
+    };
+
+// Same shape the /auth/reactivate endpoint returns once the user
+// confirms — identical to a successful login (so a single helper
+// can finalize either flow into the auth store).
+export type LoginSuccessResponse = Extract<
+  AuthResponse,
+  { accessToken: string }
+>;
 
 export type AuthUser = {
   id: string;

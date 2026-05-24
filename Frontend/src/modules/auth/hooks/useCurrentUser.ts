@@ -11,6 +11,22 @@ export type CurrentUser = {
   phone: string | null;
   cnic: string | null;
   role: LoginRole;
+  // Client location. All three live on client_profiles, surfaced
+  // here via the /auth/me JOIN. Null for non-client roles and for
+  // clients who haven't filled them in yet — the client profile
+  // page renders null as an empty input/value.
+  address: string | null;
+  city: string | null;
+  tehsil: string | null;
+  // ISO timestamp of when the user registered (users.created_at).
+  // The client profile page renders this as "Member since <date>".
+  createdAt: string;
+  // Public URL to the user's uploaded profile picture, with a
+  // ?v=<timestamp> cache-buster appended on every update so the
+  // browser fetches the new image instead of the cached one. Null
+  // when no picture has been uploaded — the UI then falls back to
+  // a first-letter initials circle.
+  avatarUrl: string | null;
   emailVerified: boolean;
   accountStatus: string;
   mustChangePassword: boolean;

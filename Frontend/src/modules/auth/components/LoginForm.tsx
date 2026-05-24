@@ -3,16 +3,32 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { useLoginStore } from "../store";
-import type { LoginPayload, LoginRole } from "../types";
-import { getAuthErrorMessage } from "../api";
+import type {
+  AuthResponse,
+  LoginPayload,
+  LoginRole,
+  LoginSuccessResponse,
+} from "../types";
+import { authApi, getAuthErrorMessage } from "../api";
 import { saveStoredAuthUser } from "../utils/authStorage";
 import GoogleAuthButton from "./GoogleAuthButton";
 import PasswordField from "./PasswordField";
+import ReactivateAccountModal from "./ReactivateAccountModal";
 import RoleSelector from "./RoleSelector";
 import TextField from "./TextField";
 import { loginClient } from "../../client/api";
 import { loginLawyer } from "../../lawyer/api";
 import { loginRegistrar } from "../../registrar/api";
+
+// Where to send each role after a successful login. Pulled out so
+// the post-login handler and the post-reactivate handler can share
+// it without duplicating the switch.
+const ROLE_DESTINATION: Record<LoginRole, string> = {
+  client: "/client-dashboard",
+  lawyer: "/Lawyer-dashboard",
+  registrar: "/registrar-dashboard",
+  admin: "/admin-dashboard",
+};
 
 type LoginFormProps = {
   onForgotPassword?: () => void;
@@ -51,76 +67,114 @@ export default function LoginForm({ onForgotPassword }: LoginFormProps) {
     },
   });
 
+  // Reactivation prompt state. Populated when /auth/login responds
+  // with { reactivationRequired: true, reactivationToken,
+  // deactivatedAt }. The token is short-lived (5min) and only
+  // valid for this user — we hold it in component state until the
+  // user clicks Continue or Cancel. deactivatedAt is forwarded to
+  // the modal so it can show the days-remaining countdown.
+  const [reactivation, setReactivation] = useState<{
+    token: string;
+    rememberMe: boolean;
+    deactivatedAt: string;
+  } | null>(null);
+  const [reactivateError, setReactivateError] = useState<string | null>(null);
+
+  // Shared post-login finalizer. Both the normal login mutations
+  // and the reactivate mutation hit this once they have an
+  // accessToken + user — saves auth state and navigates to the
+  // right dashboard.
+  const finalizeLogin = (
+    data: LoginSuccessResponse,
+    rememberMe: boolean
+  ) => {
+    const fullName = [data.user.firstName, data.user.lastName]
+      .filter(Boolean)
+      .join(" ");
+    setEmail(data.user.email);
+    saveStoredAuthUser(
+      {
+        id: data.user.id,
+        email: data.user.email,
+        role: data.user.role,
+        name: fullName || data.user.email,
+        refreshTokenExpiresAt: data.refreshTokenExpiresAt,
+      },
+      rememberMe,
+      data.accessToken
+    );
+    const destination = ROLE_DESTINATION[data.user.role] || "/login";
+    navigate({ to: destination });
+  };
+
+  // The three role-specific login functions now all return
+  // AuthResponse (a discriminated union). This wrapper checks the
+  // discriminant before finalizing — if reactivation is required
+  // we don't save tokens, we open the modal instead.
+  const handleLoginResponse = (
+    data: AuthResponse,
+    variables: LoginPayload
+  ) => {
+    if (data.reactivationRequired) {
+      setReactivateError(null);
+      setReactivation({
+        token: data.reactivationToken,
+        rememberMe: Boolean(variables.rememberMe),
+        deactivatedAt: data.deactivatedAt,
+      });
+      return;
+    }
+    finalizeLogin(data, Boolean(variables.rememberMe));
+  };
+
+  const reactivateMutation = useMutation({
+    mutationFn: authApi.reactivateAccount,
+    onSuccess: (data) => {
+      finalizeLogin(data, reactivation?.rememberMe ?? false);
+      setReactivation(null);
+      setReactivateError(null);
+    },
+    onError: (err) => {
+      setReactivateError(getAuthErrorMessage(err));
+    },
+  });
+
   const clientLoginMutation = useMutation({
     mutationFn: loginClient,
-    onSuccess: (data, variables) => {
-      const fullName = [data.user.firstName, data.user.lastName].filter(Boolean).join(" ");
-
-      setEmail(data.user.email);
-      saveStoredAuthUser(
-        {
-          id: data.user.id,
-          email: data.user.email,
-          role: data.user.role,
-          name: fullName || data.user.email,
-          refreshTokenExpiresAt: data.refreshTokenExpiresAt,
-        },
-        Boolean(variables.rememberMe),
-        data.accessToken
-      );
-      navigate({ to: "/client-dashboard" });
-    },
+    onSuccess: handleLoginResponse,
   });
 
   const lawyerLoginMutation = useMutation({
     mutationFn: loginLawyer,
     onSuccess: (data, variables) => {
+      // The reactivation prompt fires before the role check — a
+      // deactivated lawyer signing in from the Lawyer tab still
+      // needs the choice to recover. After reactivation
+      // finalizeLogin will land them on the lawyer dashboard.
+      if (data.reactivationRequired) {
+        handleLoginResponse(data, variables);
+        return;
+      }
       if (data.user.role !== "lawyer") {
         alert("These credentials do not belong to a lawyer account.");
         return;
       }
-
-      const fullName = [data.user.firstName, data.user.lastName].filter(Boolean).join(" ");
-
-      setEmail(data.user.email);
-      saveStoredAuthUser(
-        {
-          id: data.user.id,
-          email: data.user.email,
-          role: data.user.role,
-          name: fullName || data.user.email,
-          refreshTokenExpiresAt: data.refreshTokenExpiresAt,
-        },
-        Boolean(variables.rememberMe),
-        data.accessToken
-      );
-      navigate({ to: "/Lawyer-dashboard" });
+      handleLoginResponse(data, variables);
     },
   });
 
   const registrarLoginMutation = useMutation({
     mutationFn: loginRegistrar,
     onSuccess: (data, variables) => {
+      if (data.reactivationRequired) {
+        handleLoginResponse(data, variables);
+        return;
+      }
       if (data.user.role !== "registrar") {
         alert("These credentials do not belong to a registrar account.");
         return;
       }
-
-      const fullName = [data.user.firstName, data.user.lastName].filter(Boolean).join(" ");
-
-      setEmail(data.user.email);
-      saveStoredAuthUser(
-        {
-          id: data.user.id,
-          email: data.user.email,
-          role: data.user.role,
-          name: fullName || data.user.email,
-          refreshTokenExpiresAt: data.refreshTokenExpiresAt,
-        },
-        Boolean(variables.rememberMe),
-        data.accessToken
-      );
-      navigate({ to: "/registrar-dashboard" });
+      handleLoginResponse(data, variables);
     },
   });
 
@@ -179,6 +233,7 @@ export default function LoginForm({ onForgotPassword }: LoginFormProps) {
   ];
 
   return (
+    <>
     <form onSubmit={handleSubmit(submit)} className="space-y-6" autoComplete="off">
       <RoleSelector<LoginRole>
         value={role}
@@ -279,6 +334,28 @@ export default function LoginForm({ onForgotPassword }: LoginFormProps) {
         </>
       ) : null}
     </form>
+
+    {/* Account-deactivation recovery dialog. Mounted at the
+        component root so its overlay covers the whole login page.
+        Token + rememberMe captured at login time so the eventual
+        reactivate call preserves the user's "stay signed in"
+        choice. */}
+    <ReactivateAccountModal
+      isOpen={Boolean(reactivation)}
+      onClose={() => {
+        if (reactivateMutation.isPending) return;
+        setReactivation(null);
+        setReactivateError(null);
+      }}
+      onConfirm={() => {
+        if (!reactivation) return;
+        reactivateMutation.mutate(reactivation.token);
+      }}
+      deactivatedAt={reactivation?.deactivatedAt ?? null}
+      isLoading={reactivateMutation.isPending}
+      errorMessage={reactivateError}
+    />
+    </>
   );
 }
 

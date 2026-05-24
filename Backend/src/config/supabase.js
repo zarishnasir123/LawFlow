@@ -28,6 +28,13 @@ export function getSupabaseStorageConfig() {
   // from the verification-documents bucket, so they don't share a
   // namespace.
   const casePdfBucket = process.env.SUPABASE_CASE_PDF_BUCKET || "case-signed-pdfs";
+  // Public bucket for client / lawyer / registrar profile pictures. Public
+  // because (a) avatars aren't sensitive and the user explicitly chose to
+  // display them, and (b) we render them via a plain <img src> on every
+  // page header — signed URLs would expire mid-session and break the
+  // image. The dev needs to create this bucket in Supabase Studio with
+  // "Public bucket" toggled on.
+  const avatarBucket = process.env.SUPABASE_AVATAR_BUCKET || "user-avatars";
   const previewUrlExpiresIn = Number(process.env.SUPABASE_PREVIEW_URL_EXPIRES_IN || 900);
 
   const issues = [];
@@ -41,6 +48,7 @@ export function getSupabaseStorageConfig() {
     serviceRoleKey,
     bucket,
     casePdfBucket,
+    avatarBucket,
     previewUrlExpiresIn: Number.isFinite(previewUrlExpiresIn) && previewUrlExpiresIn > 0
       ? previewUrlExpiresIn
       : 900

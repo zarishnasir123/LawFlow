@@ -3,6 +3,7 @@ import { randomUUID, timingSafeEqual } from "node:crypto";
 import { pool } from "../../config/db.js";
 import {
   changeAuthenticatedPassword,
+  deactivateCurrentUser,
   getCurrentUser,
   issueOAuthSession,
   listActiveLawyerVerifications,
@@ -10,12 +11,16 @@ import {
   listPendingLawyerVerifications,
   loginUser,
   logoutUser,
+  reactivateAccount,
   refreshAuthSession,
   reinstateLawyerRegistration,
   requestPasswordReset,
   resetPassword as resetUserPassword,
+  removeMyAvatar,
   reviewLawyerRegistration,
-  suspendLawyerRegistration
+  setMyAvatar,
+  suspendLawyerRegistration,
+  updateCurrentUser
 } from "./auth.service.js";
 import {
   completeOAuthRegistration,
@@ -139,6 +144,18 @@ export async function login(req, res) {
     req
   });
 
+  // Deactivated-but-recoverable accounts short-circuit here. We
+  // respond 200 with the reactivation prompt instead of setting
+  // any session cookies — the frontend pops the "Continue &
+  // Reactivate Account" modal and finalizes via POST /auth/reactivate.
+  if (result.reactivationRequired) {
+    return res.status(200).json({
+      reactivationRequired: true,
+      reactivationToken: result.reactivationToken,
+      deactivatedAt: result.deactivatedAt
+    });
+  }
+
   setRefreshTokenCookie(res, result.refreshToken, {
     rememberMe: result.rememberMe,
     expiresAt: result.refreshTokenExpiresAt
@@ -146,6 +163,33 @@ export async function login(req, res) {
 
   return res.status(200).json({
     message: "Login successful",
+    user: result.user,
+    accessToken: result.accessToken,
+    refreshTokenExpiresAt: result.refreshTokenExpiresAt,
+    session: {
+      rememberMe: result.rememberMe,
+      expiresAt: result.refreshTokenExpiresAt
+    }
+  });
+}
+
+// POST /auth/reactivate — second leg of the deactivation-recovery
+// flow. Frontend hands us the short-lived token issued by login()
+// once the user clicks "Continue & Reactivate Account"; we flip
+// the account back to active and issue a normal session.
+export async function reactivate(req, res) {
+  const result = await reactivateAccount({
+    reactivationToken: req.body.reactivationToken,
+    req
+  });
+
+  setRefreshTokenCookie(res, result.refreshToken, {
+    rememberMe: result.rememberMe,
+    expiresAt: result.refreshTokenExpiresAt
+  });
+
+  return res.status(200).json({
+    message: "Account reactivated",
     user: result.user,
     accessToken: result.accessToken,
     refreshTokenExpiresAt: result.refreshTokenExpiresAt,
@@ -210,6 +254,60 @@ export async function logout(req, res) {
 export async function me(req, res) {
   const user = await getCurrentUser(req.user.sub);
 
+  return res.status(200).json({ user });
+}
+
+// PATCH /auth/me — applies a partial update to the logged-in user's
+// profile. Body validation is done by updateMyProfileValidator;
+// only fields actually present in req.body get forwarded to the
+// service. Returns the merged user via the same shape as GET /auth/me
+// so the frontend can drop the response straight into the
+// currentUser Tanstack cache.
+export async function updateMe(req, res) {
+  const patch = {
+    firstName: req.body.firstName ?? req.body.first_name,
+    lastName: req.body.lastName ?? req.body.last_name,
+    email: req.body.email,
+    phone: req.body.phone ?? req.body.phoneNumber ?? req.body.phone_number,
+    cnic: req.body.cnic ?? req.body.CNIC,
+    address: req.body.address,
+    city: req.body.city,
+    tehsil: req.body.tehsil
+  };
+
+  const user = await updateCurrentUser({ userId: req.user.sub, patch });
+  return res.status(200).json({ user });
+}
+
+// DELETE /auth/me — self-service account deactivation. We don't
+// require any body; the auth middleware has already proven the
+// caller is who they claim to be. Service handles the soft-delete +
+// session revoke. Response is 204 because there's nothing useful
+// to send back — the user just got logged out.
+export async function deactivateMe(req, res) {
+  await deactivateCurrentUser({ userId: req.user.sub });
+  return res.status(204).end();
+}
+
+// POST /auth/me/avatar — multipart/form-data upload with a single
+// "avatar" field. The uploadAvatar middleware has already validated
+// MIME type + size + put the file on req.file by the time we get
+// here, so we just hand it off to the service.
+export async function updateMyAvatar(req, res) {
+  if (!req.file) {
+    throw new ApiError(400, "Profile picture file is required");
+  }
+
+  const user = await setMyAvatar({ userId: req.user.sub, file: req.file });
+  return res.status(200).json({ user });
+}
+
+// DELETE /auth/me/avatar — clear the user's avatar so the initials
+// fallback renders. Returns the updated user so the frontend can
+// swap it into the Tanstack cache in one round-trip (same shape
+// as the upload endpoint).
+export async function deleteMyAvatar(req, res) {
+  const user = await removeMyAvatar({ userId: req.user.sub });
   return res.status(200).json({ user });
 }
 
@@ -407,6 +505,17 @@ export async function googleSession(req, res) {
   });
 
   const session = await issueOAuthSession({ userId, req });
+
+  // Deactivated-but-recoverable accounts short-circuit before any
+  // session cookie is set; the frontend's /auth/callback page
+  // surfaces the "Continue & Reactivate Account" dialog.
+  if (session.reactivationRequired) {
+    return res.status(200).json({
+      reactivationRequired: true,
+      reactivationToken: session.reactivationToken,
+      deactivatedAt: session.deactivatedAt
+    });
+  }
 
   setRefreshTokenCookie(res, session.refreshToken, {
     rememberMe: session.rememberMe,

@@ -56,3 +56,28 @@ export function verifyAccessToken(token) {
 export function verifyRefreshToken(token) {
   return jwt.verify(token, process.env.JWT_REFRESH_SECRET);
 }
+
+// Reactivation tokens sit between the "deactivated account proved
+// identity" moment and the "user clicked Continue & Reactivate"
+// click. They wrap the user id + an explicit purpose claim so that
+// no other endpoint can mistake them for access/refresh tokens. We
+// reuse JWT_ACCESS_SECRET for the signature so we don't need a new
+// env var; the purpose check inside verifyReactivationToken keeps
+// the namespaces separate. 5-minute TTL is enough for the user to
+// read the dialog and click — anything longer is wasted attack
+// surface for a stolen URL.
+export function signReactivationToken(payload) {
+  return jwt.sign(
+    { ...payload, purpose: "reactivate" },
+    process.env.JWT_ACCESS_SECRET,
+    { expiresIn: "5m" }
+  );
+}
+
+export function verifyReactivationToken(token) {
+  const claims = jwt.verify(token, process.env.JWT_ACCESS_SECRET);
+  if (claims?.purpose !== "reactivate") {
+    throw new Error("Token is not a reactivation token");
+  }
+  return claims;
+}
