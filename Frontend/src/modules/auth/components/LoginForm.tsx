@@ -195,6 +195,12 @@ export default function LoginForm({ onForgotPassword }: LoginFormProps) {
 
   const submit = (values: LoginPayload) => {
     setEmail(values.email);
+    // The "Password changed successfully" banner is a one-shot
+    // notice from the change-password flow. Once the user actually
+    // attempts a login (success OR failure), the notice has served
+    // its purpose — keeping it stuck under an error message is
+    // confusing.
+    setPasswordChangeSuccess(false);
 
     switch (role) {
       case "client":

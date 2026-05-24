@@ -68,6 +68,13 @@ async function mapAuthUser(row) {
     createdAt: row.created_at,
     emailVerified: row.email_verified,
     accountStatus: row.account_status,
+    // Surfaced so the frontend can hide the Change Password button
+    // (and any other "local credential" UI) for Google-OAuth users.
+    // Those accounts have no local password_hash and the backend's
+    // change-password endpoint already rejects them with a 403 —
+    // exposing the provider lets us avoid showing a button that
+    // can't work.
+    authProvider: row.auth_provider || null,
     // Surfaced so the frontend can gate every authenticated screen behind a
     // password-change prompt for admin-provisioned accounts. Defaults to
     // false for users who registered themselves (and so chose their own
@@ -198,6 +205,7 @@ async function findAuthUserById(userId) {
       users.email_verified,
       users.account_status,
       users.deactivated_at,
+      users.auth_provider,
       users.must_change_password,
       users.avatar_storage_path,
       users.created_at,

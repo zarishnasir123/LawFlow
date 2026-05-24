@@ -29,6 +29,12 @@ export type CurrentUser = {
   avatarUrl: string | null;
   emailVerified: boolean;
   accountStatus: string;
+  // 'local' for password-registered users, 'google' for Google
+  // OAuth users. The Change Password UI is hidden for 'google'
+  // because those accounts have no local password_hash — the
+  // backend rejects the change-password request anyway, but we
+  // also don't want to show a button that can't work.
+  authProvider: "local" | "google" | null;
   mustChangePassword: boolean;
   lawyerVerificationStatus: string | null;
 

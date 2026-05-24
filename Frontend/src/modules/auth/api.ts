@@ -24,11 +24,29 @@ export type UpdateMyProfilePayload = {
   tehsil?: string;
 };
 
+// Payload for in-profile password rotation by a logged-in user.
+// Distinct from the forgot-password flow which doesn't take a
+// current password (it's gated by an email token instead).
+export type ChangePasswordPayload = {
+  currentPassword: string;
+  newPassword: string;
+  confirmPassword: string;
+};
+
 export const authApi = {
   forgotPassword: (email: string) =>
     apiClient.post("/auth/forgot-password", { email }),
   resetPassword: (payload: ResetPasswordPayload) =>
     apiClient.post("/auth/reset-password", payload),
+  // In-profile password rotation. Backend verifies the current
+  // password, writes the new hash, AND revokes every refresh
+  // session for the user in the same transaction, so the caller
+  // must clear local auth state + send the user back to /login on
+  // success. Rejected with 403 for Google-OAuth accounts (frontend
+  // hides the entry button for those, but defence-in-depth keeps
+  // the backend honest).
+  changePassword: (payload: ChangePasswordPayload) =>
+    apiClient.post("/auth/change-password", payload),
   updateMyProfile: async (payload: UpdateMyProfilePayload): Promise<CurrentUser> => {
     const { data } = await apiClient.patch<{ user: CurrentUser }>(
       "/auth/me",

@@ -221,6 +221,61 @@ Flow rules:
 - Never log the OAuth `code`, `state`, Supabase access tokens, or user emails. They are tokens under the Security Rules.
 - Use `requireSupabaseClient()` from `config/supabase.js`. Do not instantiate new Supabase clients ad-hoc.
 
+## Document Editor
+
+The lawyer's case document editor (`/lawyer-case-editor/:caseId`) renders Word documents via **docx-preview** directly into a contenteditable DOM tree. Not Tiptap, not mammoth → HTML, not any rich-text framework. The reason is fidelity: docx-preview preserves Word's exact page sizes, fonts, margins, table borders, paragraph alignment, list bullets, header/footer placement.
+
+Rules:
+
+- Keep the editor docx-preview based. Do not reintroduce Tiptap or any HTML-conversion renderer.
+- The formatting invariant is non-negotiable: from first open through every edit, save, signature, reload, signing, and final PDF compile, the only visible change on a page should be the user's typed text, dropped image attachments, and signature overlays. Fonts / margins / page boundaries / tables / headers must stay byte-identical.
+- The save format is the `.docx-wrapper`'s `outerHTML` plus docx-preview's injected `<style>` blocks, captured by `buildEditorSnapshot` in `Frontend/src/modules/lawyer/utils/editorSnapshot.ts`. Stored in `cases.edited_html`.
+- The restore path in `DocxPreviewSurface.tsx` clones the `.docx-wrapper` only. Head `<style>` tags from the snapshot are deliberately skipped because they include viewer-iframe-framing CSS that flattens the editor's paper-on-desk look.
+- Image attachments mount as absolutely-positioned spans via `Frontend/src/modules/lawyer/utils/floatingImage.ts` (Word's "In Front of Text" layout). They never reflow surrounding text. Don't switch to inline image flow.
+- Auto-save runs on blur (500ms debounce), on a 30-second interval, and on the manual Save Draft button. All three call the same `persistEditedHtml` helper in `CaseDocumentEditor.tsx`. Don't add a fourth save path.
+
+## Signature Flow
+
+`signature_requests` is **one row per signer**. When both client and lawyer sign the same batch, that's two rows sharing a `case_batch_id`. Don't collapse them into a single row with two recipients.
+
+Placement rules:
+
+- The signer's placement is stored in `signature_placement` as a JSONB `{ pageIndex, xPct, yPct, widthPct, heightPct }`. Every coordinate is a **fraction between 0 and 1** relative to that section's rendered dimensions. Pixels are never stored — they don't survive the A4/Letter rescale at compile time.
+- The compile multiplies these percentages by the actual PDF page width/height. Frontend overlay (`SignatureOverlayLayer.tsx`) multiplies by the section's getBoundingClientRect width/height. Same percentages, two coordinate spaces.
+
+Rendering rules:
+
+- The editor renders signed signatures live via `Frontend/src/modules/lawyer/components/documentEditor/SignatureOverlayLayer.tsx` — an `<img>` per signature, absolutely positioned over the matching section, `pointer-events: none`. The text underneath stays editable and unmodified.
+- Never mutate `.docx-wrapper > section.docx > *` to "embed" the signature into the DOM tree. That breaks the formatting invariant and is incredibly hard to undo.
+
+Compile rules:
+
+- `Backend/src/modules/signatures/signatures.compiler.js` renders **each editor section as its own standalone PDF** and concatenates with pdf-lib. The earlier "render the whole document as A4 once" approach caused signature drift when section dimensions didn't match A4 — content re-flowed into PDF page N+1 and the signature landed on a blank trailing page. Don't fold this back into a single `page.pdf()` call.
+- The compile fires inside `setImmediate(...)` from `submitSignature` so the signer's HTTP response returns in ~50ms instead of waiting 2–4 seconds for puppeteer. The lawyer's editor polls every 15 seconds and picks up `signed_pdf_storage_path` once the compile finishes. Don't switch to a synchronous compile.
+- Email sends (signer-completion notification, deactivation confirmation, etc.) follow the same `setImmediate` rule. They never block the request that triggered them.
+
+## Profile And Account Lifecycle
+
+Avatar storage:
+
+- Avatar URLs returned from `/auth/me` are **signed Supabase URLs**, not public ones, with a 1-hour TTL. The bucket is private; the service role key bypasses RLS for the sign call. The shared helper is `getUserAvatarSignedUrl` in `Backend/src/services/storage.service.js`.
+- A `?v=<updatedAt>` cache-bust is appended to the URL so the browser fetches a fresh image immediately after upload, even within the 1-hour window.
+- The avatar editing UI lives only on the Edit Profile page. The View page renders the avatar read-only; do not add an upload affordance to the view page.
+
+City and tehsil:
+
+- `client_profiles.city` and `client_profiles.tehsil` are auto-derived from `address` by `deriveLocationFromAddress` in `Backend/src/utils/location.js` — last comma-separated segment for city, whole-word scan of `SUPPORTED_TEHSILS` for tehsil.
+- Explicit values from the user (via the Edit Profile form) always win over the deriver.
+- The PATCH `/auth/me` validator does NOT enforce "tehsil must be in `SUPPORTED_TEHSILS`". The strict check is registration-only, where it gates lawyer-side case routing. Don't tighten the PATCH validator without also extending the env list.
+
+Self-deactivation and recovery:
+
+- `DELETE /auth/me` stamps `users.deactivated_at = NOW()`, sets `account_status = 'inactive'`, deletes every refresh session, and queues a confirmation email — all in one transaction. The email goes out only after commit.
+- On the next login attempt (password or Google), `handleSelfDeactivationRecovery` in `auth.service.js` checks the recovery window. Inside 30 days → backend returns `{ reactivationRequired, reactivationToken, deactivatedAt }` and the frontend shows the "Continue & Reactivate Account" dialog with a days-remaining countdown. Past 30 days → hard-delete the row (cascades to `client_profiles` and `auth_sessions`), respond 410.
+- `account_status='inactive'` WITH `deactivated_at` set is self-deactivation. `inactive` WITHOUT `deactivated_at` is admin-imposed and goes through the existing "Contact support" gate. Don't conflate the two.
+- The reactivation finalize is `POST /auth/reactivate` — no auth middleware; the short-lived JWT issued by the login response is the proof of identity. The token has `purpose: "reactivate"` so it can't be confused with access/refresh tokens.
+- Call `handleSelfDeactivationRecovery` from both `loginUser` and `issueOAuthSession`. Don't duplicate the window math anywhere else.
+
 ## Security Rules
 
 LawFlow handles private legal data, so security matters in every PR.
