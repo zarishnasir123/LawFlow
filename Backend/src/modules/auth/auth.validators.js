@@ -267,7 +267,47 @@ export const updateMyProfileValidator = [
   // the deployment's routing list only covers a few. The strict
   // check still applies at registration where the value gates
   // lawyer-side case routing.
-  optionalStringField(["tehsil"], "Tehsil", { max: 100 })
+  optionalStringField(["tehsil"], "Tehsil", { max: 100 }),
+
+  // Lawyer-specific editable fields. Mirror the same rules
+  // registerLawyerValidator uses but flipped to optional, because
+  // PATCH semantics only update what's sent. Bar license number,
+  // documents, and verification status are intentionally absent
+  // here — any of those need a re-verification flow we don't
+  // expose to the lawyer.
+  optionalStringField(["specialization"], "Specialization", { max: 150 }),
+  body().custom((_, { req }) => {
+    const specialization = getTrimmedField(req.body, "specialization");
+    if (!specialization) return true;
+    if (!["Civil", "Family", "civil", "family"].includes(specialization)) {
+      throw new Error("Specialization must be Civil or Family");
+    }
+    return true;
+  }),
+
+  optionalStringField(["districtBar", "district_bar"], "District bar", { max: 150 }),
+
+  body("experienceYears")
+    .optional({ nullable: true })
+    .isInt({ min: 0, max: 80 })
+    .withMessage("Experience years must be a valid number")
+    .toInt(),
+  body("experience_years")
+    .optional({ nullable: true })
+    .isInt({ min: 0, max: 80 })
+    .withMessage("Experience years must be a valid number")
+    .toInt(),
+
+  body("consultationFee")
+    .optional({ nullable: true })
+    .isFloat({ min: 0 })
+    .withMessage("Consultation fee must be a valid amount")
+    .toFloat(),
+  body("consultation_fee")
+    .optional({ nullable: true })
+    .isFloat({ min: 0 })
+    .withMessage("Consultation fee must be a valid amount")
+    .toFloat()
 ];
 
 export const registerLawyerValidator = [

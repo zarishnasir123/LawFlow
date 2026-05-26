@@ -272,7 +272,15 @@ export async function updateMe(req, res) {
     cnic: req.body.cnic ?? req.body.CNIC,
     address: req.body.address,
     city: req.body.city,
-    tehsil: req.body.tehsil
+    tehsil: req.body.tehsil,
+    // Lawyer-only editable fields. The service is role-gated, so
+    // forwarding these for a client is a silent no-op rather than
+    // an error. bar_license_number, verification_status, and
+    // document fields are intentionally NOT forwarded.
+    specialization: req.body.specialization,
+    districtBar: req.body.districtBar ?? req.body.district_bar,
+    experienceYears: req.body.experienceYears ?? req.body.experience_years,
+    consultationFee: req.body.consultationFee ?? req.body.consultation_fee
   };
 
   const user = await updateCurrentUser({ userId: req.user.sub, patch });
