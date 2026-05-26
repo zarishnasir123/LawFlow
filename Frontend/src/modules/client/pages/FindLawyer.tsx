@@ -1,28 +1,35 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
+import { useQuery, keepPreviousData } from "@tanstack/react-query";
 import { Search } from "lucide-react";
 import ClientLayout from "../components/ClientLayout";
 import LawyerCard from "../components/LawyerCard";
-import { mockLawyers } from "../data/lawyers.mock";
+import { fetchLawyers, type ListLawyersParams } from "../api/lawyers";
+
+// Specialization filter values match the backend's closed-set
+// validator (Civil / Family). "all" disables the filter.
+type SpecializationFilter = "all" | "Civil" | "Family";
 
 export default function FindLawyer() {
   const [query, setQuery] = useState("");
-  const [category, setCategory] = useState("all");
+  const [category, setCategory] = useState<SpecializationFilter>("all");
   const navigate = useNavigate();
 
-  const lawyers = useMemo(() => mockLawyers, []);
+  // Query key includes search + category so changing either kicks off
+  // a refetch automatically. keepPreviousData prevents the card grid
+  // from flickering to "Loading…" while the user types.
+  const params: ListLawyersParams = {
+    search: query.trim() || undefined,
+    specialization: category,
+  };
+  const { data, isLoading, isError, error } = useQuery({
+    queryKey: ["lawyers", "directory", params],
+    queryFn: () => fetchLawyers(params),
+    placeholderData: keepPreviousData,
+  });
 
-  const filteredLawyers = useMemo(() => {
-    return lawyers.filter((l) => {
-      const matchesQuery =
-        l.name.toLowerCase().includes(query.toLowerCase()) ||
-        l.category.toLowerCase().includes(query.toLowerCase());
-
-      const matchesCategory = category === "all" || l.category === category;
-
-      return matchesQuery && matchesCategory;
-    });
-  }, [lawyers, query, category]);
+  const lawyers = data?.items ?? [];
+  const total = data?.pagination.total ?? 0;
 
   return (
     <ClientLayout brandSubtitle="Find a Lawyer">
@@ -40,8 +47,7 @@ export default function FindLawyer() {
             </p>
           </div>
           <div className="rounded-full border border-emerald-100 bg-white px-3 py-1 text-xs font-semibold text-emerald-700 shadow-sm">
-            {filteredLawyers.length} result
-            {filteredLawyers.length === 1 ? "" : "s"}
+            {total} result{total === 1 ? "" : "s"}
           </div>
         </div>
       </div>
@@ -66,45 +72,44 @@ export default function FindLawyer() {
             Category
             <select
               value={category}
-              onChange={(e) => setCategory(e.target.value)}
+              onChange={(e) => setCategory(e.target.value as SpecializationFilter)}
               className="mt-2 w-full rounded-xl border border-gray-200 bg-gray-50/60 py-2.5 px-3 text-sm text-gray-900 outline-none transition focus:border-emerald-400 focus:bg-white focus:ring-2 focus:ring-emerald-100"
             >
               <option value="all">All Categories</option>
-              <option value="Family Law">Family Law</option>
-              <option value="Civil Law">Civil Law</option>
+              <option value="Family">Family Law</option>
+              <option value="Civil">Civil Law</option>
             </select>
           </label>
         </div>
       </div>
 
-      {/* Lawyer Cards */}
-      <div className="grid gap-6 lg:grid-cols-2">
-        {filteredLawyers.map((lawyer) => (
-          <LawyerCard
-            key={lawyer.id}
-            lawyer={lawyer}
-            onViewProfile={(id) =>
-              navigate({ to: `/client-lawyer/${id}` })
-            }
-            onMessage={() => {
-              if (lawyer.threadId) {
-                navigate({
-                  to: "/client-messages",
-                  search: { thread: lawyer.threadId },
-                });
-                return;
-              }
-              navigate({ to: "/client-messages" });
-            }}
-          />
-        ))}
+      {/* Loading / error / empty / results */}
+      {isLoading ? (
+        <div className="rounded-2xl border border-dashed border-gray-200 bg-white p-8 text-center text-sm text-gray-500">
+          Loading lawyers…
+        </div>
+      ) : isError ? (
+        <div className="rounded-2xl border border-red-200 bg-red-50 p-8 text-center text-sm text-red-700">
+          {(error as Error)?.message || "Failed to load lawyers. Please try again."}
+        </div>
+      ) : (
+        <div className="grid gap-6 lg:grid-cols-2">
+          {lawyers.map((lawyer) => (
+            <LawyerCard
+              key={lawyer.lawyerProfileId}
+              lawyer={lawyer}
+              onViewProfile={(id) => navigate({ to: `/client-lawyer/${id}` })}
+              onMessage={() => navigate({ to: "/client-messages" })}
+            />
+          ))}
 
-        {filteredLawyers.length === 0 && (
-          <div className="col-span-full rounded-2xl border border-dashed border-gray-200 bg-white p-8 text-center text-sm text-gray-500">
-            No lawyers found matching your criteria.
-          </div>
-        )}
-      </div>
+          {lawyers.length === 0 && (
+            <div className="col-span-full rounded-2xl border border-dashed border-gray-200 bg-white p-8 text-center text-sm text-gray-500">
+              No lawyers found matching your criteria.
+            </div>
+          )}
+        </div>
+      )}
     </ClientLayout>
   );
 }

@@ -6,6 +6,7 @@ import hpp from "hpp";
 
 import authRoutes from "./modules/auth/auth.routes.js";
 import casesRoutes from "./modules/cases/cases.routes.js";
+import lawyersRoutes from "./modules/lawyers/lawyer.routes.js";
 import registrarRoutes from "./modules/registrar/registrar.routes.js";
 import {
   caseSignatureRoutes,
@@ -64,6 +65,7 @@ app.get("/health", (req, res) => {
 
 app.use("/api/auth", authRoutes);
 app.use("/api/cases", casesRoutes);
+app.use("/api/lawyers", lawyersRoutes);
 // Signature endpoints scoped to a case live under /api/cases/:caseId/...
 // so case ownership can be enforced through the join in the service
 // layer. The mergeParams option on the router lets the nested route
