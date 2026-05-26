@@ -1,4 +1,4 @@
-import { query } from "express-validator";
+import { param, query } from "express-validator";
 
 // GET /api/lawyers — list of approved + active lawyers, optionally
 // filtered by search keyword and specialization. Pagination caps
@@ -37,3 +37,14 @@ export const listLawyersValidator = [
     .withMessage("Offset must be zero or a positive integer")
     .toInt(),
 ];
+
+// GET /api/lawyers/:lawyerProfileId — the UUID arrives in the URL
+// path, so a malformed value should fail validation before the
+// service tries to query Postgres (which would 500 on a bad UUID
+// cast). Matches the lawyer_profiles.id primary key shape.
+export const getLawyerValidator = [
+  param("lawyerProfileId")
+    .isUUID()
+    .withMessage("Invalid lawyer id"),
+];
+

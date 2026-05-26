@@ -15,6 +15,10 @@ export type DirectoryLawyer = {
   districtBar: string | null;
   experienceYears: number | null;
   consultationFee: number | null;
+  // Free-text "About" written by the lawyer after registration.
+  // Null when they haven't filled it in yet — the UI then renders
+  // a generic fallback line instead of an empty section.
+  bio: string | null;
 };
 
 export type LawyerDirectoryResponse = {
@@ -52,4 +56,15 @@ export async function fetchLawyers(
     params: query,
   });
   return data;
+}
+
+// GET /api/lawyers/:lawyerProfileId — single lawyer detail for the
+// public profile page. Throws on 404 (lawyer doesn't exist or isn't
+// visible to the directory) so the caller can render the
+// "not found" branch via TanStack's isError state.
+export async function fetchLawyer(lawyerProfileId: string): Promise<DirectoryLawyer> {
+  const { data } = await apiClient.get<{ lawyer: DirectoryLawyer }>(
+    `/lawyers/${lawyerProfileId}`
+  );
+  return data.lawyer;
 }

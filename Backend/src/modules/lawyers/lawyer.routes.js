@@ -3,8 +3,8 @@ import { Router } from "express";
 import { asyncHandler } from "../../middleware/asyncHandler.js";
 import { authenticate } from "../../middleware/authenticate.js";
 import { validateRequest } from "../../middleware/validateRequest.js";
-import { listLawyers } from "./lawyer.controller.js";
-import { listLawyersValidator } from "./lawyer.validators.js";
+import { getLawyer, listLawyers } from "./lawyer.controller.js";
+import { getLawyerValidator, listLawyersValidator } from "./lawyer.validators.js";
 
 const router = Router();
 
@@ -20,6 +20,18 @@ router.get(
   listLawyersValidator,
   validateRequest,
   asyncHandler(listLawyers)
+);
+
+// Public-facing lawyer detail. Same visibility rules as the list
+// (approved + active + not self-deactivated); 404 otherwise so a
+// guessed UUID can't distinguish "doesn't exist" from "exists but
+// hidden".
+router.get(
+  "/:lawyerProfileId",
+  authenticate,
+  getLawyerValidator,
+  validateRequest,
+  asyncHandler(getLawyer)
 );
 
 export default router;

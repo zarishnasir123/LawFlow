@@ -1,4 +1,5 @@
 import { pool } from "../../config/db.js";
+import { ApiError } from "../../utils/apiError.js";
 import { getUserAvatarSignedUrl } from "../../services/storage.service.js";
 
 // Convert a Postgres row into the public lawyer-directory shape the
@@ -38,6 +39,10 @@ async function mapDirectoryLawyer(row) {
       row.consultation_fee !== null && row.consultation_fee !== undefined
         ? Number(row.consultation_fee)
         : null,
+    // Bio is included on both list and detail so the directory card
+    // can show a preview snippet later if the design calls for one.
+    // Null when the lawyer hasn't filled it in yet.
+    bio: row.bio || null,
   };
 }
 
@@ -92,6 +97,7 @@ export async function listApprovedLawyers({
       lawyer_profiles.district_bar,
       lawyer_profiles.experience_years,
       lawyer_profiles.consultation_fee,
+      lawyer_profiles.bio,
       COUNT(*) OVER () AS total_count
     FROM lawyer_profiles
     JOIN users ON users.id = lawyer_profiles.user_id
@@ -124,4 +130,42 @@ export async function listApprovedLawyers({
       offset: safeOffset,
     },
   };
+}
+
+// GET /api/lawyers/:lawyerProfileId — single lawyer's public profile.
+// Same approval / status / deactivation filters as the directory list
+// so a suspended or pending lawyer's UUID isn't reachable through a
+// guessed URL. 404 covers both "no such profile" and "profile exists
+// but isn't visible to the directory" so the caller can't distinguish
+// them.
+export async function getApprovedLawyerById(lawyerProfileId) {
+  const result = await pool.query(
+    `SELECT
+      lawyer_profiles.id AS lawyer_profile_id,
+      users.id AS user_id,
+      users.first_name,
+      users.last_name,
+      users.avatar_storage_path,
+      users.updated_at,
+      lawyer_profiles.specialization,
+      lawyer_profiles.district_bar,
+      lawyer_profiles.experience_years,
+      lawyer_profiles.consultation_fee,
+      lawyer_profiles.bio
+    FROM lawyer_profiles
+    JOIN users ON users.id = lawyer_profiles.user_id
+    WHERE lawyer_profiles.id = $1
+      AND lawyer_profiles.verification_status = 'approved'
+      AND users.account_status = 'active'
+      AND users.deactivated_at IS NULL
+    LIMIT 1`,
+    [lawyerProfileId]
+  );
+
+  const row = result.rows[0];
+  if (!row) {
+    throw new ApiError(404, "Lawyer not found");
+  }
+
+  return mapDirectoryLawyer(row);
 }

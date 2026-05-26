@@ -207,6 +207,12 @@ CREATE TABLE lawyer_profiles (
   bar_license_number VARCHAR(100) UNIQUE NOT NULL,
   experience_years   INTEGER DEFAULT 0,
   consultation_fee   NUMERIC,
+  -- Free-text "About" section the lawyer writes after registration
+  -- to introduce themselves to potential clients on the public
+  -- directory. Optional: registration never collects it (keeps the
+  -- signup form short), but the Edit Profile form does. Capped at
+  -- 2000 chars by the backend validator.
+  bio                TEXT,
 
   cnic_match         BOOLEAN NOT NULL DEFAULT false,
   cnic_match_remarks TEXT,

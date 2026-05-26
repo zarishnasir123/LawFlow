@@ -307,7 +307,15 @@ export const updateMyProfileValidator = [
     .optional({ nullable: true })
     .isFloat({ min: 0 })
     .withMessage("Consultation fee must be a valid amount")
-    .toFloat()
+    .toFloat(),
+
+  // Short free-text intro shown on the client directory + lawyer
+  // profile. Registration never collects this — the field only
+  // exists on the Edit Profile form, so it's optional everywhere.
+  // 120 chars is a hard cap by product call (tweet-length); the
+  // frontend mirrors the limit so the user can't paste a longer
+  // value past the maxLength attribute.
+  optionalStringField(["bio"], "About", { max: 120 })
 ];
 
 export const registerLawyerValidator = [

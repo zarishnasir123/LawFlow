@@ -32,6 +32,9 @@ export type UpdateMyProfilePayload = {
   districtBar?: string;
   experienceYears?: number;
   consultationFee?: number;
+  // Lawyer's free-text About section. Empty string clears it,
+  // non-empty saves a trimmed copy.
+  bio?: string;
 };
 
 // Payload for in-profile password rotation by a logged-in user.

@@ -136,6 +136,19 @@ export default function LawyerProfile() {
             <ProfileField label="Consultation Fee" value={num(currentUser.consultationFee)} />
           </div>
 
+          {/* About — read-only mirror of what clients see in the
+              public directory. Empty placeholder when the lawyer
+              hasn't filled it in yet so the slot still communicates
+              "this exists, you can edit it". */}
+          <div>
+            <p className="text-sm font-medium text-gray-700 mb-1">About</p>
+            <p className="rounded-md bg-gray-50 px-3 py-2 text-sm text-gray-700 whitespace-pre-wrap min-h-[3rem]">
+              {currentUser.bio?.trim()
+                ? currentUser.bio
+                : <span className="text-gray-400">No about section yet — add one from Edit Profile.</span>}
+            </p>
+          </div>
+
           {/* Account Settings */}
           <div className="pt-6 border-t">
             <h3 className="font-semibold text-gray-900 mb-3">Account Settings</h3>

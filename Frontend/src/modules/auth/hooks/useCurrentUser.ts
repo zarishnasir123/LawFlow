@@ -49,6 +49,10 @@ export type CurrentUser = {
   barLicenseNumber: string | null;
   experienceYears: number | null;
   consultationFee: number | null;
+  // Free-text "About" the lawyer writes after registration to
+  // introduce themselves on the public directory. Null when the
+  // lawyer hasn't filled it in yet.
+  bio: string | null;
 
   // True after the user has opened any dashboard at least once. The first
   // /me call after registration / admin-creation flips this from false to
