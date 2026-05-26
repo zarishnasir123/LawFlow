@@ -44,4 +44,9 @@ export type HeaderAction = {
   icon: LucideIcon;
   onClick: () => void;
   badge?: number;
+  // Optional avatar override for the action button. When set, the
+  // header renders a circular avatar (image if avatarUrl, else the
+  // initials text) in place of the icon — Gmail-style profile chip.
+  avatarUrl?: string | null;
+  avatarFallback?: string;
 };

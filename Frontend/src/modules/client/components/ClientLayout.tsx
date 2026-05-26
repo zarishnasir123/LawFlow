@@ -1,8 +1,10 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import { Bell, LogOut, User } from "lucide-react";
+import { Bell, Home, LogOut, User } from "lucide-react";
 import DashboardLayout from "../../../shared/components/dashboard/DashboardLayout";
+import HeaderProfileMenu from "../../../shared/components/dashboard/HeaderProfileMenu";
 import { useLogout } from "../../auth/hooks/useLogout";
+import { useCurrentUser, displayFullName } from "../../auth/hooks/useCurrentUser";
 import { LogoutConfirmationModal, NotificationModal } from "./modals";
 import ClientLayoutContext from "./ClientLayoutContext";
 
@@ -29,6 +31,7 @@ export default function ClientLayout({
 }: ClientLayoutProps) {
   const navigate = useNavigate();
   const performLogout = useLogout();
+  const { data: currentUser } = useCurrentUser();
   const [notificationModalOpen, setNotificationModalOpen] = useState(false);
   const [logoutModalOpen, setLogoutModalOpen] = useState(false);
 
@@ -54,26 +57,55 @@ export default function ClientLayout({
     };
   }, [notificationModalOpen, logoutModalOpen]);
 
+  // First letter of the client's name for the initials fallback when
+  // no avatar is set — matches the green-on-white circle the
+  // ProfileCard renders elsewhere.
+  const fullName = displayFullName(currentUser);
+  const avatarInitial = (fullName.charAt(0) || "?").toUpperCase();
+  const avatarUrl = currentUser?.avatarUrl ?? null;
+
+  // Profile + Logout live inside the avatar dropdown — Gmail-style —
+  // so the header bar only carries the truly-global icons (Dashboard,
+  // Notifications). Keeping the dropdown definition outside useMemo
+  // because JSX expressions don't need memoising and React handles
+  // re-renders cheaply for a static set of menu items.
+  const profileMenu = (
+    <HeaderProfileMenu
+      avatarUrl={avatarUrl}
+      fallbackInitial={avatarInitial}
+      displayName={fullName || undefined}
+      email={currentUser?.email}
+      items={[
+        {
+          label: "My Profile",
+          icon: User,
+          onClick: () => navigate({ to: "/client-profile" }),
+        },
+        {
+          label: "Logout",
+          icon: LogOut,
+          onClick: openLogoutModal,
+          danger: true,
+        },
+      ]}
+    />
+  );
+
   const actions = useMemo(
     () => [
+      {
+        label: "Dashboard",
+        icon: Home,
+        onClick: () => navigate({ to: "/client-dashboard" }),
+      },
       {
         label: "Notifications",
         icon: Bell,
         badge: notificationBadge,
         onClick: openNotificationModal,
       },
-      {
-        label: "Profile",
-        icon: User,
-        onClick: () => navigate({ to: "/client-profile" }),
-      },
-      {
-        label: "Logout",
-        icon: LogOut,
-        onClick: openLogoutModal,
-      },
     ],
-    [navigate, notificationBadge, openNotificationModal, openLogoutModal]
+    [navigate, notificationBadge, openNotificationModal]
   );
 
   return (
@@ -95,6 +127,7 @@ export default function ClientLayout({
         brandSubtitle={brandSubtitle}
         pageSubtitle={pageSubtitle}
         actions={actions}
+        profileMenu={profileMenu}
         showBackButton={showBackButton}
         onBackClick={onBackClick}
         backLabel={backLabel}

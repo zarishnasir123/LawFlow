@@ -7,6 +7,10 @@ type DashboardLayoutProps = {
   brandSubtitle?: string;
   pageSubtitle?: string;
   actions?: HeaderAction[];
+  // Slot rendered after the icon actions — used by the layouts to
+  // drop in the Gmail-style profile dropdown (avatar trigger +
+  // popover with View Profile / Logout).
+  profileMenu?: ReactNode;
   showBackButton?: boolean;
   onBackClick?: () => void;
   backLabel?: string;
@@ -19,6 +23,32 @@ type HeaderActionButtonProps = {
 
 function HeaderActionButton({ action }: HeaderActionButtonProps) {
   const Icon = action.icon;
+  const isAvatar = action.avatarUrl !== undefined || action.avatarFallback !== undefined;
+
+  if (isAvatar) {
+    return (
+      <button
+        type="button"
+        onClick={action.onClick}
+        className="relative h-9 w-9 rounded-full overflow-hidden bg-white/10 ring-2 ring-transparent hover:ring-white/40 transition-all"
+        aria-label={action.label}
+        title={action.label}
+      >
+        {action.avatarUrl ? (
+          <img
+            src={action.avatarUrl}
+            alt={action.label}
+            className="h-full w-full object-cover"
+            draggable={false}
+          />
+        ) : (
+          <span className="flex h-full w-full items-center justify-center text-sm font-semibold text-white">
+            {action.avatarFallback || "?"}
+          </span>
+        )}
+      </button>
+    );
+  }
 
   return (
     <button
@@ -44,6 +74,7 @@ export default function DashboardLayout(props: DashboardLayoutProps) {
     brandSubtitle = "Lawyer Portal",
     pageSubtitle,
     actions = [],
+    profileMenu,
     children,
   } = props;
   return (
@@ -64,6 +95,7 @@ export default function DashboardLayout(props: DashboardLayoutProps) {
             {actions.map((action) => (
               <HeaderActionButton key={action.label} action={action} />
             ))}
+            {profileMenu}
           </div>
         </div>
       </header>
