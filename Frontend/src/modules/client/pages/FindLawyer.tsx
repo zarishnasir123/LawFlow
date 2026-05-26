@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { useQuery, keepPreviousData } from "@tanstack/react-query";
+import { useInfiniteQuery } from "@tanstack/react-query";
 import { Search } from "lucide-react";
 import ClientLayout from "../components/ClientLayout";
 import LawyerCard from "../components/LawyerCard";
@@ -10,26 +10,51 @@ import { fetchLawyers, type ListLawyersParams } from "../api/lawyers";
 // validator (Civil / Family). "all" disables the filter.
 type SpecializationFilter = "all" | "Civil" | "Family";
 
+// Page size for the Load-more flow. 20 keeps the backend roundtrip
+// quick and the visible scroll height reasonable; the backend caps
+// at 100 if we ever want larger pages.
+const PAGE_SIZE = 20;
+
 export default function FindLawyer() {
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<SpecializationFilter>("all");
   const navigate = useNavigate();
 
-  // Query key includes search + category so changing either kicks off
-  // a refetch automatically. keepPreviousData prevents the card grid
-  // from flickering to "Loading…" while the user types.
+  // useInfiniteQuery owns the page-stitching: it caches each page
+  // under the same queryKey and exposes fetchNextPage / hasNextPage
+  // so the Load-more button stays one line of UI. When the search
+  // or category changes the queryKey changes, which automatically
+  // resets the pagination — no manual cleanup needed.
   const params: ListLawyersParams = {
     search: query.trim() || undefined,
     specialization: category,
   };
-  const { data, isLoading, isError, error } = useQuery({
+  const {
+    data,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    isLoading,
+    isError,
+    error,
+  } = useInfiniteQuery({
     queryKey: ["lawyers", "directory", params],
-    queryFn: () => fetchLawyers(params),
-    placeholderData: keepPreviousData,
+    queryFn: ({ pageParam = 0 }) =>
+      fetchLawyers({ ...params, limit: PAGE_SIZE, offset: pageParam }),
+    initialPageParam: 0,
+    // Next offset = number of items already loaded. Undefined when
+    // we've hit the end, which is how TanStack disables fetchNextPage.
+    getNextPageParam: (lastPage, allPages) => {
+      const loaded = allPages.reduce((sum, page) => sum + page.items.length, 0);
+      return loaded < lastPage.pagination.total ? loaded : undefined;
+    },
   });
 
-  const lawyers = data?.items ?? [];
-  const total = data?.pagination.total ?? 0;
+  // Flatten all pages into one continuous list for rendering. The
+  // total is the same on every page; reading from page[0] is fine.
+  const lawyers = data?.pages.flatMap((p) => p.items) ?? [];
+  const total = data?.pages[0]?.pagination.total ?? 0;
+  const shown = lawyers.length;
 
   return (
     <ClientLayout brandSubtitle="Find a Lawyer">
@@ -93,22 +118,49 @@ export default function FindLawyer() {
           {(error as Error)?.message || "Failed to load lawyers. Please try again."}
         </div>
       ) : (
-        <div className="grid gap-6 lg:grid-cols-2">
-          {lawyers.map((lawyer) => (
-            <LawyerCard
-              key={lawyer.lawyerProfileId}
-              lawyer={lawyer}
-              onViewProfile={(id) => navigate({ to: `/client-lawyer/${id}` })}
-              onMessage={() => navigate({ to: "/client-messages" })}
-            />
-          ))}
+        <>
+          <div className="grid gap-6 lg:grid-cols-2">
+            {lawyers.map((lawyer) => (
+              <LawyerCard
+                key={lawyer.lawyerProfileId}
+                lawyer={lawyer}
+                onViewProfile={(id) => navigate({ to: `/client-lawyer/${id}` })}
+                onMessage={() => navigate({ to: "/client-messages" })}
+              />
+            ))}
 
-          {lawyers.length === 0 && (
-            <div className="col-span-full rounded-2xl border border-dashed border-gray-200 bg-white p-8 text-center text-sm text-gray-500">
-              No lawyers found matching your criteria.
+            {lawyers.length === 0 && (
+              <div className="col-span-full rounded-2xl border border-dashed border-gray-200 bg-white p-8 text-center text-sm text-gray-500">
+                No lawyers found matching your criteria.
+              </div>
+            )}
+          </div>
+
+          {/* Pagination footer — only renders when there's at least
+              one result. Shows the count even when all pages are
+              already loaded so the user knows they've seen
+              everything. */}
+          {lawyers.length > 0 && (
+            <div className="mt-6 flex flex-col items-center gap-3">
+              {hasNextPage ? (
+                <button
+                  type="button"
+                  onClick={() => fetchNextPage()}
+                  disabled={isFetchingNextPage}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#01411C] px-6 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#024a23] disabled:cursor-wait disabled:opacity-60"
+                >
+                  {isFetchingNextPage ? "Loading…" : `Load ${Math.min(PAGE_SIZE, total - shown)} more`}
+                </button>
+              ) : null}
+              <p className="text-xs text-gray-500">
+                Showing <span className="font-semibold text-gray-700">{shown}</span> of{" "}
+                <span className="font-semibold text-gray-700">{total}</span> lawyer
+                {total === 1 ? "" : "s"}
+                {hasNextPage ? "" : " · all loaded"}
+              </p>
             </div>
           )}
-        </div>
+        </>
       )}
     </ClientLayout>
   );
