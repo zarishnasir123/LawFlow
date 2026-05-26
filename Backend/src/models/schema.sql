@@ -575,5 +575,3 @@ INSERT INTO case_types (category, code, display_name, governing_law, sort_order)
   ('family', 'family_dowry_recovery',           'Recovery of Dowry Articles / Personal Property','Dowry & Bridal Gifts Act, 1976 & Family Courts Act, 1964',             3),
   ('family', 'family_minor_custody',            'Custody of Minors (Hizanat)',                 'Guardian and Wards Act, 1890 & Family Courts Act, 1964',                 4),
   ('family', 'family_conjugal_rights',          'Restitution of Conjugal Rights',              'Family Courts Act, 1964',                                                5);
-
-1

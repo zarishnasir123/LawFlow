@@ -1,30 +1,39 @@
 import { X } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 interface DeactivateAccountModalProps {
   isOpen: boolean;
   onClose: () => void;
   onConfirm: () => void;
+  // Driven by the parent's mutation state so the spinner reflects
+  // the real network round-trip, not a fake setTimeout. Optional
+  // so legacy callers that don't pass it still get a working modal.
+  isLoading?: boolean;
+  // Surfaces a backend error (e.g. 401, 500) inline. Optional for
+  // the same reason.
+  errorMessage?: string | null;
 }
 
 export default function DeactivateAccountModal({
   isOpen,
   onClose,
   onConfirm,
+  isLoading = false,
+  errorMessage = null,
 }: DeactivateAccountModalProps) {
   const [confirmText, setConfirmText] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
+
+  // Reset the confirm input every time the modal closes so a
+  // re-open doesn't show "DEACTIVATE" already typed.
+  useEffect(() => {
+    if (!isOpen) setConfirmText("");
+  }, [isOpen]);
 
   const isConfirmed = confirmText === "DEACTIVATE";
 
   const handleConfirm = () => {
-    if (!isConfirmed) return;
-    setIsLoading(true);
-    // Simulate API call
-    setTimeout(() => {
-      setIsLoading(false);
-      onConfirm();
-    }, 1000);
+    if (!isConfirmed || isLoading) return;
+    onConfirm();
   };
 
   if (!isOpen) return null;
@@ -32,7 +41,9 @@ export default function DeactivateAccountModal({
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-md"
-      onClick={onClose}
+      onClick={() => {
+        if (!isLoading) onClose();
+      }}
     >
       <div
         className="w-full max-w-md rounded-lg bg-white p-6 shadow-lg"
@@ -44,7 +55,8 @@ export default function DeactivateAccountModal({
           </h2>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 transition"
+            disabled={isLoading}
+            className="text-gray-400 hover:text-gray-600 transition disabled:opacity-50"
           >
             <X className="h-5 w-5" />
           </button>
@@ -52,14 +64,22 @@ export default function DeactivateAccountModal({
 
         <div className="mb-6 rounded-md bg-red-50 p-4">
           <p className="text-sm text-gray-700 mb-3">
-            <strong>Warning:</strong> Deactivating your account is a serious
-            action. Once you proceed:
+            <strong>Warning:</strong> Deactivating your account does the
+            following:
           </p>
           <ul className="text-sm text-gray-600 space-y-2 ml-4 list-disc">
-            <li>Your account will be permanently deactivated</li>
-            <li>All your profile data will be archived</li>
-            <li>You won't be able to access any services</li>
-            <li>This action cannot be undone</li>
+            <li>You will be signed out of every device immediately</li>
+            <li>Your profile and activity become hidden to other users</li>
+            <li>
+              You have <strong>30 days</strong> to recover the account — just
+              sign back in with the same credentials and it will be silently
+              reactivated
+            </li>
+            <li>
+              After 30 days the account is{" "}
+              <strong>permanently deleted</strong> the next time anyone tries
+              to sign in with this email
+            </li>
           </ul>
         </div>
 
@@ -73,9 +93,16 @@ export default function DeactivateAccountModal({
             value={confirmText}
             onChange={(e) => setConfirmText(e.target.value.toUpperCase())}
             placeholder="Type DEACTIVATE"
-            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
+            disabled={isLoading}
+            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 disabled:bg-gray-50"
           />
         </div>
+
+        {errorMessage && (
+          <div className="mb-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+            {errorMessage}
+          </div>
+        )}
 
         <div className="flex gap-3">
           <button
@@ -87,7 +114,8 @@ export default function DeactivateAccountModal({
           </button>
           <button
             onClick={onClose}
-            className="flex-1 rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition"
+            disabled={isLoading}
+            className="flex-1 rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 transition"
           >
             Cancel
           </button>

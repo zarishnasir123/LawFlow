@@ -12,7 +12,13 @@ type ResetPasswordPayload = {
 // Partial update payload for PATCH /auth/me. Every field is optional —
 // only the keys actually included are sent to the backend, and only
 // those columns get updated server-side. Address / city / tehsil
-// write through to client_profiles; the rest write to users.
+// write through to client_profiles; specialization / districtBar /
+// experienceYears / consultationFee write through to lawyer_profiles
+// (role-gated server-side); the rest write to users.
+//
+// barLicenseNumber is deliberately absent — it's UNIQUE + tied to
+// the lawyer's verification, so changing it would require a re-
+// verification flow we don't expose to the user.
 export type UpdateMyProfilePayload = {
   firstName?: string;
   lastName?: string;
@@ -22,6 +28,10 @@ export type UpdateMyProfilePayload = {
   address?: string;
   city?: string;
   tehsil?: string;
+  specialization?: "Civil" | "Family";
+  districtBar?: string;
+  experienceYears?: number;
+  consultationFee?: number;
 };
 
 // Payload for in-profile password rotation by a logged-in user.

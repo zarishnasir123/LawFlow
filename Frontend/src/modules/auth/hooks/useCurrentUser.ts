@@ -37,6 +37,18 @@ export type CurrentUser = {
   authProvider: "local" | "google" | null;
   mustChangePassword: boolean;
   lawyerVerificationStatus: string | null;
+  // Lawyer-profile fields, surfaced via the same /auth/me JOIN
+  // the client fields use. All null for non-lawyer roles (the
+  // user has no lawyer_profiles row). The lawyer view page
+  // renders them read-only; the edit page exposes specialization
+  // / districtBar / experienceYears / consultationFee as editable
+  // but barLicenseNumber as a disabled input (UNIQUE constraint
+  // + verification was tied to it).
+  specialization: string | null;
+  districtBar: string | null;
+  barLicenseNumber: string | null;
+  experienceYears: number | null;
+  consultationFee: number | null;
 
   // True after the user has opened any dashboard at least once. The first
   // /me call after registration / admin-creation flips this from false to

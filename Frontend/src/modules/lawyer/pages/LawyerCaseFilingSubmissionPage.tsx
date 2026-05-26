@@ -28,7 +28,7 @@ import SubmitConfirmationModal from "../components/caseFiling/SubmitConfirmation
 import { useCaseFilingStore } from "../store/caseFiling.store";
 import { formatFilingDateTime } from "../utils/caseFiling.utils";
 import { useLoginStore } from "../../auth/store";
-import { useLawyerProfileStore } from "../store/lawyerProfile.store";
+import { useCurrentUser, displayFullName } from "../../auth/hooks/useCurrentUser";
 import { getCaseDisplayTitle } from "../../../shared/utils/caseDisplay";
 import type {
   CompiledCaseBundle,
@@ -238,7 +238,12 @@ async function buildSubmittedPreviewFromWorkspace(
 export default function LawyerCaseFilingSubmissionPage() {
   const params = useParams({ strict: false }) as { caseId?: string };
   const loginEmail = useLoginStore((state) => state.email);
-  const lawyerFullName = useLawyerProfileStore((state) => state.profile.fullName);
+  // Pull the lawyer's name from the live /auth/me cache instead of
+  // the old localStorage-backed lawyerProfile store. The store
+  // contained fake "Adv. Fatima Ali" data; the cache has whatever
+  // the lawyer actually registered with, kept in sync server-side.
+  const { data: currentLawyer } = useCurrentUser();
+  const lawyerFullName = displayFullName(currentLawyer);
   const {
     submittedCases,
     ensureCaseContext,

@@ -1,26 +1,23 @@
-import { Bell, LogOut, User } from "lucide-react";
+import { Bell, Home } from "lucide-react";
+import { useNavigate } from "@tanstack/react-router";
 import type { HeaderAction } from "../../../shared/types/dashboard";
-import { useProfileHandler } from "./useProfileHandler";
 
-export function useNavbarActions(onLogout: () => void, onNotificationClick: () => void): HeaderAction[] {
-  const { handleProfileClick } = useProfileHandler();
+// Note: Profile + Logout are deliberately NOT here anymore — the
+// avatar dropdown in LawyerLayout owns both, Gmail-style.
+export function useNavbarActions(_onLogout: () => void, onNotificationClick: () => void): HeaderAction[] {
+  const navigate = useNavigate();
 
   return [
+    {
+      label: "Dashboard",
+      icon: Home,
+      onClick: () => navigate({ to: "/Lawyer-dashboard" }),
+    },
     {
       label: "Notifications",
       icon: Bell,
       onClick: onNotificationClick,
       badge: 3,
-    },
-    {
-      label: "Profile",
-      icon: User,
-      onClick: handleProfileClick,
-    },
-    {
-      label: "Logout",
-      icon: LogOut,
-      onClick: onLogout,
     },
   ];
 }

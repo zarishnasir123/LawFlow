@@ -80,7 +80,24 @@ async function mapAuthUser(row) {
     // false for users who registered themselves (and so chose their own
     // password). Set true by the registrar create/resend-credentials flow.
     mustChangePassword: row.must_change_password === true,
-    lawyerVerificationStatus: row.lawyer_verification_status || null
+    lawyerVerificationStatus: row.lawyer_verification_status || null,
+    // Lawyer-specific profile fields, surfaced for the lawyer's
+    // own profile + edit pages. All null for non-lawyer roles
+    // (no lawyer_profiles row exists). consultation_fee comes
+    // back from Postgres NUMERIC as a string — coerce to a number
+    // so the frontend can render and round-trip it without an
+    // extra conversion step.
+    specialization: row.lawyer_specialization || null,
+    districtBar: row.lawyer_district_bar || null,
+    barLicenseNumber: row.lawyer_bar_license_number || null,
+    experienceYears:
+      row.lawyer_experience_years !== null && row.lawyer_experience_years !== undefined
+        ? Number(row.lawyer_experience_years)
+        : null,
+    consultationFee:
+      row.lawyer_consultation_fee !== null && row.lawyer_consultation_fee !== undefined
+        ? Number(row.lawyer_consultation_fee)
+        : null
   };
 }
 
@@ -212,6 +229,11 @@ async function findAuthUserById(userId) {
       users.updated_at,
       roles.name AS role,
       lawyer_profiles.verification_status AS lawyer_verification_status,
+      lawyer_profiles.specialization AS lawyer_specialization,
+      lawyer_profiles.district_bar AS lawyer_district_bar,
+      lawyer_profiles.bar_license_number AS lawyer_bar_license_number,
+      lawyer_profiles.experience_years AS lawyer_experience_years,
+      lawyer_profiles.consultation_fee AS lawyer_consultation_fee,
       client_profiles.address AS address,
       client_profiles.city AS city,
       client_profiles.tehsil AS tehsil
@@ -634,6 +656,17 @@ export async function updateCurrentUser({ userId, patch }) {
   // each value via getTrimmedField at validator time, but the body
   // can also arrive via Express directly so we re-trim defensively.
   const trim = (v) => (typeof v === "string" ? v.trim() : v);
+  // Numeric coercion for the lawyer-profile fields. The validator
+  // already ran isInt/isFloat + toInt/toFloat, but PATCH bodies can
+  // arrive raw via Express, and we want NULL to mean "clear it"
+  // rather than NaN. Empty strings → null; valid numbers → number;
+  // anything else → undefined (skip the field).
+  const num = (v) => {
+    if (v === null || v === "" || v === undefined) return null;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : undefined;
+  };
+
   const normalized = {
     first_name: patch.firstName !== undefined ? trim(patch.firstName) : undefined,
     last_name: patch.lastName !== undefined ? trim(patch.lastName) : undefined,
@@ -642,7 +675,21 @@ export async function updateCurrentUser({ userId, patch }) {
     cnic: patch.cnic !== undefined ? trim(patch.cnic) : undefined,
     address: patch.address !== undefined ? trim(patch.address) : undefined,
     city: patch.city !== undefined ? trim(patch.city) : undefined,
-    tehsil: patch.tehsil !== undefined ? trim(patch.tehsil) : undefined
+    tehsil: patch.tehsil !== undefined ? trim(patch.tehsil) : undefined,
+    // Lawyer-profile fields. Pre-normalize specialization to
+    // Title Case so the DB has a single canonical value regardless
+    // of how the frontend sent it (the validator accepts any case).
+    specialization:
+      patch.specialization !== undefined
+        ? (() => {
+            const s = trim(patch.specialization);
+            if (!s) return null;
+            return s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
+          })()
+        : undefined,
+    district_bar: patch.districtBar !== undefined ? trim(patch.districtBar) : undefined,
+    experience_years: patch.experienceYears !== undefined ? num(patch.experienceYears) : undefined,
+    consultation_fee: patch.consultationFee !== undefined ? num(patch.consultationFee) : undefined
   };
 
   // Auto-derive city + tehsil from the address string whenever the
@@ -662,9 +709,19 @@ export async function updateCurrentUser({ userId, patch }) {
     .filter((col) => normalized[col] !== undefined);
   const profileUpdates = ["address", "city", "tehsil"]
     .filter((col) => normalized[col] !== undefined);
+  // Lawyer-profile updates: never include bar_license_number,
+  // verification_status, cnic_match, verified_by, or verified_at.
+  // Those are either UNIQUE-constraint locked or admin-only — see
+  // the editable-field table in the plan.
+  const lawyerProfileUpdates = ["specialization", "district_bar", "experience_years", "consultation_fee"]
+    .filter((col) => normalized[col] !== undefined);
 
   // Empty PATCH is a no-op — just return the current state.
-  if (usersUpdates.length === 0 && profileUpdates.length === 0) {
+  if (
+    usersUpdates.length === 0 &&
+    profileUpdates.length === 0 &&
+    lawyerProfileUpdates.length === 0
+  ) {
     const user = await findAuthUserById(userId);
     if (!user) throw new ApiError(404, "User not found");
     return await mapAuthUser(user);
@@ -710,6 +767,40 @@ export async function updateCurrentUser({ userId, patch }) {
          SET ${updateClauses}`,
         insertValues
       );
+    }
+
+    if (lawyerProfileUpdates.length > 0) {
+      // Lawyers always get a lawyer_profiles row at registration (the
+      // strategy inserts it before the user even sees the dashboard),
+      // and only lawyers have one — so we gate the write on role.
+      // A non-lawyer who somehow passed lawyer fields in the body
+      // gets a silent no-op rather than a 4xx, because the validator
+      // already accepted them and surfacing an error here would be
+      // confusing UX. The DB also wouldn't have a row to update.
+      const roleRow = await client.query(
+        `SELECT roles.name FROM users
+         JOIN roles ON roles.id = users.role_id
+         WHERE users.id = $1`,
+        [userId]
+      );
+      const role = roleRow.rows[0]?.name;
+      if (role === "lawyer") {
+        // We use UPDATE-only (not UPSERT) because every lawyer is
+        // guaranteed a row from registration. INSERT would need all
+        // NOT-NULL columns (bar_license_number) which we deliberately
+        // don't accept here — UPDATE on just the patched columns
+        // sidesteps that.
+        const setClauses = lawyerProfileUpdates.map((col, idx) => `${col} = $${idx + 1}`);
+        const values = lawyerProfileUpdates.map((col) => normalized[col]);
+        setClauses.push(`updated_at = NOW()`);
+        values.push(userId);
+        await client.query(
+          `UPDATE lawyer_profiles
+           SET ${setClauses.join(", ")}
+           WHERE user_id = $${values.length}`,
+          values
+        );
+      }
     }
 
     await client.query("COMMIT");
