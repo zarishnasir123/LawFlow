@@ -34,34 +34,6 @@ function capitalize(value: string | null | undefined): string {
   return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
-// Pretty label for the lawyer's verification status. Maps the
-// backend enum ("pending" / "approved" / "rejected" / "suspended")
-// to friendly labels + tailwind colors. Returns null when the
-// status is missing so the badge slot stays empty rather than
-// rendering an empty pill.
-function verificationBadge(status: string | null | undefined) {
-  if (!status) return null;
-  const map: Record<string, { label: string; className: string }> = {
-    pending: {
-      label: "Verification pending",
-      className: "bg-amber-100 text-amber-800 ring-1 ring-amber-200",
-    },
-    approved: {
-      label: "Verified lawyer",
-      className: "bg-emerald-100 text-emerald-800 ring-1 ring-emerald-200",
-    },
-    rejected: {
-      label: "Verification rejected",
-      className: "bg-red-100 text-red-700 ring-1 ring-red-200",
-    },
-    suspended: {
-      label: "Account suspended",
-      className: "bg-red-100 text-red-700 ring-1 ring-red-200",
-    },
-  };
-  return map[status] || null;
-}
-
 // Render a numeric field as a string. Returns "" when null so the
 // ProfileField doesn't show "null"; renders 0 explicitly so we
 // don't lie about a lawyer who set their consultation fee to free.
@@ -132,7 +104,6 @@ export default function LawyerProfile() {
   const fullName = displayFullName(currentUser);
   const memberSince = formatMemberSince(currentUser.createdAt);
   const roleLabel = capitalize(currentUser.role);
-  const badge = verificationBadge(currentUser.lawyerVerificationStatus);
 
   return (
     <LawyerLayout brandTitle="LawFlow" brandSubtitle="My Profile">
@@ -146,20 +117,6 @@ export default function LawyerProfile() {
           avatarUrl={currentUser.avatarUrl}
           onEdit={() => navigate({ to: "/lawyer-profile/edit" })}
         >
-          {/* Verification badge — informational only, never editable.
-              Sits at the top of the body so it's the first thing the
-              lawyer sees about their account state. Hidden when we
-              have no status (shouldn't happen for real lawyers). */}
-          {badge && (
-            <div>
-              <span
-                className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${badge.className}`}
-              >
-                {badge.label}
-              </span>
-            </div>
-          )}
-
           {/* Identity */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <ProfileField label="Full Name" value={fullName} />

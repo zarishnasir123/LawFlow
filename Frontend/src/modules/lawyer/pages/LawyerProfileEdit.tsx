@@ -359,12 +359,8 @@ export default function LawyerProfileEdit() {
               />
             </div>
 
-            {/* Bar License Number — read-only. The UNIQUE constraint
-                and the lawyer's verification artifacts (degree +
-                license card scans) are tied to this number. Changing
-                it would require re-running admin verification, which
-                we don't expose here. Defense-in-depth: the backend
-                ignores this field even if a forged request sets it. */}
+            {/* Bar License Number — read-only. Backend ignores this
+                field even if forged in the request body. */}
             <div className="mt-4">
               <label className="text-sm font-medium text-gray-700">
                 Bar License Number
@@ -375,10 +371,6 @@ export default function LawyerProfileEdit() {
                 disabled
                 className="mt-1 w-full rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-500 cursor-not-allowed"
               />
-              <p className="mt-1 text-xs text-gray-500">
-                To change your bar license number, contact admin — it requires
-                re-verification of your documents.
-              </p>
             </div>
           </div>
 
