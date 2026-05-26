@@ -10,7 +10,9 @@
     "generate:case-templates": "node src/scripts/generateCaseTemplates.js",
     "sync:supabase-users": "node src/scripts/syncSupabaseUsers.js",
     "sync:supabase-users:apply": "node src/scripts/syncSupabaseUsers.js --apply",
-    "user:delete": "node src/scripts/deleteUser.js"
+    "user:delete": "node src/scripts/deleteUser.js",
+    "seed:fake-lawyers": "node src/seeders/fakeLawyers.js",
+    "seed:fake-lawyers:clear": "node src/seeders/fakeLawyers.js --clear"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.105.3",
@@ -32,6 +34,7 @@
     "ws": "^8.20.0"
   },
   "devDependencies": {
+    "@faker-js/faker": "^10.4.0",
     "docx": "^9.5.0",
     "nodemon": "^3.1.9"
   }

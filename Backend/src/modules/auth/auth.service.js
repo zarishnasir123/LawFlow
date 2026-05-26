@@ -97,7 +97,8 @@ async function mapAuthUser(row) {
     consultationFee:
       row.lawyer_consultation_fee !== null && row.lawyer_consultation_fee !== undefined
         ? Number(row.lawyer_consultation_fee)
-        : null
+        : null,
+    bio: row.lawyer_bio || null
   };
 }
 
@@ -234,6 +235,7 @@ async function findAuthUserById(userId) {
       lawyer_profiles.bar_license_number AS lawyer_bar_license_number,
       lawyer_profiles.experience_years AS lawyer_experience_years,
       lawyer_profiles.consultation_fee AS lawyer_consultation_fee,
+      lawyer_profiles.bio AS lawyer_bio,
       client_profiles.address AS address,
       client_profiles.city AS city,
       client_profiles.tehsil AS tehsil
@@ -689,7 +691,10 @@ export async function updateCurrentUser({ userId, patch }) {
         : undefined,
     district_bar: patch.districtBar !== undefined ? trim(patch.districtBar) : undefined,
     experience_years: patch.experienceYears !== undefined ? num(patch.experienceYears) : undefined,
-    consultation_fee: patch.consultationFee !== undefined ? num(patch.consultationFee) : undefined
+    consultation_fee: patch.consultationFee !== undefined ? num(patch.consultationFee) : undefined,
+    // Bio: empty string clears the value (so a lawyer can wipe their
+    // about-section); otherwise just trim and keep the user's text.
+    bio: patch.bio !== undefined ? (trim(patch.bio) || null) : undefined
   };
 
   // Auto-derive city + tehsil from the address string whenever the
@@ -713,7 +718,7 @@ export async function updateCurrentUser({ userId, patch }) {
   // verification_status, cnic_match, verified_by, or verified_at.
   // Those are either UNIQUE-constraint locked or admin-only — see
   // the editable-field table in the plan.
-  const lawyerProfileUpdates = ["specialization", "district_bar", "experience_years", "consultation_fee"]
+  const lawyerProfileUpdates = ["specialization", "district_bar", "experience_years", "consultation_fee", "bio"]
     .filter((col) => normalized[col] !== undefined);
 
   // Empty PATCH is a no-op — just return the current state.

@@ -53,7 +53,12 @@ interface FormState {
   districtBar: string;
   experienceYears: string;
   consultationFee: string;
+  bio: string;
 }
+
+// Backend caps bio at 120 characters (auth.validators.js). Mirror
+// it here so the user sees the limit before a network round-trip.
+const BIO_MAX = 120;
 
 // Build the PATCH payload by including only fields the user
 // actually changed. Numeric fields are coerced to Number at the
@@ -99,6 +104,14 @@ function buildPatch(initial: CurrentUser, form: FormState): UpdateMyProfilePaylo
     }
   }
 
+  // Bio: empty string is a legitimate "clear it" signal, so we
+  // forward whatever the user typed (including "") whenever it
+  // differs from what we loaded. The backend treats "" as NULL.
+  const initialBio = initial.bio ?? "";
+  if (form.bio !== initialBio) {
+    patch.bio = form.bio;
+  }
+
   return patch;
 }
 
@@ -137,6 +150,7 @@ export default function LawyerProfileEdit() {
         currentUser.consultationFee !== null
           ? String(currentUser.consultationFee)
           : "",
+      bio: currentUser.bio ?? "",
     });
   }, [currentUser, form]);
 
@@ -357,6 +371,32 @@ export default function LawyerProfileEdit() {
                 type="number"
                 onChange={(v) => handleChange("consultationFee", v)}
               />
+            </div>
+
+            {/* About — free-text introduction shown on the client
+                directory and the public lawyer detail page. Optional;
+                most lawyers will fill this in after registration.
+                Backend trims and caps at 2000 chars. */}
+            <div className="mt-4">
+              <label className="text-sm font-medium text-gray-700">
+                About
+              </label>
+              <textarea
+                value={form.bio}
+                onChange={(e) =>
+                  handleChange(
+                    "bio",
+                    e.target.value.slice(0, BIO_MAX)
+                  )
+                }
+                rows={2}
+                maxLength={BIO_MAX}
+                placeholder="A one-line intro for potential clients (max 120 characters)."
+                className="mt-1 w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-green-600 resize-y"
+              />
+              <div className="mt-1 flex justify-end text-xs text-gray-400">
+                {form.bio.length} / {BIO_MAX}
+              </div>
             </div>
 
             {/* Bar License Number — read-only. Backend ignores this
