@@ -12,6 +12,7 @@ type LawyerLayoutProps = {
   pageSubtitle?: string;
   showBackButton?: boolean;
   onBackClick?: () => void;
+  backLabel?: string;
   children: ReactNode;
 };
 
@@ -21,6 +22,7 @@ export default function LawyerLayout({
   pageSubtitle,
   showBackButton = false,
   onBackClick,
+  backLabel,
   children,
 }: LawyerLayoutProps) {
   const { logoutModalOpen, handleLogout, openLogoutModal, closeLogoutModal } = useLogoutHandler();
@@ -45,6 +47,7 @@ export default function LawyerLayout({
         actions={navbarActions}
         showBackButton={showBackButton}
         onBackClick={onBackClick}
+        backLabel={backLabel}
       >
         {children}
       </DashboardLayout>

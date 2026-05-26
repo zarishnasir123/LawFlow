@@ -9,6 +9,7 @@ type DashboardLayoutProps = {
   actions?: HeaderAction[];
   showBackButton?: boolean;
   onBackClick?: () => void;
+  backLabel?: string;
   children: ReactNode;
 };
 
@@ -25,6 +26,7 @@ function HeaderActionButton({ action }: HeaderActionButtonProps) {
       onClick={action.onClick}
       className="relative rounded-lg p-2 transition-colors hover:bg-white/10"
       aria-label={action.label}
+      title={action.label}
     >
       <Icon className="h-5 w-5" />
       {action.badge ? (

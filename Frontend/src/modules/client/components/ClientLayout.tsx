@@ -12,6 +12,7 @@ type ClientLayoutProps = {
   pageSubtitle?: string;
   showBackButton?: boolean;
   onBackClick?: () => void;
+  backLabel?: string;
   notificationBadge?: number;
   children: ReactNode;
 };
@@ -22,6 +23,7 @@ export default function ClientLayout({
   pageSubtitle,
   showBackButton = false,
   onBackClick,
+  backLabel,
   notificationBadge = 3,
   children,
 }: ClientLayoutProps) {
@@ -95,6 +97,7 @@ export default function ClientLayout({
         actions={actions}
         showBackButton={showBackButton}
         onBackClick={onBackClick}
+        backLabel={backLabel}
       >
         {children}
       </DashboardLayout>
