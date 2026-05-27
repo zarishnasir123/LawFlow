@@ -4,6 +4,7 @@ import { apiClient } from "../../../shared/api/axios";
 
 export type CaseCategory = "civil" | "family";
 export type CaseStatus = "draft" | "submitted" | "returned" | "accepted";
+export type CaseSignerRole = "client" | "lawyer";
 
 export type ApiCaseType = {
   id: string;
@@ -39,6 +40,12 @@ export type ApiCase = {
   createdAt: string;
   updatedAt: string;
   submittedAt: string | null;
+  // Distinct signer roles whose signature_request reached status='signed'
+  // for this case. Only populated by /cases/signed; other endpoints omit
+  // the field. Drives the "Client + Lawyer" / "Client only" badge on the
+  // Signed Documents tracker so the lawyer can tell counter-signed
+  // artifacts apart from self-signed ones at a glance.
+  signedByRoles?: CaseSignerRole[];
 };
 
 export type CreateCasePayload = {
@@ -100,6 +107,16 @@ export const casesApi = {
 
   listMyCases: async (): Promise<ApiCase[]> => {
     const { data } = await apiClient.get<{ cases: ApiCase[] }>("/cases");
+    return data.cases;
+  },
+
+  // Only cases where the PDF compile has produced a downloadable
+  // artifact (signed_pdf_storage_path IS NOT NULL). Used by the
+  // dedicated "Signed Documents" tracker on /lawyer-signatures.
+  listMySignedCases: async (): Promise<ApiCase[]> => {
+    const { data } = await apiClient.get<{ cases: ApiCase[] }>(
+      "/cases/signed"
+    );
     return data.cases;
   },
 

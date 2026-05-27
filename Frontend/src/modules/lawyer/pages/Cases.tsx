@@ -1,438 +1,403 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Search,
   CheckCircle,
   Clock,
   FileText,
-  Phone,
   Mail,
-  Calendar,
+  Phone,
   Users,
-  DollarSign,
-  Pause,
   AlertCircle,
   UploadCloud,
+  Loader2,
+  Plus,
+  Pencil,
 } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
-import LawyerLayout from "../components/LawyerLayout";
-import { getInitialCases } from "../data/cases.mock";
 
-// Case interface matching mock data
-interface Case {
-  id: string;
-  caseNumber: string;
-  caseTitle: string;
-  clientName: string;
-  clientPhone: string;
-  clientEmail: string;
-  caseType: "civil" | "family";
-  status: "active" | "pending" | "closed" | "on-hold" | "returned";
-  filedDate: string;
-  description: string;
-  oppositeParty: string;
-  nextHearing: string;
-  progress: number;
-  documents: number;
-  totalFee: number;
-  paidAmount: number;
-  returnedReason?: string;
-  returnedDate?: string;
+import LawyerLayout from "../components/LawyerLayout";
+import {
+  casesApi,
+  getCasesErrorMessage,
+  type ApiCase,
+  type CaseStatus,
+} from "../api/cases.api";
+
+// Live lawyer "My Cases" page. Replaces the previous mock-only stub.
+// Reads from GET /api/cases (lawyer-scoped on the backend via auth)
+// so every case the lawyer created here is visible and reopenable.
+//
+// Per AGENTS.md, the backend cases table only ships these statuses:
+//   draft | submitted | returned | accepted
+// (The richer "active / pending / on-hold / closed" set the old mock
+// page used will return when the case-lifecycle tables ship; for
+// now the four real statuses cover the user's "go back to my case"
+// requirement.)
+
+type StatusFilter = "all" | CaseStatus;
+
+const STATUS_TABS: { value: StatusFilter; label: string }[] = [
+  { value: "all", label: "All" },
+  { value: "draft", label: "Draft" },
+  { value: "submitted", label: "Submitted" },
+  { value: "returned", label: "Returned" },
+  { value: "accepted", label: "Accepted" },
+];
+
+function getStatusBadge(status: CaseStatus) {
+  switch (status) {
+    case "draft":
+      return {
+        label: "Draft",
+        icon: <Pencil className="w-3.5 h-3.5" />,
+        className: "bg-amber-100 text-amber-800 ring-1 ring-amber-200",
+      };
+    case "submitted":
+      return {
+        label: "Submitted",
+        icon: <Clock className="w-3.5 h-3.5" />,
+        className: "bg-blue-100 text-blue-800 ring-1 ring-blue-200",
+      };
+    case "returned":
+      return {
+        label: "Returned",
+        icon: <AlertCircle className="w-3.5 h-3.5" />,
+        className: "bg-red-100 text-red-800 ring-1 ring-red-200",
+      };
+    case "accepted":
+      return {
+        label: "Accepted",
+        icon: <CheckCircle className="w-3.5 h-3.5" />,
+        className: "bg-emerald-100 text-emerald-800 ring-1 ring-emerald-200",
+      };
+  }
 }
 
-const mockCases: Case[] = getInitialCases();
-
-// Returns the appropriate icon for each case status
-// Returned cases show an AlertCircle icon in red to indicate action needed
-const getStatusIcon = (status: string) => {
-  switch (status) {
-    case "active":
-      return <CheckCircle className="w-5 h-5 text-green-600" />;
-    case "pending":
-      return <Clock className="w-5 h-5 text-blue-600" />;
-    case "on-hold":
-      return <Pause className="w-5 h-5 text-orange-600" />;
-    case "closed":
-      return <CheckCircle className="w-5 h-5 text-gray-600" />;
-    case "returned":
-      return <AlertCircle className="w-5 h-5 text-red-600" />;
-    default:
-      return null;
-  }
-};
-
-// Returns the appropriate color classes for each case status
-// Returned cases use red styling to highlight attention needed
-const getStatusColor = (status: string) => {
-  switch (status) {
-    case "active":
-      return "bg-green-100 text-green-800";
-    case "pending":
-      return "bg-blue-100 text-blue-800";
-    case "on-hold":
-      return "bg-orange-100 text-orange-800";
-    case "closed":
-      return "bg-gray-100 text-gray-800";
-    case "returned":
-      return "bg-red-100 text-red-800";
-    default:
-      return "bg-gray-100 text-gray-800";
-  }
-};
+function formatDate(iso: string | null | undefined) {
+  if (!iso) return "—";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "—";
+  return date.toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+}
 
 export default function LawyerCases() {
   const navigate = useNavigate();
+  const [cases, setCases] = useState<ApiCase[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
-  const [filterStatus, setFilterStatus] = useState<"all" | "active" | "pending" | "on-hold" | "closed" | "returned">("active");
+  const [filterStatus, setFilterStatus] = useState<StatusFilter>("all");
 
-  const filteredCases = mockCases.filter((caseItem) => {
-    const matchesSearch =
-      caseItem.caseTitle.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      caseItem.clientName.toLowerCase().includes(searchTerm.toLowerCase());
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    casesApi
+      .listMyCases()
+      .then((rows) => {
+        if (!cancelled) setCases(rows);
+      })
+      .catch((err) => {
+        if (!cancelled) setError(getCasesErrorMessage(err));
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
-    const matchesStatus = filterStatus === "all" || caseItem.status === filterStatus;
+  const filteredCases = useMemo(() => {
+    const q = searchTerm.trim().toLowerCase();
+    return cases.filter((c) => {
+      const matchesStatus = filterStatus === "all" || c.status === filterStatus;
+      const matchesSearch =
+        !q ||
+        c.title.toLowerCase().includes(q) ||
+        c.clientName.toLowerCase().includes(q) ||
+        (c.oppositePartyName ?? "").toLowerCase().includes(q);
+      return matchesStatus && matchesSearch;
+    });
+  }, [cases, searchTerm, filterStatus]);
 
-    return matchesSearch && matchesStatus;
-  });
-
-  const activeCasesCount = mockCases.filter((c) => c.status === "active").length;
-  const pendingCasesCount = mockCases.filter((c) => c.status === "pending").length;
-  const returnedCasesCount = mockCases.filter((c) => c.status === "returned").length;
-  const totalCasesCount = mockCases.length;
+  // Per-status counts — drives both the stats grid and lets the
+  // tabs show a "(n)" hint without iterating cases per tab render.
+  const counts = useMemo(() => {
+    const acc: Record<CaseStatus | "all", number> = {
+      all: cases.length,
+      draft: 0,
+      submitted: 0,
+      returned: 0,
+      accepted: 0,
+    };
+    for (const c of cases) acc[c.status] += 1;
+    return acc;
+  }, [cases]);
 
   return (
-    <LawyerLayout
-      brandTitle="LawFlow"
-      brandSubtitle="My Cases"
-    >
-      <div className="space-y-8">
+    <LawyerLayout brandTitle="LawFlow" brandSubtitle="My Cases">
+      <div className="space-y-6">
         {/* Header */}
-        <header>
-          <h1 className="text-3xl font-bold tracking-tight text-gray-900">
-            All <span className="text-[var(--primary)]">Cases</span>
-          </h1>
-          <p className="mt-2 text-[15px] leading-relaxed text-gray-600">
-            View and manage all your active cases with clients.
-          </p>
+        <header className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight text-gray-900">
+              My <span className="text-[var(--primary)]">Cases</span>
+            </h1>
+            <p className="mt-1 text-sm text-gray-600">
+              Every case you've created. Click <span className="font-medium text-gray-800">Open Editor</span> to resume
+              work on the document.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => navigate({ to: "/lawyer-new-case" })}
+            className="inline-flex items-center gap-2 rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-[#024a23]"
+          >
+            <Plus className="h-4 w-4" />
+            New Case
+          </button>
         </header>
 
-        {/* Statistics Cards */}
-        {/* Shows case counts: Active, Pending, Returned (needs attention), and Total */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
-          <div className="bg-white border border-gray-200 rounded-xl p-5">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Active Cases</p>
-                <p className="mt-1 text-3xl font-bold tracking-tight text-green-600">
-                  {activeCasesCount}
-                </p>
-              </div>
-              <CheckCircle className="w-9 h-9 text-green-500" />
-            </div>
-          </div>
-
-          <div className="bg-white border border-gray-200 rounded-xl p-5">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Pending Cases</p>
-                <p className="mt-1 text-3xl font-bold tracking-tight text-blue-600">
-                  {pendingCasesCount}
-                </p>
-              </div>
-              <Clock className="w-9 h-9 text-blue-500" />
-            </div>
-          </div>
-
-          {/* Returned Cases Stat Card */}
-          <div className="bg-white border border-red-200 rounded-xl p-5">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Returned Cases</p>
-                <p className="mt-1 text-3xl font-bold tracking-tight text-red-600">
-                  {returnedCasesCount}
-                </p>
-              </div>
-              <AlertCircle className="w-9 h-9 text-red-500" />
-            </div>
-          </div>
-
-          <div className="bg-white border border-gray-200 rounded-xl p-5">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Total Cases</p>
-                <p className="mt-1 text-3xl font-bold tracking-tight text-purple-600">
-                  {totalCasesCount}
-                </p>
-              </div>
-              <FileText className="w-9 h-9 text-purple-500" />
-            </div>
-          </div>
+        {/* Stat cards — quick at-a-glance status breakdown. */}
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+          <StatCard
+            label="Drafts"
+            value={counts.draft}
+            tone="amber"
+            icon={<Pencil className="w-5 h-5" />}
+          />
+          <StatCard
+            label="Submitted"
+            value={counts.submitted}
+            tone="blue"
+            icon={<Clock className="w-5 h-5" />}
+          />
+          <StatCard
+            label="Returned"
+            value={counts.returned}
+            tone="red"
+            icon={<AlertCircle className="w-5 h-5" />}
+          />
+          <StatCard
+            label="Accepted"
+            value={counts.accepted}
+            tone="emerald"
+            icon={<CheckCircle className="w-5 h-5" />}
+          />
         </div>
 
-        {/* Search and Filter Section */}
-        <div className="space-y-4">
-          {/* Search Bar */}
+        {/* Search + tabs */}
+        <div className="space-y-3 rounded-xl border border-gray-200 bg-white p-4">
           <div className="relative">
-            <Search className="absolute left-3 top-3 w-5 h-5 text-gray-400" />
+            <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
             <input
               type="text"
-              placeholder="Search by case title or client name..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+              placeholder="Search by case title, client, or opposite party…"
+              className="w-full rounded-lg border border-gray-200 bg-gray-50/60 py-2 pl-9 pr-3 text-sm text-gray-900 outline-none focus:border-emerald-400 focus:bg-white focus:ring-2 focus:ring-emerald-100"
             />
           </div>
-
-          {/* Filter */}
           <div className="flex flex-wrap gap-2">
-            {["all", "active", "pending", "on-hold", "returned", "closed"].map(
-              (status) => (
+            {STATUS_TABS.map((tab) => {
+              const active = filterStatus === tab.value;
+              return (
                 <button
-                  key={status}
-                  onClick={() =>
-                    setFilterStatus(
-                      status as
-                      | "all"
-                      | "active"
-                      | "pending"
-                      | "on-hold"
-                      | "returned"
-                      | "closed"
-                    )
-                  }
-                  className={`px-4 py-2 rounded-lg font-medium text-sm transition ${filterStatus === status
-                    ? "bg-green-600 text-white"
-                    : "bg-gray-200 text-gray-700 hover:bg-gray-300"
-                    }`}
+                  key={tab.value}
+                  type="button"
+                  onClick={() => setFilterStatus(tab.value)}
+                  className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
+                    active
+                      ? "bg-[var(--primary)] text-white"
+                      : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                  }`}
                 >
-                  {status.charAt(0).toUpperCase() + status.slice(1)}
+                  {tab.label}
+                  <span
+                    className={`ml-1.5 rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${
+                      active ? "bg-white/20" : "bg-white text-gray-600"
+                    }`}
+                  >
+                    {counts[tab.value]}
+                  </span>
                 </button>
-              )
-            )}
+              );
+            })}
           </div>
         </div>
 
-        {/* Cases List */}
-        <div className="space-y-4">
-          {filteredCases.length > 0 ? (
-            filteredCases.map((caseItem) => (
-              <div
-                key={caseItem.id}
-                className="bg-white border border-gray-200 rounded-lg p-6 hover:shadow-lg transition"
+        {/* States: loading / error / empty / list */}
+        {loading ? (
+          <div className="flex items-center justify-center gap-2 rounded-xl border border-dashed border-gray-200 bg-white p-10 text-sm text-gray-500">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Loading your cases…
+          </div>
+        ) : error ? (
+          <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-center text-sm text-red-700">
+            {error}
+          </div>
+        ) : filteredCases.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-gray-200 bg-white p-10 text-center">
+            <FileText className="mx-auto mb-3 h-10 w-10 text-gray-300" />
+            <p className="text-sm text-gray-600">
+              {cases.length === 0
+                ? "You haven't created any cases yet."
+                : "No cases match your search."}
+            </p>
+            {cases.length === 0 && (
+              <button
+                type="button"
+                onClick={() => navigate({ to: "/lawyer-new-case" })}
+                className="mt-4 inline-flex items-center gap-2 rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-semibold text-white hover:bg-[#024a23]"
               >
-                {/* Returned Case Alert - Displays prominent alert when case is returned by registrar */}
-                {/* Shows the reason for return and the date returned */}
-                {caseItem.status === "returned" && (
-                  <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg flex items-start gap-3">
-                    <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
-                    <div>
-                      <p className="font-semibold text-red-900">Case Returned</p>
-                      <p className="text-red-800 text-sm mt-1">
-                        {caseItem.returnedReason}
-                      </p>
-                      {caseItem.returnedDate && (
-                        <p className="text-red-700 text-xs mt-2">
-                          Returned on: {caseItem.returnedDate}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                {/* Case Header */}
-                <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-6 pb-4 border-b border-gray-200">
-                  <div className="flex-1">
-                    <div className="flex flex-wrap items-center gap-2 mb-2">
-                      <span
-                        className={`px-3 py-1 rounded-full text-xs font-semibold inline-flex items-center gap-1 ${getStatusColor(
-                          caseItem.status
-                        )}`}
-                      >
-                        {getStatusIcon(caseItem.status)}
-                        {caseItem.status.charAt(0).toUpperCase() +
-                          caseItem.status.slice(1)}
-                      </span>
-                      <span
-                        className={`px-3 py-1 rounded-full text-xs font-semibold ${caseItem.caseType === "civil"
-                          ? "bg-blue-100 text-blue-800"
-                          : "bg-purple-100 text-purple-800"
+                <Plus className="h-4 w-4" />
+                Create your first case
+              </button>
+            )}
+          </div>
+        ) : (
+          <ul className="space-y-3">
+            {filteredCases.map((c) => {
+              const badge = getStatusBadge(c.status);
+              return (
+                <li
+                  key={c.id}
+                  className="rounded-xl border border-gray-200 bg-white p-5 transition hover:border-emerald-200 hover:shadow-md"
+                >
+                  <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                    {/* Identity + meta */}
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span
+                          className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${badge.className}`}
+                        >
+                          {badge.icon}
+                          {badge.label}
+                        </span>
+                        <span
+                          className={`rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ${
+                            c.caseCategory === "civil"
+                              ? "bg-emerald-50 text-emerald-700 ring-emerald-100"
+                              : "bg-purple-50 text-purple-700 ring-purple-100"
                           }`}
-                      >
-                        {caseItem.caseType === "civil"
-                          ? "Civil"
-                          : "Family"}{" "}
-                        Case
-                      </span>
-                    </div>
-                    <p className="text-lg text-gray-700 font-medium">
-                      {caseItem.caseTitle}
-                    </p>
-                    <p className="text-gray-600 text-sm mt-1">
-                      {caseItem.description}
-                    </p>
-                  </div>
-                </div>
-
-                {/* Client and Case Details Grid */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6 pb-6 border-b border-gray-200">
-                  {/* Client Info */}
-                  <div>
-                    <div className="flex items-center gap-2 mb-2">
-                      <Users className="w-5 h-5 text-blue-600" />
-                      <p className="text-gray-600 text-sm font-medium">Client</p>
-                    </div>
-                    <p className="text-gray-900 font-semibold ml-7">
-                      {caseItem.clientName}
-                    </p>
-                    <div className="flex items-center gap-2 mt-2 ml-7">
-                      <Phone className="w-4 h-4 text-gray-500" />
-                      <a
-                        href={`tel:${caseItem.clientPhone}`}
-                        className="text-blue-600 hover:underline text-sm"
-                      >
-                        {caseItem.clientPhone}
-                      </a>
-                    </div>
-                    <div className="flex items-center gap-2 mt-1 ml-7">
-                      <Mail className="w-4 h-4 text-gray-500" />
-                      <a
-                        href={`mailto:${caseItem.clientEmail}`}
-                        className="text-blue-600 hover:underline text-sm"
-                      >
-                        {caseItem.clientEmail}
-                      </a>
-                    </div>
-                  </div>
-
-                  {/* Opposite Party */}
-                  <div>
-                    <div className="flex items-center gap-2 mb-2">
-                      <Users className="w-5 h-5 text-orange-600" />
-                      <p className="text-gray-600 text-sm font-medium">
-                        Opposite Party
-                      </p>
-                    </div>
-                    <p className="text-gray-900 font-semibold ml-7">
-                      {caseItem.oppositeParty}
-                    </p>
-                  </div>
-
-                  {/* Next Hearing */}
-                  <div>
-                    <div className="flex items-center gap-2 mb-2">
-                      <Calendar className="w-5 h-5 text-green-600" />
-                      <p className="text-gray-600 text-sm font-medium">
-                        Next Hearing
-                      </p>
-                    </div>
-                    <p className="text-gray-900 font-semibold ml-7">
-                      {caseItem.nextHearing}
-                    </p>
-                  </div>
-
-                  {/* Filed Date */}
-                  <div>
-                    <div className="flex items-center gap-2 mb-2">
-                      <FileText className="w-5 h-5 text-purple-600" />
-                      <p className="text-gray-600 text-sm font-medium">
-                        Filed Date
-                      </p>
-                    </div>
-                    <p className="text-gray-900 font-semibold ml-7">
-                      {caseItem.filedDate}
-                    </p>
-                  </div>
-                </div>
-
-                {/* Progress and Financial Info */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 mb-6">
-                  {/* Progress Bar */}
-                  <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <p className="text-gray-600 text-sm font-medium">
-                        Case Progress
-                      </p>
-                      <p className="text-gray-900 font-semibold">
-                        {caseItem.progress}%
-                      </p>
-                    </div>
-                    <div className="w-full bg-gray-200 rounded-full h-2.5">
-                      <div
-                        className="bg-green-600 h-2.5 rounded-full transition-all"
-                        style={{ width: `${caseItem.progress}%` }}
-                      ></div>
-                    </div>
-                    <p className="text-gray-500 text-xs mt-2">
-                      {caseItem.documents} documents uploaded
-                    </p>
-                  </div>
-
-                  {/* Financial Info */}
-                  <div>
-                    <div className="flex items-center gap-2 mb-3">
-                      <DollarSign className="w-5 h-5 text-green-600" />
-                      <p className="text-gray-600 text-sm font-medium">
-                        Fee Status
-                      </p>
-                    </div>
-                    <div className="ml-7 space-y-2">
-                      <div className="flex justify-between">
-                        <span className="text-gray-600 text-sm">Total Fee:</span>
-                        <span className="text-gray-900 font-semibold">
-                          PKR {caseItem.totalFee.toLocaleString()}
+                        >
+                          {c.caseCategory === "civil" ? "Civil" : "Family"}
+                        </span>
+                        <span className="rounded-full bg-gray-50 px-2 py-0.5 text-[11px] font-medium text-gray-600 ring-1 ring-gray-200">
+                          {c.caseTypeName}
                         </span>
                       </div>
-                      <div className="flex justify-between">
-                        <span className="text-gray-600 text-sm">Paid:</span>
-                        <span className="text-green-600 font-semibold">
-                          PKR {caseItem.paidAmount.toLocaleString()}
+                      <h3 className="mt-2 truncate text-base font-semibold text-gray-900">
+                        {c.title}
+                      </h3>
+                      {c.description ? (
+                        <p className="mt-1 line-clamp-2 text-sm text-gray-600">
+                          {c.description}
+                        </p>
+                      ) : null}
+
+                      <div className="mt-3 grid gap-2 text-xs text-gray-600 sm:grid-cols-2 lg:grid-cols-3">
+                        <span className="inline-flex items-center gap-1.5">
+                          <Users className="h-3.5 w-3.5 text-gray-400" />
+                          <span className="font-medium text-gray-700">{c.clientName}</span>
+                          {c.clientEmail ? (
+                            <span className="ml-1 inline-flex items-center gap-0.5 text-gray-400">
+                              <Mail className="h-3 w-3" />
+                              {c.clientEmail}
+                            </span>
+                          ) : null}
+                        </span>
+                        {c.clientPhone ? (
+                          <span className="inline-flex items-center gap-1.5">
+                            <Phone className="h-3.5 w-3.5 text-gray-400" />
+                            {c.clientPhone}
+                          </span>
+                        ) : null}
+                        <span className="inline-flex items-center gap-1.5">
+                          <Users className="h-3.5 w-3.5 text-gray-400" />
+                          <span className="text-gray-500">vs.</span>
+                          <span className="font-medium text-gray-700">
+                            {c.oppositePartyName}
+                          </span>
                         </span>
                       </div>
-                      <div className="flex justify-between pt-2 border-t border-gray-200">
-                        <span className="text-gray-600 text-sm font-medium">
-                          Pending:
-                        </span>
-                        <span className="text-orange-600 font-bold">
-                          PKR{" "}
-                          {(caseItem.totalFee - caseItem.paidAmount).toLocaleString()}
-                        </span>
+
+                      <div className="mt-2 text-[11px] text-gray-500">
+                        Created {formatDate(c.createdAt)} · Last edited{" "}
+                        {formatDate(c.updatedAt)}
                       </div>
                     </div>
-                  </div>
-                </div>
 
-                {/* Action Buttons */}
-                <div className="flex flex-wrap gap-3">
-                  <button
-                    onClick={() => navigate({ to: `/lawyer-case-editor/${caseItem.id}` })}
-                    className="px-4 py-2 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 transition-colors text-sm flex items-center gap-2"
-                  >
-                    <FileText className="w-4 h-4" />
-                    Prepare Documents
-                  </button>
-                  <button className="px-4 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors text-sm flex items-center gap-2">
-                    <Users className="w-4 h-4" />
-                    View Details
-                  </button>
-                  <button
-                    onClick={() => navigate({ to: `/lawyer-submit-case/${caseItem.id}` })}
-                    className="px-4 py-2 bg-[#01411C] text-white rounded-lg font-medium hover:bg-[#024a23] transition-colors text-sm flex items-center gap-2"
-                  >
-                    <UploadCloud className="w-4 h-4" />
-                    Submit to Registrar
-                  </button>
-                </div>
-              </div>
-            ))
-          ) : (
-            <div className="bg-white border border-gray-200 rounded-lg p-12 text-center">
-              <FileText className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-              <p className="text-gray-600 text-lg">
-                No cases found matching your search.
-              </p>
-            </div>
-          )}
-        </div>
+                    {/* Actions */}
+                    <div className="flex flex-shrink-0 flex-col gap-2 md:w-48">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          navigate({ to: `/lawyer-case-editor/${c.id}` })
+                        }
+                        className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-semibold text-white hover:bg-[#024a23]"
+                      >
+                        <FileText className="h-4 w-4" />
+                        Open Editor
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          navigate({ to: `/lawyer-submit-case/${c.id}` })
+                        }
+                        className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700"
+                      >
+                        <UploadCloud className="h-4 w-4" />
+                        Submit
+                      </button>
+                    </div>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
       </div>
     </LawyerLayout>
+  );
+}
+
+// Small stat card — same shape across the four boxes. Tone drives
+// the icon + value color so each status has its own visual weight.
+function StatCard({
+  label,
+  value,
+  tone,
+  icon,
+}: {
+  label: string;
+  value: number;
+  tone: "amber" | "blue" | "red" | "emerald";
+  icon: React.ReactNode;
+}) {
+  const toneMap = {
+    amber: { value: "text-amber-700", icon: "text-amber-500", ring: "border-amber-100" },
+    blue: { value: "text-blue-700", icon: "text-blue-500", ring: "border-blue-100" },
+    red: { value: "text-red-700", icon: "text-red-500", ring: "border-red-100" },
+    emerald: { value: "text-emerald-700", icon: "text-emerald-500", ring: "border-emerald-100" },
+  }[tone];
+
+  return (
+    <div className={`rounded-xl border ${toneMap.ring} bg-white p-4`}>
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">
+            {label}
+          </p>
+          <p className={`mt-1 text-2xl font-bold ${toneMap.value}`}>{value}</p>
+        </div>
+        <div className={`flex-shrink-0 ${toneMap.icon}`}>{icon}</div>
+      </div>
+    </div>
   );
 }

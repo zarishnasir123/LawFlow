@@ -219,6 +219,64 @@ export async function listCasesForLawyer({ lawyerUserId }) {
   return result.rows.map(mapCase);
 }
 
+// Cases the lawyer owns where the background PDF compile has finished
+// and stamped a signed_pdf_storage_path. Drives the dedicated "Signed
+// Documents" tracker on /lawyer-signatures so the lawyer can preview /
+// download every finalised artifact in one place — separate from the
+// general /lawyer-cases listing (which mixes drafts, submissions,
+// and in-progress work).
+//
+// Each row also carries `signed_by_roles` — the distinct set of signer
+// roles whose signature_request reached status='signed'. The frontend
+// uses it to render a "Client + Lawyer" / "Client only" / "Lawyer only"
+// badge so the lawyer can tell apart self-signed artifacts from
+// counter-signed ones at a glance.
+export async function listSignedCasesForLawyer({ lawyerUserId }) {
+  const result = await pool.query(
+    `SELECT
+      cases.id,
+      cases.lawyer_user_id,
+      cases.case_type_id,
+      case_types.code           AS case_type_code,
+      case_types.display_name   AS case_type_display_name,
+      case_types.category       AS case_type_category,
+      case_types.governing_law  AS case_type_governing_law,
+      cases.title,
+      cases.description,
+      cases.client_name,
+      cases.client_email,
+      cases.client_phone,
+      cases.opposite_party_name,
+      cases.edited_html,
+      cases.signed_pdf_storage_path,
+      cases.signed_pdf_generated_at,
+      cases.status,
+      cases.created_at,
+      cases.updated_at,
+      cases.submitted_at,
+      COALESCE(roles.signed_by_roles, ARRAY[]::text[]) AS signed_by_roles
+    FROM cases
+    JOIN case_types ON case_types.id = cases.case_type_id
+    LEFT JOIN LATERAL (
+      SELECT ARRAY_AGG(DISTINCT signer_role) AS signed_by_roles
+      FROM signature_requests
+      WHERE signature_requests.case_id = cases.id
+        AND signature_requests.status = 'signed'
+    ) roles ON TRUE
+    WHERE cases.lawyer_user_id = $1
+      AND cases.signed_pdf_storage_path IS NOT NULL
+    ORDER BY cases.signed_pdf_generated_at DESC NULLS LAST`,
+    [lawyerUserId]
+  );
+
+  return result.rows.map((row) => ({
+    ...mapCase(row),
+    signedByRoles: Array.isArray(row.signed_by_roles)
+      ? row.signed_by_roles.filter((r) => r === "client" || r === "lawyer")
+      : []
+  }));
+}
+
 export async function getCaseForLawyer({ caseId, lawyerUserId }) {
   const result = await pool.query(
     `${selectCaseWithType()}

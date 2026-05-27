@@ -10,6 +10,14 @@ const MAX_HTML_BYTES = 2 * 1024 * 1024;
 // using the sign endpoint as a binary blob upload channel.
 const MAX_SIGNATURE_BYTES = 1024 * 1024;
 
+// Per-page PNG capture from html2canvas at submit time. An A4 page at
+// devicePixelRatio=2 lands around 400–800 KB; 3 MB is generous headroom
+// for high-DPI captures with embedded images, while still bounding the
+// HTTP body for a typical 1-page request well under the JSON parser's
+// limit. Caps applied per element in the array AND on the array length.
+const MAX_PAGE_IMAGE_BYTES = 3 * 1024 * 1024;
+const MAX_PAGES_PER_SUBMIT = 50;
+
 const uuidParam = (name) =>
   param(name).isUUID().withMessage(`${name} must be a valid UUID`);
 
@@ -67,28 +75,24 @@ export const submitSignatureValidator = [
     .withMessage("signatureImage must be a PNG/JPEG data URL")
     .isLength({ max: MAX_SIGNATURE_BYTES })
     .withMessage("Signature image is too large"),
-  // Placement metadata captured when the signer drag-dropped their
-  // signature on the page. Optional: a signer can submit without a
-  // placement (e.g., they typed but didn't drag), in which case the
-  // PDF compile uses a default position. Stored values are FRACTIONS
-  // (0..1) of the page so they survive any rendered page-size scale.
-  body("signaturePlacement").optional({ nullable: true }).isObject(),
-  body("signaturePlacement.pageIndex")
+  // Per-page rendered captures the signer's browser produced after
+  // placing the signature. The compiler uses these directly to build
+  // the final PDF — see signatures.compiler.js.
+  body("signedPages")
     .optional({ nullable: true })
+    .isArray({ max: MAX_PAGES_PER_SUBMIT })
+    .withMessage(
+      `signedPages must be an array of at most ${MAX_PAGES_PER_SUBMIT} items`
+    ),
+  body("signedPages.*.pageIndex")
     .isInt({ min: 0 })
-    .withMessage("signaturePlacement.pageIndex must be a non-negative integer"),
-  body("signaturePlacement.xPct")
-    .optional({ nullable: true })
-    .isFloat({ min: 0, max: 1 }),
-  body("signaturePlacement.yPct")
-    .optional({ nullable: true })
-    .isFloat({ min: 0, max: 1 }),
-  body("signaturePlacement.widthPct")
-    .optional({ nullable: true })
-    .isFloat({ min: 0, max: 1 }),
-  body("signaturePlacement.heightPct")
-    .optional({ nullable: true })
-    .isFloat({ min: 0, max: 1 }),
+    .withMessage("signedPages[].pageIndex must be a non-negative integer"),
+  body("signedPages.*.imageDataUrl")
+    .isString()
+    .matches(/^data:image\/(png|jpeg|jpg);base64,/)
+    .withMessage("signedPages[].imageDataUrl must be a PNG/JPEG data URL")
+    .isLength({ max: MAX_PAGE_IMAGE_BYTES })
+    .withMessage("signedPages[].imageDataUrl is too large"),
 ];
 
 // ===== Lawyer-side: save edited HTML state =====

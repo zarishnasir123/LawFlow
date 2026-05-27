@@ -394,10 +394,11 @@ CREATE TABLE cases (
   -- HTML, so a single column captures the entire edit state.
   edited_html     TEXT,
 
-  -- Final compiled signed PDF metadata. The Phase 2 compiler renders
-  -- the edited_html via puppeteer, then pdf-lib stamps the captured
-  -- signature PNGs at each request's signature_placement on the right
-  -- page. The PDF itself lives in Supabase Storage (private bucket
+  -- Final compiled signed PDF metadata. The compiler embeds each
+  -- signer's client-rendered page PNGs (signature_requests.signed_page_images)
+  -- into a single PDF via pdf-lib. No server-side HTML rendering, so
+  -- the artifact is byte-identical to what the signer reviewed in the
+  -- browser. The PDF itself lives in Supabase Storage (private bucket
   -- `case-signed-pdfs`); we only store the object key + a generation
   -- timestamp here. Path is never returned to the client — lawyer
   -- downloads via a short-lived signed URL minted on demand.
@@ -503,8 +504,16 @@ CREATE TABLE signature_requests (
 
   -- Captured signature image (base64 PNG data URL from the signing
   -- canvas — either typed-name-on-canvas or a user-uploaded PNG/JPG
-  -- converted to data URL). NULL until the signer signs.
+  -- converted to data URL). Stored as an audit record of what the
+  -- signer drew. NULL until the signer signs.
   signature_image            TEXT,
+  -- Per-page PNG captures uploaded by the signer's browser at submit
+  -- time: [{ pageIndex, imageDataUrl }, ...]. These ARE the rendered
+  -- bytes of the assigned pages with the signature already drawn on
+  -- them — the compiler embeds them verbatim into the final signed
+  -- PDF, so there's no server-side re-render to drift away from what
+  -- the signer actually saw and approved.
+  signed_page_images         JSONB,
   signed_at                  TIMESTAMP,
 
   status                     VARCHAR(30) NOT NULL DEFAULT 'pending'

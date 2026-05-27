@@ -1,6 +1,12 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { CalendarClock, FileSignature, Loader2 } from "lucide-react";
+import {
+  CalendarClock,
+  ChevronDown,
+  FileSignature,
+  History,
+  Loader2,
+} from "lucide-react";
 
 import ClientLayout from "../components/ClientLayout";
 import Card from "../../../shared/components/dashboard/Card";
@@ -54,20 +60,49 @@ function formatDateOnly(value?: string) {
 //   - not expired
 // Sourced live from /api/me/signature-requests; the row's "Open" button
 // drops the client into the in-app signing viewer.
+// Translate a historical row's status into a human-friendly verb +
+// timeline-dot color. Kept inline because the mapping is unique to
+// the recipient's audit log (the lawyer-side panel only sees
+// cancelled/expired in its history bucket).
+function describeHistoryAction(status: ApiPendingSignature["status"]) {
+  switch (status) {
+    case "signed":
+      return { verb: "You signed", dotColor: "bg-emerald-400" };
+    case "cancelled":
+      return { verb: "Lawyer withdrew", dotColor: "bg-red-400" };
+    case "expired":
+      return { verb: "Expired", dotColor: "bg-gray-300" };
+    default:
+      return { verb: "Closed", dotColor: "bg-gray-300" };
+  }
+}
+
 export default function CaseTracking() {
   const navigate = useNavigate();
   const [pendingRequests, setPendingRequests] = useState<ApiPendingSignature[]>([]);
+  const [historyRequests, setHistoryRequests] = useState<ApiPendingSignature[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Activity log starts collapsed — mirrors the lawyer-side panel.
+  // Clients only need to dig into history occasionally; the active
+  // queue is the primary affordance.
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     setError(null);
-    mySignaturesApi
-      .listPending()
-      .then((rows) => {
-        if (!cancelled) setPendingRequests(rows);
+    // Fetch pending + history in parallel — same auth, two cheap
+    // queries, single render once both land. A history-fetch failure
+    // alone doesn't block the pending list (caught inside Promise.all).
+    Promise.all([
+      mySignaturesApi.listPending(),
+      mySignaturesApi.listHistory().catch(() => [] as ApiPendingSignature[]),
+    ])
+      .then(([pending, history]) => {
+        if (cancelled) return;
+        setPendingRequests(pending);
+        setHistoryRequests(history);
       })
       .catch((err) => {
         if (!cancelled) setError(getMySignaturesErrorMessage(err));
@@ -168,6 +203,78 @@ export default function CaseTracking() {
             </div>
           )}
         </Card>
+
+        {/* Activity log — collapsible, lives below the active queue.
+            Shows withdrawn / expired / signed rows so the recipient
+            can answer "did the lawyer pull that back?" or "did I
+            already sign that?" without leaving the dashboard. */}
+        {historyRequests.length > 0 && (
+          <Card className="border border-gray-200 bg-white p-5 shadow-sm">
+            <button
+              type="button"
+              onClick={() => setHistoryOpen((prev) => !prev)}
+              aria-expanded={historyOpen}
+              className="flex w-full items-center justify-between rounded-md px-1 py-1 text-left transition-colors hover:bg-gray-50"
+            >
+              <span className="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-gray-500">
+                <History className="h-3.5 w-3.5" />
+                Activity log
+                <span className="rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] font-semibold text-gray-600">
+                  {historyRequests.length}
+                </span>
+              </span>
+              <ChevronDown
+                className={`h-3.5 w-3.5 text-gray-400 transition-transform ${
+                  historyOpen ? "rotate-180" : ""
+                }`}
+              />
+            </button>
+
+            {historyOpen && (
+              <ul className="mt-3 space-y-1.5">
+                {historyRequests.map((req) => {
+                  const { verb, dotColor } = describeHistoryAction(req.status);
+                  const pageCount = req.pageIndices?.length || 0;
+                  // Prefer the most recent state-change timestamp so
+                  // the row reads naturally ("Lawyer withdrew on …",
+                  // "You signed on …"). signedAt only exists for
+                  // status='signed'; updatedAt covers the rest.
+                  const stampSource =
+                    req.status === "signed" && req.signedAt
+                      ? req.signedAt
+                      : req.updatedAt || req.createdAt;
+                  return (
+                    <li
+                      key={req.id}
+                      className="flex items-start gap-2 rounded-md px-2 py-2 text-[12px] text-gray-600 hover:bg-gray-50"
+                    >
+                      <span
+                        aria-hidden
+                        className={`mt-1.5 inline-block h-1.5 w-1.5 flex-shrink-0 rounded-full ${dotColor}`}
+                      />
+                      <div className="min-w-0 flex-1 leading-relaxed">
+                        <p>
+                          <span className="font-semibold text-gray-700">
+                            {formatDateOnly(stampSource)}
+                          </span>{" "}
+                          · {verb}{" "}
+                          <span className="font-medium text-gray-800">
+                            {req.caseTitle}
+                          </span>
+                        </p>
+                        <p className="text-[11px] text-gray-500">
+                          {pageCount > 0
+                            ? `${pageCount} page${pageCount === 1 ? "" : "s"} · ${req.requestingLawyerName}`
+                            : req.requestingLawyerName}
+                        </p>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </Card>
+        )}
       </div>
     </ClientLayout>
   );

@@ -281,10 +281,10 @@ export default function LawyerCaseFilingSubmissionPage() {
 
   // Pull the backend case record so we can detect whether the signing
   // workflow finished (signedPdfStoragePath is set on the row only after
-  // every signature_request reaches status='signed' AND the puppeteer +
-  // pdf-lib compile job posts the artifact to Supabase Storage). The
-  // editor invalidates this query on caseFullySigned so by the time the
-  // lawyer lands here, the field is fresh.
+  // every signature_request reaches status='signed' AND the pdf-lib
+  // compile job posts the artifact to Supabase Storage). The editor
+  // invalidates this query on caseFullySigned so by the time the lawyer
+  // lands here, the field is fresh.
   const { data: backendCase } = useQuery({
     queryKey: ["case", selectedCaseId],
     queryFn: () => casesApi.getCase(selectedCaseId),

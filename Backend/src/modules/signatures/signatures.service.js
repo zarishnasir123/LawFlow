@@ -18,7 +18,7 @@ const DEFAULT_TTL_DAYS = 14;
 // Mapping
 // =====================================================================
 
-function mapSignatureRequest(row, { includeSnapshot = false, includeImage = false } = {}) {
+function mapSignatureRequest(row, { includeSnapshot = false } = {}) {
   if (!row) return null;
   return {
     id: row.id,
@@ -29,19 +29,13 @@ function mapSignatureRequest(row, { includeSnapshot = false, includeImage = fals
     caseBatchId: row.case_batch_id,
     pageIndices: row.page_indices,
     signedAt: row.signed_at,
-    // Position metadata captured when the signer drag-placed their
-    // signature on the page. Stored as percentages of the page
-    // dimensions so Phase 2 PDF compile can scale to any output size.
-    signaturePlacement: row.signature_placement,
     status: row.status,
     expiresAt: row.expires_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
-    // Big payloads are opt-in. List endpoints skip them; the per-row
-    // signing view loads the snapshot, and only the lawyer's final
-    // compile step needs the signature image bytes alongside the row.
+    // documentHtmlSnapshot is opt-in: list endpoints skip the
+    // multi-KB HTML payload; only the per-row signing view loads it.
     ...(includeSnapshot ? { documentHtmlSnapshot: row.document_html_snapshot } : {}),
-    ...(includeImage ? { signatureImage: row.signature_image } : {}),
   };
 }
 
@@ -338,18 +332,8 @@ export async function listSignatureRequestsForCase({ caseId, lawyerUserId }) {
     [caseId]
   );
 
-  // Include the signature image bytes ONLY on signed rows — that's
-  // the data the editor's SignatureOverlayLayer needs to render each
-  // signature on the page where the signer placed it. Pending /
-  // expired / cancelled rows have no image to ship, so we don't pay
-  // the payload cost for them. Mapper still gates on
-  // includeImage flag → the rows we mark get the field; the rest
-  // serialize without it.
   return result.rows.map((row) =>
-    mapSignatureRequest(
-      { ...row, status: effectiveStatus(row) },
-      { includeImage: row.status === "signed" }
-    )
+    mapSignatureRequest({ ...row, status: effectiveStatus(row) })
   );
 }
 
@@ -371,6 +355,42 @@ export async function listPendingForRecipient({ userId }) {
        AND sr.status = 'pending'
        AND sr.expires_at > NOW()
      ORDER BY sr.created_at DESC`,
+    [userId]
+  );
+
+  return result.rows.map((row) => ({
+    ...mapSignatureRequest(row),
+    caseTitle: row.case_title,
+    requestingLawyerName:
+      [row.creator_first_name, row.creator_last_name]
+        .filter(Boolean)
+        .join(" ")
+        .trim() || row.creator_email,
+  }));
+}
+
+// Historical signature requests for the recipient: cancelled (lawyer
+// withdrew), expired (past expires_at while still pending), and
+// signed (already completed). Powers the client-side audit log so a
+// recipient can answer "did the lawyer pull that back?" without
+// having to dig through email. Same shape as listPendingForRecipient
+// so the frontend can render both lists with the same row component.
+export async function listHistoryForRecipient({ userId }) {
+  const result = await pool.query(
+    `SELECT sr.*,
+            c.title AS case_title,
+            creator.email AS creator_email,
+            creator.first_name AS creator_first_name,
+            creator.last_name AS creator_last_name
+     FROM signature_requests sr
+     JOIN cases c ON c.id = sr.case_id
+     JOIN users creator ON creator.id = sr.created_by_user_id
+     WHERE sr.recipient_user_id = $1
+       AND (
+         sr.status IN ('cancelled', 'signed')
+         OR (sr.status = 'pending' AND sr.expires_at <= NOW())
+       )
+     ORDER BY sr.updated_at DESC`,
     [userId]
   );
 
@@ -415,9 +435,65 @@ export async function getSignatureRequestForSigner({ requestId, userId }) {
   if (status === "expired") throw new ApiError(410, "This signature request has expired");
   if (status === "cancelled") throw new ApiError(410, "This signature request was cancelled");
 
+  // Pull prior signers' page captures for the SAME case so the viewer
+  // can render them as the page background. Without this, a co-page
+  // scenario (e.g. lawyer signing the same page client already signed)
+  // would lose the prior signature: each signer captures only what
+  // they saw, and the compiler picks the freshest capture per page —
+  // so the later signer's "fresh" PNG would lack the earlier signature.
+  //
+  // By showing the earlier capture beneath the new signer's drop area,
+  // the later signer's capture naturally contains both signatures, and
+  // the compiler's "freshest wins" logic produces the correct composite.
+  //
+  // Filter to only the page indices THIS signer is responsible for
+  // (intersection with their page_indices array) so we don't ship
+  // captures the signer doesn't need.
+  let priorSignedPages = [];
+  const myPageIndices = Array.isArray(row.page_indices) ? row.page_indices : [];
+  if (myPageIndices.length > 0) {
+    const priorRows = await pool.query(
+      `SELECT signed_page_images, signed_at
+       FROM signature_requests
+       WHERE case_id = $1
+         AND id <> $2
+         AND status = 'signed'
+         AND signed_page_images IS NOT NULL
+       ORDER BY signed_at DESC`,
+      [row.case_id, requestId]
+    );
+    // First-seen-wins per pageIndex → newest capture for each page
+    // because the rows are signed_at DESC.
+    const seenIndices = new Set();
+    for (const r of priorRows.rows) {
+      const captures =
+        typeof r.signed_page_images === "string"
+          ? JSON.parse(r.signed_page_images)
+          : r.signed_page_images;
+      if (!Array.isArray(captures)) continue;
+      for (const cap of captures) {
+        if (
+          !cap ||
+          typeof cap.pageIndex !== "number" ||
+          typeof cap.imageDataUrl !== "string"
+        ) {
+          continue;
+        }
+        if (!myPageIndices.includes(cap.pageIndex)) continue;
+        if (seenIndices.has(cap.pageIndex)) continue;
+        seenIndices.add(cap.pageIndex);
+        priorSignedPages.push({
+          pageIndex: cap.pageIndex,
+          imageDataUrl: cap.imageDataUrl,
+        });
+      }
+    }
+  }
+
   return {
     ...mapSignatureRequest(row, { includeSnapshot: true }),
     caseTitle: row.case_title,
+    priorSignedPages,
   };
 }
 
@@ -432,7 +508,7 @@ export async function submitSignature({
   requestId,
   userId,
   signatureImage,
-  signaturePlacement,
+  signedPages,
 }) {
   if (!signatureImage || typeof signatureImage !== "string") {
     throw new ApiError(400, "Signature image is required");
@@ -458,24 +534,26 @@ export async function submitSignature({
     throw new ApiError(409, "This signature request has already been signed");
   }
 
-  // signature_placement is JSONB; stringify so node-postgres serializes
-  // it correctly. Null is fine — Phase 2 compile falls back to a default
-  // bottom-right slot if no placement is captured.
-  const placementJson =
-    signaturePlacement && typeof signaturePlacement === "object"
-      ? JSON.stringify(signaturePlacement)
+  // signed_pages is the array of per-page PNG captures the signer's
+  // browser produced AFTER drag-placing the signature. The compiler
+  // embeds these verbatim into the final PDF (see signatures.compiler.js
+  // for the rationale — server-side re-rendering kept drifting layout
+  // away from what the signer approved).
+  const signedPagesJson =
+    Array.isArray(signedPages) && signedPages.length > 0
+      ? JSON.stringify(signedPages)
       : null;
 
   const updated = await pool.query(
     `UPDATE signature_requests
      SET signature_image = $1,
-         signature_placement = $2,
+         signed_page_images = $2,
          signed_at = NOW(),
          status = 'signed',
          updated_at = NOW()
      WHERE id = $3
      RETURNING *`,
-    [signatureImage, placementJson, requestId]
+    [signatureImage, signedPagesJson, requestId]
   );
 
   const updatedRow = updated.rows[0];
@@ -533,13 +611,13 @@ export async function submitSignature({
 
   // If this submission tips the case over the line — every required
   // signature now collected — fire the PDF compile in the BACKGROUND.
-  // Compile is puppeteer + pdf-lib + Supabase upload, which takes
-  // 2-4 seconds. We don't make the signer wait, and crucially we
-  // don't tie up the backend's event loop while the lawyer's editor
-  // is fetching the case in parallel — that race was the cause of
-  // the "Untitled document / No document loaded" state in the editor
-  // after sign-off. The 15s poll on the lawyer's editor picks up
-  // signed_pdf_storage_path once compile finishes.
+  // Compile is pdf-lib (embedding the signer-captured page PNGs) +
+  // Supabase upload; takes <1 second. We don't make the signer wait,
+  // and crucially we don't tie up the backend's event loop while the
+  // lawyer's editor is fetching the case in parallel — that race was
+  // the cause of the "Untitled document / No document loaded" state
+  // in the editor after sign-off. The 15s poll on the lawyer's editor
+  // picks up signed_pdf_storage_path once compile finishes.
   //
   // setImmediate is the same pattern email sends use (see
   // queueEmailTask in email.service.js) — defers to the next

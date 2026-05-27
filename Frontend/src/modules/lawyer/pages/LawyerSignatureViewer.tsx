@@ -1,8 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import {
+  CalendarClock,
   CheckCircle2,
+  FileSignature,
+  GripVertical,
   Loader2,
+  MousePointer2,
   Pencil,
   Type as TypeIcon,
   Upload,
@@ -13,10 +17,13 @@ import {
   filterSnapshotToPages,
   mySignaturesApi,
   type ApiSignatureRequestDetail,
-  type SignaturePlacement,
   getMySignaturesErrorMessage,
 } from "../../../shared/api/mySignatures.api";
 import { mountFloatingImage } from "../utils/floatingImage";
+import {
+  applyPriorCapturesToHost,
+  captureSignedPages,
+} from "../utils/capturePages";
 
 // Lawyer self-signing viewer (FE-7) — see ClientSignatureViewer for the
 // architecture comment. Same direct-render + floating-image flow,
@@ -84,6 +91,11 @@ export default function LawyerSignatureViewer() {
     "dancing"
   );
   const [signatureDataUrl, setSignatureDataUrl] = useState<string | null>(null);
+  // Drag-from-sidebar UX state. isDragOver drives the drop-zone
+  // overlay; hasPlaced gates the submit button so the lawyer can't
+  // submit a signature that never landed on a page.
+  const [isDragOver, setIsDragOver] = useState(false);
+  const [hasPlaced, setHasPlaced] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [signedSuccessfully, setSignedSuccessfully] = useState(false);
 
@@ -127,12 +139,36 @@ export default function LawyerSignatureViewer() {
     const host = documentHostRef.current;
     if (!host || !filteredSnapshot) return;
     const parsed = new DOMParser().parseFromString(filteredSnapshot, "text/html");
+    // Strip bare `body { ... }` rules from the snapshot's stylesheets
+    // before injection. The snapshot's viewer-framing CSS sets
+    // `body { padding: 24px }` for standalone-iframe rendering, but
+    // here we're injecting INTO a host div, so that rule would leak
+    // onto our app's body and push the green header down with a 24px
+    // gap above it. The negative-character class on the regex avoids
+    // matching `.body-*` classes or selectors like `tbody`.
     const styleHtml = Array.from(parsed.head.querySelectorAll("style"))
       .map((s) => s.outerHTML)
-      .join("\n");
+      .join("\n")
+      .replace(/(^|[^.#:\w-])body\s*\{[^}]*\}/g, "$1");
     const bodyHtml = parsed.body.innerHTML;
     host.innerHTML = `${styleHtml}${bodyHtml}`;
-  }, [filteredSnapshot]);
+
+    // Multi-signer co-page support: if another signer already captured
+    // one of these pages, render their capture as the page background
+    // so this signer's fresh capture composites the prior signature in
+    // automatically. See applyPriorCapturesToHost for the mechanism.
+    if (
+      request?.priorSignedPages &&
+      request.priorSignedPages.length > 0 &&
+      request.pageIndices
+    ) {
+      applyPriorCapturesToHost(
+        host,
+        request.pageIndices,
+        request.priorSignedPages
+      );
+    }
+  }, [filteredSnapshot, request?.priorSignedPages, request?.pageIndices]);
 
   useEffect(() => {
     if (mode !== "type") return;
@@ -160,34 +196,76 @@ export default function LawyerSignatureViewer() {
     };
   }, [mode, typedName, fontId]);
 
+  // When the signature data URL changes (re-type or new upload),
+  // drop any existing placement so the lawyer re-drags the new
+  // preview onto a page. Mirrors the ClientSignatureViewer flow —
+  // explicit placement beats surprise auto-mount.
   useEffect(() => {
     if (!signatureDataUrl) return;
-    const host = documentHostRef.current;
-    if (!host) return;
-    const firstPage = host.querySelector<HTMLElement>(
-      ".docx-wrapper > section.docx"
-    );
-    if (!firstPage) return;
+    if (floatingRef.current && floatingRef.current.parentElement) {
+      floatingRef.current.remove();
+      floatingRef.current = null;
+      setHasPlaced(false);
+    }
+  }, [signatureDataUrl]);
+
+  // Drag-from-sidebar handlers. Custom MIME type isolates from
+  // OS-level image drags (a JPEG dragged off the desktop won't
+  // accidentally land a stray image on the document).
+  const handlePreviewDragStart = (e: React.DragEvent<HTMLImageElement>) => {
+    if (!signatureDataUrl) {
+      e.preventDefault();
+      return;
+    }
+    e.dataTransfer.setData("application/x-lawflow-signature", "1");
+    e.dataTransfer.effectAllowed = "copy";
+  };
+
+  const handleDocumentDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    if (!signatureDataUrl) return;
+    if (!e.dataTransfer.types.includes("application/x-lawflow-signature")) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "copy";
+    if (!isDragOver) setIsDragOver(true);
+  };
+
+  const handleDocumentDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+    if (!isDragOver) return;
+    const next = e.relatedTarget as Node | null;
+    if (!next || !e.currentTarget.contains(next)) setIsDragOver(false);
+  };
+
+  const handleDocumentDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    setIsDragOver(false);
+    if (!signatureDataUrl) return;
+    if (!e.dataTransfer.types.includes("application/x-lawflow-signature")) return;
+    e.preventDefault();
+
+    const elementAtPoint = document.elementFromPoint(e.clientX, e.clientY);
+    const page = elementAtPoint?.closest("section.docx") as HTMLElement | null;
+    if (!page) return;
+
+    const pageRect = page.getBoundingClientRect();
+    const defaultWidth = Math.min(260, pageRect.width * 0.4);
+    const defaultHeight = defaultWidth * (140 / 600); // canvas aspect (600x140)
+    const left = Math.max(0, e.clientX - pageRect.left - defaultWidth / 2);
+    const top = Math.max(0, e.clientY - pageRect.top - defaultHeight / 2);
 
     if (floatingRef.current && floatingRef.current.parentElement) {
       floatingRef.current.remove();
       floatingRef.current = null;
     }
 
-    const pageRect = firstPage.getBoundingClientRect();
-    const defaultWidth = Math.min(260, pageRect.width * 0.4);
-    const left = Math.max(0, pageRect.width - defaultWidth - 60);
-    const top = Math.max(0, pageRect.height - 120);
-
     floatingRef.current = mountFloatingImage({
       src: signatureDataUrl,
       alt: "Signature",
-      page: firstPage,
+      page,
       left,
       top,
       width: defaultWidth,
     });
-  }, [signatureDataUrl]);
+    setHasPlaced(true);
+  };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -205,44 +283,23 @@ export default function LawyerSignatureViewer() {
     }
   };
 
-  const computePlacement = (): SignaturePlacement | null => {
-    if (!floatingRef.current || !request) return null;
-    const wrapper = floatingRef.current;
-    const page = wrapper.parentElement as HTMLElement | null;
-    if (!page) return null;
-    const pageWidth = page.clientWidth || 1;
-    const pageHeight = page.clientHeight || 1;
-    const left = parseFloat(wrapper.style.left) || 0;
-    const top = parseFloat(wrapper.style.top) || 0;
-    const width = wrapper.offsetWidth;
-    const height = wrapper.offsetHeight;
-    const host = documentHostRef.current;
-    if (!host) return null;
-    const sections = Array.from(
-      host.querySelectorAll<HTMLElement>(".docx-wrapper > section.docx")
-    );
-    const sectionIdx = sections.indexOf(page);
-    if (sectionIdx < 0) return null;
-    const absolutePageIndex =
-      request.pageIndices && request.pageIndices[sectionIdx] !== undefined
-        ? request.pageIndices[sectionIdx]
-        : sectionIdx;
-    return {
-      pageIndex: absolutePageIndex,
-      xPct: left / pageWidth,
-      yPct: top / pageHeight,
-      widthPct: width / pageWidth,
-      heightPct: height / pageHeight,
-    };
-  };
-
   const handleSubmit = async () => {
     if (!requestId || !signatureDataUrl) return;
-    const placement = computePlacement();
     setSubmitting(true);
     setError(null);
     try {
-      await mySignaturesApi.submit(requestId, signatureDataUrl, placement);
+      // Capture each assigned page AS RENDERED, with the floating
+      // signature wrapper already on it. The captured PNGs become the
+      // final PDF pages — no server-side puppeteer re-render, no
+      // chance of font / media-type drift moving content out from
+      // under the signature.
+      let signedPages: { pageIndex: number; imageDataUrl: string }[] = [];
+      const host = documentHostRef.current;
+      if (host && request?.pageIndices && request.pageIndices.length > 0) {
+        signedPages = await captureSignedPages(host, request.pageIndices);
+      }
+
+      await mySignaturesApi.submit(requestId, signatureDataUrl, signedPages);
       setSignedSuccessfully(true);
     } catch (err) {
       setError(getMySignaturesErrorMessage(err));
@@ -282,51 +339,65 @@ export default function LawyerSignatureViewer() {
 
   if (!request) return null;
 
-  if (signedSuccessfully) {
-    return (
-      <LawyerLayout brandTitle="LawFlow" brandSubtitle="Sign Document">
-        <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-10 text-center">
-          <CheckCircle2 className="mx-auto h-12 w-12 text-emerald-600" />
-          <h2 className="mt-3 text-lg font-semibold text-emerald-900">
-            Signature recorded
-          </h2>
-          <p className="mt-1 text-sm text-emerald-800">
-            Your signature is now part of {request.caseTitle}.
-          </p>
-          <button
-            onClick={() => navigate({ to: "/lawyer-signatures" })}
-            className="mt-4 rounded-md bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700"
-          >
-            Back to inbox
-          </button>
-        </div>
-      </LawyerLayout>
-    );
-  }
+  const pageCount = request.pageIndices?.length || 0;
 
   return (
-    <LawyerLayout brandTitle="LawFlow" brandSubtitle={request.caseTitle}>
+    <LawyerLayout brandTitle="LawFlow" brandSubtitle="Sign Document">
       <div className="space-y-4">
-        <header className="rounded-xl border border-gray-200 bg-white p-5">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-500">
-            Your signature
-          </p>
-          <h1 className="mt-1 text-lg font-semibold text-gray-900">
-            {request.caseTitle}
-          </h1>
-          <p className="mt-1 text-xs text-gray-500">
-            {request.pageIndices?.length || 0} page
-            {request.pageIndices?.length === 1 ? "" : "s"} need your signature.
-            Drag the signature on the page to position. Drag the corner handles
-            to resize.
-          </p>
+        {/* Hero — emerald-tinted to match the lawyer's brand color and
+            visually distinguish the self-sign flow from the client's
+            (amber). Same shape as /case-tracking's pending card so the
+            two viewers feel like one family. */}
+        <header className="rounded-2xl border border-emerald-100 bg-gradient-to-br from-white via-emerald-50/40 to-white p-6 shadow-[0_18px_45px_-32px_rgba(1,65,28,0.35)]">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="flex items-start gap-3">
+              <div className="rounded-lg bg-emerald-100 p-2 text-[#01411C]">
+                <FileSignature className="h-5 w-5" />
+              </div>
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#01411C]">
+                  Sign as advocate
+                </p>
+                <h1 className="mt-1 text-lg font-semibold text-gray-900">
+                  {request.caseTitle}
+                </h1>
+                <p className="mt-1 text-xs text-gray-600">
+                  {pageCount} page{pageCount === 1 ? "" : "s"} need your signature.
+                  Drag your signature from the panel onto the page, then submit.
+                </p>
+              </div>
+            </div>
+            <div className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-2.5 py-1 text-[11px] font-semibold text-[#01411C]">
+              <CalendarClock className="h-3 w-3" />
+              Pending Signature
+            </div>
+          </div>
         </header>
 
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
+          {/* Document host — drop target for the signature preview
+              being dragged from the sidebar. Border changes to
+              emerald while a drag is hovering. */}
           <div
-            className="rounded-xl border border-gray-200 bg-[#f5f5f5] p-4 overflow-auto"
+            className={`relative rounded-xl border bg-[#f5f5f5] p-4 overflow-auto transition-colors ${
+              isDragOver ? "border-emerald-400" : "border-gray-200"
+            }`}
             style={{ maxHeight: "82vh" }}
+            onDragOver={handleDocumentDragOver}
+            onDragLeave={handleDocumentDragLeave}
+            onDrop={handleDocumentDrop}
           >
+            {/* Drop-zone hint pill — sticky at the top of the document
+                area so it stays in view if the lawyer scrolls mid-drag. */}
+            {isDragOver ? (
+              <div
+                aria-hidden
+                className="pointer-events-none sticky top-2 z-30 mx-auto flex max-w-md items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-emerald-400 bg-white/95 px-5 py-2.5 text-sm font-semibold text-[#01411C] shadow-lg backdrop-blur"
+              >
+                <MousePointer2 className="h-4 w-4" />
+                Drop on the page to place your signature
+              </div>
+            ) : null}
             {/* See ClientSignatureViewer for why these styles live here. */}
             <style>{`
               .lawflow-floating-image {
@@ -362,9 +433,11 @@ export default function LawyerSignatureViewer() {
                 Sign as advocate
               </h2>
               <p className="mt-1 text-xs text-gray-500">
-                {signatureDataUrl
-                  ? "Drag it on the page to position. Drag corners to resize."
-                  : "Type your name or upload an image, then drag onto the page."}
+                {!signatureDataUrl
+                  ? "Type your name or upload an image — then drag the preview onto the document."
+                  : hasPlaced
+                    ? "Placed on the document. Drag to reposition, or drag the preview again to move it."
+                    : "Drag the preview below onto the page where you want to sign."}
               </p>
 
               <div className="mt-4 flex gap-2">
@@ -453,25 +526,43 @@ export default function LawyerSignatureViewer() {
 
               {signatureDataUrl && (
                 <div className="mt-4">
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">
-                    Preview
-                  </p>
-                  <div className="mt-2 rounded-md border border-gray-200 bg-gray-50 p-3">
+                  <div className="flex items-center justify-between">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+                      Drag onto document
+                    </p>
+                    {hasPlaced ? (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700 ring-1 ring-emerald-200">
+                        <CheckCircle2 className="h-3 w-3" />
+                        Placed
+                      </span>
+                    ) : null}
+                  </div>
+                  {/* Draggable preview — grip icon + cursor-grab teach
+                      the affordance without an explicit tutorial. */}
+                  <div className="mt-2 flex items-center gap-2 rounded-md border-2 border-dashed border-emerald-200 bg-emerald-50/40 p-3 cursor-grab active:cursor-grabbing">
+                    <GripVertical className="h-4 w-4 flex-shrink-0 text-[#01411C]" />
                     <img
                       src={signatureDataUrl}
-                      alt="Signature preview"
-                      className="max-h-20 mx-auto"
+                      alt="Signature preview — drag onto document"
+                      draggable
+                      onDragStart={handlePreviewDragStart}
+                      className="max-h-20 mx-auto select-none"
                     />
                   </div>
+                  <p className="mt-1.5 text-[11px] text-gray-500">
+                    Hold and drag the preview onto the page where you want to sign.
+                  </p>
                 </div>
               )}
 
               {error && <p className="mt-3 text-xs text-red-700">{error}</p>}
 
+              {/* Submit gated on actual placement so the lawyer
+                  can't submit a signature that never reached a page. */}
               <button
                 type="button"
                 onClick={handleSubmit}
-                disabled={!signatureDataUrl || submitting}
+                disabled={!signatureDataUrl || !hasPlaced || submitting}
                 className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-md bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50 hover:bg-emerald-700"
               >
                 {submitting ? (
@@ -490,6 +581,53 @@ export default function LawyerSignatureViewer() {
           </aside>
         </div>
       </div>
+
+      {signedSuccessfully && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="lawyer-sign-success-title"
+        >
+          <div className="w-full max-w-sm overflow-hidden rounded-2xl bg-white shadow-2xl">
+            <div className="bg-gradient-to-br from-emerald-50 via-white to-white px-6 pt-6 pb-5 text-center">
+              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100">
+                <CheckCircle2 className="h-7 w-7 text-emerald-600" />
+              </div>
+              <h2
+                id="lawyer-sign-success-title"
+                className="mt-4 text-lg font-semibold text-gray-900"
+              >
+                Signature recorded
+              </h2>
+              <p className="mt-2 text-sm leading-relaxed text-gray-600">
+                Your signature has been added to{" "}
+                <span className="font-medium text-gray-900">
+                  {request.caseTitle}
+                </span>
+                . The case will be marked fully signed once every signer
+                has completed their part.
+              </p>
+            </div>
+            <div className="flex gap-2 border-t border-gray-100 bg-gray-50/60 px-5 py-3">
+              <button
+                type="button"
+                onClick={() => setSignedSuccessfully(false)}
+                className="flex-1 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50"
+              >
+                Stay here
+              </button>
+              <button
+                type="button"
+                onClick={() => navigate({ to: "/lawyer-signatures" })}
+                className="flex-1 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-700"
+              >
+                Back to inbox
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </LawyerLayout>
   );
 }

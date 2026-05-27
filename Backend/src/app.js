@@ -51,7 +51,14 @@ app.use(cors({
   methods: ["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization", "X-Webhook-Secret"]
 }));
-app.use(express.json({ limit: "1mb" }));
+// 50 MB cap so the signature submit endpoint can receive multi-page
+// html2canvas captures (one A4 PNG at devicePixelRatio=2 is ~400–800 KB;
+// a 50-page submission could approach 40 MB). Validators in
+// signatures.validators.js enforce a per-page and per-array cap as a
+// finer-grained second line of defence — the express limit only stops
+// pathological global payloads from chewing memory before validation
+// runs.
+app.use(express.json({ limit: "50mb" }));
 app.use(cookieParser());
 // hpp protects against HTTP Parameter Pollution: a malicious caller sending
 // ?role=client&role=admin would otherwise let req.query.role be an array.

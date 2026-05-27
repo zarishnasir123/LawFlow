@@ -1,272 +1,130 @@
 // Final case-file PDF compiler.
 //
 // Runs once every signature_request on a case reaches status='signed'.
-// Pipeline:
-//   1. Pick the latest HTML snapshot from the case's signed requests.
-//      Carries everything the recipient saw at sign time (page CSS,
-//      fonts, edit state, etc.), so the compiled PDF matches.
-//   2. For each docx-preview <section.docx> in the snapshot, hide the
-//      OTHER sections via display:none and render JUST that section
-//      as a one-page PDF whose dimensions equal that section's
-//      measured render size. This gives us an iron-clad guarantee
-//      that section N → PDF page N at identical dimensions — no
-//      pagination drift, no cross-section overflow.
-//   3. Stamp the signatures owned by section N onto that page using
-//      the signer's captured xPct / yPct / widthPct / heightPct.
-//      Math is trivial: page dimensions === section dimensions, so
-//      the percentages translate one-to-one.
-//   4. Concatenate every section's stamped PDF into one document and
-//      upload to Supabase Storage at lawyers/{userId}/cases/{caseId}/
-//      signed.pdf.
 //
-// Why per-section rendering instead of one big page.pdf() call?
-//   We tried that. Two flavors:
-//   - `format: A4` → sections smaller than A4 left whitespace, sections
-//     larger than A4 split across PDF pages → signatures shifted to
-//     trailing blank pages.
-//   - Single page.pdf({ width, height }) sized to first-section
-//     dimensions → still split when subsequent sections were taller
-//     OR when print-media rendering produced taller content than
-//     screen-media measurement.
-//   Rendering each section in isolation eliminates both problems —
-//   the renderer only ever sees one section's worth of content, the
-//   page is sized for exactly that content, no surprise paginations.
+// Architecture (v2 — client-rendered pages):
+//   The compiler no longer re-renders the case HTML server-side. Each
+//   signer's browser captures the assigned pages AS THEY APPEARED — with
+//   their signature already drag-placed on them — and uploads the
+//   per-page PNGs alongside the signature submission. This compiler's
+//   job is to glue those captured PNGs into a single PDF and upload it
+//   to Supabase Storage. No puppeteer, no font availability concerns,
+//   no @media print vs @media screen drift: the signed PDF is
+//   byte-identical to what the signer reviewed.
+//
+//   Why we ripped out puppeteer:
+//     v1 re-rendered the snapshot HTML via puppeteer and overlaid the
+//     signature using fractional coordinates. The snapshot contained no
+//     embedded fonts, so puppeteer's headless Chromium occasionally
+//     laid out text with slightly different line heights than the
+//     signer's browser — moving the surrounding text rows up or down
+//     while the signature stayed at its fixed fractional position.
+//     Signatures were landing on the wrong line in the compiled PDF.
+//
+//   When multiple signers sign the SAME page (rare but possible if a
+//   page is co-assigned), the LATEST-signed capture wins — that signer
+//   saw all prior signatures already on the page, so their capture is
+//   the most up-to-date composite.
 
 import { PDFDocument } from "pdf-lib";
 
 import { pool } from "../../config/db.js";
 import { uploadSignedCasePdf } from "../../services/storage.service.js";
 
-// Lazy-launched singleton browser. puppeteer's first launch is the
-// expensive part (~700ms); subsequent renders reuse the same Chromium
-// instance and take ~1-2s each. We keep the browser alive for the
-// process lifetime — if Chromium crashes, the next compile call
-// re-launches.
-let browserPromise = null;
-
-async function getBrowser() {
-  if (!browserPromise) {
-    const { default: puppeteer } = await import("puppeteer");
-    browserPromise = puppeteer
-      .launch({
-        // Headless 'new' is the default in puppeteer v22+ but pinned
-        // here so behavior doesn't change if the default flips.
-        headless: true,
-        args: [
-          // Required for some Linux server environments (Docker, CI).
-          "--no-sandbox",
-          "--disable-setuid-sandbox",
-        ],
-      })
-      .catch((err) => {
-        // Reset so the next call retries instead of returning a
-        // permanently-rejected promise.
-        browserPromise = null;
-        throw err;
-      });
-  }
-  return browserPromise;
-}
-
-// Strip the data: prefix so pdf-lib's embedPng gets raw bytes.
+// Strip the data: prefix and decode the base64 payload so pdf-lib's
+// embedPng / embedJpg can accept raw bytes.
 function dataUrlToBytes(dataUrl) {
-  const idx = dataUrl.indexOf(",");
-  if (idx === -1) return new Uint8Array();
-  const base64 = dataUrl.slice(idx + 1);
-  return Uint8Array.from(Buffer.from(base64, "base64"));
+  const commaIdx = dataUrl.indexOf(",");
+  if (commaIdx === -1) return null;
+  const base64 = dataUrl.slice(commaIdx + 1);
+  const meta = dataUrl.slice(0, commaIdx);
+  const isJpeg = /image\/(jpeg|jpg)/i.test(meta);
+  try {
+    return { bytes: Uint8Array.from(Buffer.from(base64, "base64")), isJpeg };
+  } catch {
+    return null;
+  }
 }
 
-// Group signed requests by the page index where the signer dropped
-// their signature, so the per-section renderer can look up "what
-// signatures land on this section?" in O(1).
-function groupSignaturesByPageIndex(signedRequests) {
+// Pick the most-recently-signed page capture for each absolute page
+// index. We iterate signed_requests in signed_at DESC order, so the
+// FIRST entry we see for a given pageIndex is the freshest one.
+// Returns Map<pageIndex, imageDataUrl>.
+function collectFreshestPageCaptures(signedRequests) {
   const byIndex = new Map();
   for (const req of signedRequests) {
-    if (!req.signature_image || !req.signature_placement) continue;
-    const placement = typeof req.signature_placement === "string"
-      ? JSON.parse(req.signature_placement)
-      : req.signature_placement;
-    const { pageIndex } = placement;
-    if (typeof pageIndex !== "number") continue;
-    const list = byIndex.get(pageIndex) || [];
-    list.push({ image: req.signature_image, placement });
-    byIndex.set(pageIndex, list);
+    if (!req.signed_page_images) continue;
+    const captures =
+      typeof req.signed_page_images === "string"
+        ? JSON.parse(req.signed_page_images)
+        : req.signed_page_images;
+    if (!Array.isArray(captures)) continue;
+    for (const capture of captures) {
+      if (
+        !capture ||
+        typeof capture.pageIndex !== "number" ||
+        typeof capture.imageDataUrl !== "string"
+      ) {
+        continue;
+      }
+      // signed_at DESC ordering means the first hit per index is the
+      // freshest — don't overwrite it with an older signer's capture.
+      if (!byIndex.has(capture.pageIndex)) {
+        byIndex.set(capture.pageIndex, capture.imageDataUrl);
+      }
+    }
   }
   return byIndex;
 }
 
-// Stamp the signatures owned by one section onto that section's PDF.
-// Mutates pdfDoc in place. Page dimensions === section dimensions, so
-// the signer's percentages translate directly.
-async function stampSectionSignatures(pdfDoc, sigs) {
-  const pages = pdfDoc.getPages();
-  if (pages.length === 0) return;
-  // If the section's content somehow overflowed onto a second PDF page
-  // (rare — happens if our measurement missed by a pixel), we stamp on
-  // page 1 since that's where the section starts and where the signer
-  // was looking when they placed the signature.
-  const targetPage = pages[0];
-  const { width: pageW, height: pageH } = targetPage.getSize();
+// Build the final PDF by embedding the captured page PNGs in absolute-
+// pageIndex order. Each PNG becomes one PDF page sized to the image's
+// intrinsic pixel dimensions (converted to PDF points 1 CSS px = 0.75 pt
+// at 96 dpi). This keeps the output at the same visual scale the signer
+// saw without baking in a hard A4 assumption — if a case template
+// happens to use Letter or a custom size, the captured PNG carries the
+// correct aspect ratio.
+async function buildPdfFromCaptures(captureMap) {
+  const pdfDoc = await PDFDocument.create();
 
-  for (const sig of sigs) {
-    const { xPct, yPct, widthPct, heightPct } = sig.placement;
-    if (
-      typeof xPct !== "number" ||
-      typeof yPct !== "number" ||
-      typeof widthPct !== "number" ||
-      typeof heightPct !== "number"
-    ) {
-      continue;
-    }
+  // Sort by absolute page index so multi-page cases come out in the
+  // signer's reading order.
+  const orderedIndices = Array.from(captureMap.keys()).sort((a, b) => a - b);
 
-    let pngImage;
+  for (const pageIndex of orderedIndices) {
+    const dataUrl = captureMap.get(pageIndex);
+    const decoded = dataUrlToBytes(dataUrl);
+    if (!decoded) continue;
+
+    let embedded;
     try {
-      const bytes = dataUrlToBytes(sig.image);
-      pngImage = await pdfDoc.embedPng(bytes);
-    } catch {
-      // If the data URL isn't a valid PNG (rare — frontend canvas
-      // always produces PNG) we skip this signature rather than
-      // failing the whole compile.
+      embedded = decoded.isJpeg
+        ? await pdfDoc.embedJpg(decoded.bytes)
+        : await pdfDoc.embedPng(decoded.bytes);
+    } catch (err) {
+      console.error("[COMPILE] Failed to embed page image", {
+        pageIndex,
+        message: err instanceof Error ? err.message : String(err),
+      });
       continue;
     }
 
-    const stampW = widthPct * pageW;
-    const stampH = heightPct * pageH;
-    const stampX = xPct * pageW;
-    // Browser coords are top-left, PDF coords are bottom-left. Convert.
-    const stampY = pageH - yPct * pageH - stampH;
-
-    targetPage.drawImage(pngImage, {
-      x: stampX,
-      y: stampY,
-      width: stampW,
-      height: stampH,
+    // Image dimensions are in CSS pixels (html2canvas reports the
+    // captured element's CSS size × scale factor; the resulting PNG's
+    // intrinsic pixel dimensions match). Convert to PDF points at
+    // 96 dpi for a 1:1 visual scale.
+    const widthPt = (embedded.width / 96) * 72;
+    const heightPt = (embedded.height / 96) * 72;
+    const page = pdfDoc.addPage([widthPt, heightPt]);
+    page.drawImage(embedded, {
+      x: 0,
+      y: 0,
+      width: widthPt,
+      height: heightPt,
     });
   }
-}
 
-// Render the snapshot HTML and produce a final, stamped, concatenated
-// PDF. The single puppeteer page is reused across all sections — we
-// just toggle display:none on the sections we're not currently
-// rendering and re-call page.pdf() each iteration.
-async function renderAndStampPdf(html, signedRequests) {
-  const browser = await getBrowser();
-  const page = await browser.newPage();
-  try {
-    await page.setContent(html, { waitUntil: "networkidle0", timeout: 15_000 });
-
-    // Neutralize wrapper / body styling that would otherwise add
-    // top/left whitespace inside each section's PDF page. Also strip
-    // the editor's box-shadow and outline so the print is clean.
-    await page.addStyleTag({
-      content: `
-        html, body, .docx-wrapper {
-          margin: 0 !important;
-          padding: 0 !important;
-          background: #ffffff !important;
-        }
-        .docx-wrapper > section.docx {
-          margin: 0 !important;
-          box-shadow: none !important;
-          outline: none !important;
-          border: none !important;
-        }
-      `,
-    });
-
-    // Discover every section's rendered dimensions in CSS pixels.
-    // We capture all dimensions up front (before hiding any) because
-    // toggling display affects sibling layout in some edge cases —
-    // taking the snapshot first means each section's number reflects
-    // its in-flow size.
-    const sectionDimsList = await page.evaluate(() => {
-      const els = document.querySelectorAll(".docx-wrapper > section.docx");
-      return Array.from(els).map((el) => {
-        const rect = el.getBoundingClientRect();
-        return { width: rect.width, height: rect.height };
-      });
-    });
-
-    // Defensive fallback: if the snapshot has no recognizable sections,
-    // render the whole document as A4 and stamp via simple per-page
-    // math. Better to produce a slightly-misaligned PDF than to crash
-    // the entire compile.
-    if (sectionDimsList.length === 0) {
-      const fallbackPdf = await page.pdf({
-        format: "A4",
-        printBackground: true,
-        margin: { top: "0", right: "0", bottom: "0", left: "0" },
-      });
-      const fallbackDoc = await PDFDocument.load(fallbackPdf);
-      const sigsByIndex = groupSignaturesByPageIndex(signedRequests);
-      const pages = fallbackDoc.getPages();
-      for (let i = 0; i < pages.length; i++) {
-        const sigs = sigsByIndex.get(i) || [];
-        await stampSectionSignatures(fallbackDoc, sigs);
-      }
-      return fallbackDoc.save();
-    }
-
-    const sigsByIndex = groupSignaturesByPageIndex(signedRequests);
-    const mergedPdf = await PDFDocument.create();
-
-    for (let i = 0; i < sectionDimsList.length; i++) {
-      const dims = sectionDimsList[i];
-
-      // Show only section i. The others get display:none so they
-      // take no layout space and produce no print output — guarantees
-      // this page.pdf() call yields exactly one section's worth of
-      // content.
-      await page.evaluate((targetIdx) => {
-        document
-          .querySelectorAll(".docx-wrapper > section.docx")
-          .forEach((el, idx) => {
-            el.style.display = idx === targetIdx ? "" : "none";
-          });
-      }, i);
-
-      // Render this single section to a PDF whose page size matches
-      // the section's measured dimensions exactly.
-      const sectionPdfBuffer = await page.pdf({
-        width: `${dims.width}px`,
-        height: `${dims.height}px`,
-        printBackground: true,
-        margin: { top: "0", right: "0", bottom: "0", left: "0" },
-      });
-
-      // Stamp the signatures that belong on this section, then copy
-      // every page of the stamped section into the merged output.
-      // (Almost always exactly 1 page; we copy all defensively in
-      // case content overflowed unexpectedly.)
-      const sectionDoc = await PDFDocument.load(sectionPdfBuffer);
-      const sigs = sigsByIndex.get(i) || [];
-      await stampSectionSignatures(sectionDoc, sigs);
-
-      const copied = await mergedPdf.copyPages(
-        sectionDoc,
-        sectionDoc.getPageIndices()
-      );
-      copied.forEach((p) => mergedPdf.addPage(p));
-    }
-
-    return mergedPdf.save();
-  } finally {
-    await page.close().catch(() => {});
-  }
-}
-
-// Pick the document snapshot to render. All rows in a single batch
-// share the same snapshot. When multiple batches exist (re-sends
-// after edits), we use the most recently-signed row's snapshot — it
-// reflects the latest content both signers agreed to. Documented as
-// an FYP-acceptable simplification.
-function pickSnapshot(signedRequests) {
-  if (signedRequests.length === 0) return null;
-  const sorted = [...signedRequests].sort(
-    (a, b) =>
-      new Date(b.signed_at).getTime() - new Date(a.signed_at).getTime()
-  );
-  return sorted[0].document_html_snapshot;
+  return pdfDoc.save();
 }
 
 // =====================================================================
@@ -278,12 +136,7 @@ function pickSnapshot(signedRequests) {
 // to surface the error to the signer.
 export async function compileCaseSignedPdf({ caseId, lawyerUserId }) {
   const { rows: signedRequests } = await pool.query(
-    `SELECT id,
-            page_indices,
-            signature_image,
-            signature_placement,
-            document_html_snapshot,
-            signed_at
+    `SELECT id, signed_page_images, signed_at
      FROM signature_requests
      WHERE case_id = $1 AND status = 'signed'
      ORDER BY signed_at DESC`,
@@ -294,17 +147,24 @@ export async function compileCaseSignedPdf({ caseId, lawyerUserId }) {
     throw new Error("No signed signature requests found for this case");
   }
 
-  const html = pickSnapshot(signedRequests);
-  if (!html) {
-    throw new Error("Signed requests have no document snapshot to render");
+  const captureMap = collectFreshestPageCaptures(signedRequests);
+
+  if (captureMap.size === 0) {
+    // Every signed request shipped without page captures. This should
+    // only happen for rows signed under the v1 model before the
+    // signed_page_images column existed. Surface a clear error rather
+    // than producing an empty PDF.
+    throw new Error(
+      "No page captures available for this case — was it signed under the legacy flow?"
+    );
   }
 
-  const stampedPdf = await renderAndStampPdf(html, signedRequests);
+  const pdfBytes = await buildPdfFromCaptures(captureMap);
 
   const { storagePath } = await uploadSignedCasePdf({
     lawyerUserId,
     caseId,
-    pdfBuffer: Buffer.from(stampedPdf),
+    pdfBuffer: Buffer.from(pdfBytes),
   });
 
   await pool.query(

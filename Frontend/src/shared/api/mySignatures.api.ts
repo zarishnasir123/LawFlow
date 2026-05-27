@@ -35,8 +35,24 @@ export type ApiPendingSignature = {
   requestingLawyerName: string;
 };
 
+// PNG-per-assigned-page captured on the signer's device at submit time.
+// These bytes ARE the truth for the final signed PDF — the compiler
+// embeds them verbatim, no re-rendering, no layout drift. One entry
+// per page index in the signature_request.page_indices array.
+export type SignedPageCapture = {
+  pageIndex: number;
+  imageDataUrl: string;
+};
+
 // Detail view: includes the frozen HTML snapshot so the viewer can render
 // the document the lawyer sent.
+//
+// `priorSignedPages` carries page-captures from OTHER signers who
+// already finished signing this case. For each page index in this
+// signer's pageIndices, if another signer captured that page first
+// (e.g. client signed before lawyer), their PNG appears here. The
+// viewer overlays it beneath the floating-signature drop area so the
+// fresh capture composes correctly with prior signatures.
 export type ApiSignatureRequestDetail = {
   id: string;
   caseId: string;
@@ -52,21 +68,7 @@ export type ApiSignatureRequestDetail = {
   expiresAt: string;
   createdAt: string;
   updatedAt: string;
-};
-
-// Position metadata captured when the signer drag-placed their signature
-// on the page. All values are FRACTIONS of the parent page (0..1) so
-// they survive any output-size rescale in the eventual PDF compile.
-//   - pageIndex: which page in the document the signature sits on (the
-//     absolute index, not an index into pageIndices)
-//   - xPct / yPct: top-left corner relative to the page's content area
-//   - widthPct / heightPct: size relative to the page
-export type SignaturePlacement = {
-  pageIndex: number;
-  xPct: number;
-  yPct: number;
-  widthPct: number;
-  heightPct: number;
+  priorSignedPages: SignedPageCapture[];
 };
 
 export const mySignaturesApi = {
@@ -75,6 +77,18 @@ export const mySignaturesApi = {
     const { data } = await apiClient.get<{
       signatureRequests: ApiPendingSignature[];
     }>(`/me/signature-requests`);
+    return data.signatureRequests;
+  },
+
+  // List MY terminal-state signature requests — cancelled (lawyer
+  // withdrew), signed (I already completed), and pending-but-expired
+  // rows. Powers the client dashboard's Activity log so the
+  // recipient can audit "did the lawyer pull that back?" or "did I
+  // sign that already?" in-app instead of through email.
+  listHistory: async (): Promise<ApiPendingSignature[]> => {
+    const { data } = await apiClient.get<{
+      signatureRequests: ApiPendingSignature[];
+    }>(`/me/signature-requests/history`);
     return data.signatureRequests;
   },
 
@@ -87,17 +101,20 @@ export const mySignaturesApi = {
     return data.signatureRequest;
   },
 
-  // Submit a signature + (optional) placement.
+  // Submit a signature. `signedPages` carries one PNG per assigned page
+  // — captured by the viewer AFTER the signer drag-placed their
+  // signature — and is what the compiler embeds verbatim into the final
+  // signed PDF.
   submit: async (
     requestId: string,
     signatureImage: string,
-    signaturePlacement?: SignaturePlacement | null
+    signedPages?: SignedPageCapture[]
   ): Promise<ApiSignatureRequestDetail> => {
     const { data } = await apiClient.post<{
       signatureRequest: ApiSignatureRequestDetail;
     }>(`/me/signature-requests/${requestId}/sign`, {
       signatureImage,
-      signaturePlacement: signaturePlacement ?? null,
+      signedPages: signedPages ?? null,
     });
     return data.signatureRequest;
   },

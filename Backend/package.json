@@ -30,7 +30,6 @@
     "nodemailer": "^8.0.6",
     "pdf-lib": "^1.17.1",
     "pg": "^8.13.1",
-    "puppeteer": "^23.10.4",
     "ws": "^8.20.0"
   },
   "devDependencies": {

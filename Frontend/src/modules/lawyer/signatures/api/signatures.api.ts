@@ -11,19 +11,9 @@ export type SignatureRequestStatus =
   | "expired"
   | "cancelled";
 
-// Position metadata for a captured signature — page-fractional so
-// it survives any A4/letter rescale at compile time.
-export type ApiSignaturePlacement = {
-  pageIndex: number;
-  xPct: number;
-  yPct: number;
-  widthPct: number;
-  heightPct: number;
-};
-
 // Mirrors the shape returned by signatures.service.js → mapSignatureRequest.
-// `documentHtmlSnapshot` and `signatureImage` are opt-in on the server; we
-// type them as optional so list endpoints don't claim values they don't ship.
+// `documentHtmlSnapshot` is opt-in on the server; we type it as optional
+// so list endpoints don't claim a value they don't ship.
 export type ApiSignatureRequest = {
   id: string;
   caseId: string;
@@ -33,13 +23,11 @@ export type ApiSignatureRequest = {
   caseBatchId: string | null;
   pageIndices: number[] | null;
   signedAt: string | null;
-  signaturePlacement: ApiSignaturePlacement | null;
   status: SignatureRequestStatus;
   expiresAt: string;
   createdAt: string;
   updatedAt: string;
   documentHtmlSnapshot?: string;
-  signatureImage?: string;
 };
 
 // Returned by GET /api/cases/:caseId/signature-requests alongside the list:
