@@ -5,6 +5,7 @@ import {
   listCaseAttachments,
   listCaseTypes,
   listCasesForLawyer,
+  listSignedCasesForLawyer,
   resolveCaseTemplate,
   updateCase,
   uploadAttachmentToCase
@@ -52,6 +53,13 @@ export async function createMyCase(req, res) {
 
 export async function listMyCases(req, res) {
   const cases = await listCasesForLawyer({ lawyerUserId: req.user.sub });
+  return res.status(200).json({ cases });
+}
+
+export async function listMySignedCases(req, res) {
+  const cases = await listSignedCasesForLawyer({
+    lawyerUserId: req.user.sub,
+  });
   return res.status(200).json({ cases });
 }
 

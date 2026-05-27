@@ -13,6 +13,7 @@ import {
   getCaseTypes,
   getMyCase,
   listMyCases,
+  listMySignedCases,
   patchMyCase,
   postCaseAttachment,
   removeCaseAttachment
@@ -58,6 +59,17 @@ router.get(
   authenticate,
   authorizeRoles("lawyer"),
   asyncHandler(listMyCases)
+);
+
+// "/signed" lists cases the lawyer owns where the PDF compile has
+// produced a downloadable artifact. Powers the dedicated "Signed
+// Documents" tracker on the signatures page. Placed before the
+// `/:caseId` route so "signed" doesn't get captured as a caseId.
+router.get(
+  "/signed",
+  authenticate,
+  authorizeRoles("lawyer"),
+  asyncHandler(listMySignedCases)
 );
 
 router.get(

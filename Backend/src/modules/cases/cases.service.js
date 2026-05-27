@@ -219,6 +219,24 @@ export async function listCasesForLawyer({ lawyerUserId }) {
   return result.rows.map(mapCase);
 }
 
+// Cases the lawyer owns where the background PDF compile has finished
+// and stamped a signed_pdf_storage_path. Drives the dedicated "Signed
+// Documents" tracker on /lawyer-signatures so the lawyer can preview /
+// download every finalised artifact in one place — separate from the
+// general /lawyer-cases listing (which mixes drafts, submissions,
+// and in-progress work).
+export async function listSignedCasesForLawyer({ lawyerUserId }) {
+  const result = await pool.query(
+    `${selectCaseWithType()}
+    WHERE cases.lawyer_user_id = $1
+      AND cases.signed_pdf_storage_path IS NOT NULL
+    ORDER BY cases.signed_pdf_generated_at DESC NULLS LAST`,
+    [lawyerUserId]
+  );
+
+  return result.rows.map(mapCase);
+}
+
 export async function getCaseForLawyer({ caseId, lawyerUserId }) {
   const result = await pool.query(
     `${selectCaseWithType()}

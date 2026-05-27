@@ -145,6 +145,36 @@ async function stampSectionSignatures(pdfDoc, sigs) {
   }
 }
 
+// Collect the set of 0-based page indices that any signer was
+// actually assigned. The signed PDF should contain ONLY these pages
+// (per product call: if the lawyer sent only "Verification" for
+// signature, the compiled artifact is a 1-page PDF of Verification,
+// not the entire case file). When every row has page_indices=NULL
+// the caller intended the whole document — we return null to signal
+// "include everything".
+function collectAssignedPageIndices(signedRequests) {
+  const set = new Set();
+  let anyAllPages = false;
+  for (const req of signedRequests) {
+    if (req.page_indices === null || req.page_indices === undefined) {
+      // Per the schema comment: NULL = entire document.
+      anyAllPages = true;
+      continue;
+    }
+    const arr =
+      typeof req.page_indices === "string"
+        ? JSON.parse(req.page_indices)
+        : req.page_indices;
+    if (Array.isArray(arr)) {
+      for (const idx of arr) {
+        if (Number.isInteger(idx)) set.add(idx);
+      }
+    }
+  }
+  if (anyAllPages) return null;
+  return set;
+}
+
 // Render the snapshot HTML and produce a final, stamped, concatenated
 // PDF. The single puppeteer page is reused across all sections — we
 // just toggle display:none on the sections we're not currently
@@ -210,7 +240,20 @@ async function renderAndStampPdf(html, signedRequests) {
     const sigsByIndex = groupSignaturesByPageIndex(signedRequests);
     const mergedPdf = await PDFDocument.create();
 
+    // Build the "include" set BEFORE we start rendering. Pages that
+    // were never assigned to any signer are skipped — the compiled
+    // signed PDF reflects only what was actually endorsed, not the
+    // full case file. `null` here means "every signer was on the
+    // whole document" → include all sections (legacy / full-case
+    // behaviour).
+    const assignedSet = collectAssignedPageIndices(signedRequests);
+
     for (let i = 0; i < sectionDimsList.length; i++) {
+      // Skip sections that weren't part of any signature request.
+      // This is the fix for: "lawyer sent only page 2, signed PDF
+      // should be 1 page (page 2), not all 5 pages of the case."
+      if (assignedSet !== null && !assignedSet.has(i)) continue;
+
       const dims = sectionDimsList[i];
 
       // Show only section i. The others get display:none so they

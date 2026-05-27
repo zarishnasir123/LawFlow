@@ -103,6 +103,16 @@ export const casesApi = {
     return data.cases;
   },
 
+  // Only cases where the PDF compile has produced a downloadable
+  // artifact (signed_pdf_storage_path IS NOT NULL). Used by the
+  // dedicated "Signed Documents" tracker on /lawyer-signatures.
+  listMySignedCases: async (): Promise<ApiCase[]> => {
+    const { data } = await apiClient.get<{ cases: ApiCase[] }>(
+      "/cases/signed"
+    );
+    return data.cases;
+  },
+
   getCase: async (caseId: string): Promise<ApiCase> => {
     const { data } = await apiClient.get<{ case: ApiCase }>(`/cases/${caseId}`);
     return data.case;
