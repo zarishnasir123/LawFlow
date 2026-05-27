@@ -59,6 +59,7 @@ export default function CaseDocumentEditor() {
     saveDraft,
     loadDraft,
     addAttachment,
+    reconcileAttachmentsFromBackend,
     attachmentsById,
     initializeDefaultBundle,
     bundleItems,
@@ -107,6 +108,49 @@ export default function CaseDocumentEditor() {
   const pdfContainerRef = useRef<HTMLDivElement>(null);
 
   const signatureCaseId = effectiveCaseId;
+
+  // Hydrate the sidebar attachment list from the backend on case
+  // load. Each record carries a freshly-minted signed URL — the
+  // editor uses these as the <img src> for floating images, and
+  // DocxPreviewSurface uses the same map to rewrite stale URLs in
+  // the restored HTML snapshot.
+  //
+  // We use the reconcile action (not a loop of addAttachment calls)
+  // because the previous-session localStorage may already contain
+  // stale ATTACHMENT bundle entries from before persistence shipped.
+  // Reconcile drops anything the server doesn't know about, dedups
+  // any local doubles, and refreshes the URL on every existing row.
+  const [attachmentUrlMap, setAttachmentUrlMap] = useState<Record<string, string>>({});
+  useEffect(() => {
+    if (!effectiveCaseId || effectiveCaseId === "default-case") return;
+    let cancelled = false;
+    casesApi
+      .listAttachments(effectiveCaseId)
+      .then((items) => {
+        if (cancelled) return;
+        const urlMap: Record<string, string> = {};
+        for (const item of items) {
+          if (item.url) urlMap[item.id] = item.url;
+        }
+        reconcileAttachmentsFromBackend(
+          items.map((item) => ({
+            id: item.id,
+            name: item.fileName,
+            type: item.mimeType,
+            size: item.fileSize ?? 0,
+            url: item.url ?? "",
+            uploadedAt: item.createdAt,
+          }))
+        );
+        setAttachmentUrlMap(urlMap);
+      })
+      .catch((err) => {
+        console.error("[attachment] list failed:", err);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [effectiveCaseId, reconcileAttachmentsFromBackend]);
 
   // Refresh the backend-synced signature cache when the case loads /
   // switches. Initial fetch + 15-second poll so the editor reflects
@@ -546,7 +590,7 @@ export default function CaseDocumentEditor() {
   // hidden <input> already restricts via `accept`), but we double-check
   // the MIME here so a drag-and-drop or paste-driven upload can't
   // slip past.
-  const handleAttachmentUpload = (
+  const handleAttachmentUpload = async (
     e: React.ChangeEvent<HTMLInputElement>
   ) => {
     const file = e.target.files?.[0];
@@ -557,16 +601,36 @@ export default function CaseDocumentEditor() {
       return;
     }
 
-    const url = URL.createObjectURL(file);
-    addAttachment({
-      name: file.name,
-      type: file.type,
-      size: file.size,
-      url,
-    });
-    saveDraft(effectiveCaseId);
-
+    // Clear the input early so the user can re-pick the same filename
+    // even if the upload below fails.
     if (attachmentInputRef.current) attachmentInputRef.current.value = "";
+
+    // Real persistence: push the bytes to the backend (Supabase
+    // private bucket), then drop the returned record into the
+    // sidebar. The signed URL the backend gives back is what the
+    // editor uses as the <img src> — survives refresh, expires after
+    // an hour, refreshed by listAttachments on next case open.
+    if (effectiveCaseId === "default-case" || !effectiveCaseId) {
+      console.warn("[attachment] no case id yet; upload skipped");
+      return;
+    }
+    try {
+      const created = await casesApi.uploadAttachment(effectiveCaseId, file);
+      addAttachment({
+        id: created.id,
+        name: created.fileName,
+        type: created.mimeType,
+        size: created.fileSize ?? file.size,
+        url: created.url ?? "",
+      });
+      saveDraft(effectiveCaseId);
+    } catch (err) {
+      // Surfacing this as a console error for now — the editor
+      // doesn't yet have a toast system. The user will see no new
+      // row appear in the sidebar, which is the failure mode they
+      // can recover from by retrying.
+      console.error("[attachment] upload failed:", err);
+    }
   };
 
   // Drops the image onto the page as a "floating" image — Word's
@@ -605,10 +669,23 @@ export default function CaseDocumentEditor() {
       // duplicating it. Without this every drag would create another
       // copy stacked on the previous one.
       attachmentId: refId,
-      onChange: () => saveDraft(effectiveCaseId),
+      // Fires on drag-end, resize-end, and delete-button click.
+      // Persist BOTH localStorage (instant client recovery) AND the
+      // backend (durable across devices / browser sessions). Using
+      // the ref so we always call the latest closure even though
+      // mountFloatingImage captured this callback at mount time.
+      onChange: () => {
+        saveDraft(effectiveCaseId);
+        void persistEditedHtmlRef.current();
+      },
     });
 
     saveDraft(effectiveCaseId);
+    // Force-flush the backend save right now — before the user has
+    // a chance to refresh. Without this, the floating image only
+    // reached the backend via the 500ms blur or 30s interval, which
+    // meant a refresh in that window would lose the placement.
+    void persistEditedHtml();
   };
 
   const currentDocTitle =
@@ -780,6 +857,7 @@ export default function CaseDocumentEditor() {
                   onPageContextMenu={(pageIndex, x, y) =>
                     setPageMenu({ pageIndex, x, y })
                   }
+                  attachmentUrlMap={attachmentUrlMap}
                   editable
                 />
                 {/* Read-only signature overlay layer. Renders the

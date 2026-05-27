@@ -47,6 +47,7 @@ import {
   useDocumentEditorStore,
   type BundleItem,
 } from "../../store/documentEditor.store";
+import { casesApi } from "../../api/cases.api";
 import DocumentPagesPanel from "./DocumentPagesPanel";
 
 interface DocumentSidebarProps {
@@ -486,7 +487,33 @@ export default function DocumentSidebar({
                             }
                           : undefined
                       }
-                      onRemove={() => removeFromBundle(item.id)}
+                      onRemove={async () => {
+                        // ATTACHMENT items get a real backend delete
+                        // so the row vanishes permanently, not just
+                        // until the next refresh. DOC items stay
+                        // client-side (the case template + uploaded
+                        // docs don't have a backend representation
+                        // beyond cases.edited_html). Fire-and-forget
+                        // the network call — the UI removes the row
+                        // optimistically; a backend failure leaves
+                        // an orphan record that the next reconcile
+                        // will surface.
+                        if (
+                          item.type === "ATTACHMENT" &&
+                          caseId &&
+                          caseId !== "default-case"
+                        ) {
+                          try {
+                            await casesApi.deleteAttachment(caseId, item.refId);
+                          } catch (err) {
+                            console.error(
+                              "[attachment] delete failed:",
+                              err
+                            );
+                          }
+                        }
+                        removeFromBundle(item.id);
+                      }}
                     />
                   );
                 })}

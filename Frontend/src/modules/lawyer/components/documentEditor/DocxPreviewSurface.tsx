@@ -38,6 +38,13 @@ interface DocxPreviewSurfaceProps {
   // (x, y). Matches the same callback shape DocumentPagesPanel uses
   // for sidebar rows so the parent can route both to one handler.
   onPageContextMenu?: (pageIndex: number, x: number, y: number) => void;
+  // Map of attachmentId → fresh signed URL. After restoring a saved
+  // HTML snapshot, the floating-image <img src> values are still
+  // pointing at last session's signed URLs (which expire in an hour).
+  // We use this map to rewrite each wrapper's inner <img> to a fresh
+  // URL keyed by its data-attachment-id, so refreshes survive past
+  // the original URL's TTL.
+  attachmentUrlMap?: Record<string, string>;
 }
 
 export default function DocxPreviewSurface({
@@ -48,6 +55,7 @@ export default function DocxPreviewSurface({
   editable = false,
   onImageDropped,
   onPageContextMenu,
+  attachmentUrlMap,
 }: DocxPreviewSurfaceProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   // Visual drop-zone feedback while a sidebar image is being dragged
@@ -57,6 +65,31 @@ export default function DocxPreviewSurface({
   // pointer crosses any child element); we reset on drop and on
   // dragend via the window-level listener below.
   const [isDragOver, setIsDragOver] = useState(false);
+
+  // Rewrite every floating-image's <img src> to the fresh signed URL
+  // keyed by its data-attachment-id. Runs whenever the parent passes
+  // a new attachmentUrlMap (initial fetch lands after mount; the user
+  // may also re-open the case past the previous URL's TTL). The
+  // rewrite is a no-op when src already matches, so this is cheap.
+  // Decoupled from the main render effect so a slow attachments fetch
+  // doesn't re-trigger the docx-preview render.
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container || !attachmentUrlMap) return;
+    const wrappers = container.querySelectorAll<HTMLSpanElement>(
+      ".lawflow-floating-image[data-attachment-id]"
+    );
+    wrappers.forEach((wrapper) => {
+      const id = wrapper.getAttribute("data-attachment-id");
+      if (!id) return;
+      const freshUrl = attachmentUrlMap[id];
+      if (!freshUrl) return;
+      const img = wrapper.querySelector("img");
+      if (img && img.getAttribute("src") !== freshUrl) {
+        img.setAttribute("src", freshUrl);
+      }
+    });
+  }, [attachmentUrlMap, editedHtml]);
   // onPagesReady is stored in a ref so we don't re-run the render effect
   // when the parent's callback identity changes — only re-render when the
   // bytes themselves change.

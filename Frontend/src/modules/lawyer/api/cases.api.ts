@@ -53,6 +53,22 @@ export type CreateCasePayload = {
 
 export type UpdateCasePayload = Partial<Omit<CreateCasePayload, "caseTypeId">>;
 
+// Case attachment record returned by the backend. `url` is a fresh
+// signed Supabase URL (1-hour TTL) the editor can drop straight into
+// an <img src>. `storagePath` is the durable identifier; on every
+// case re-open we ask the backend for a fresh `url`.
+export type ApiCaseAttachment = {
+  id: string;
+  caseId: string;
+  fileName: string;
+  mimeType: string;
+  fileSize: number | null;
+  storageBucket: string;
+  storagePath: string;
+  createdAt: string;
+  url: string | null;
+};
+
 // Relative API path that streams the generated .docx for a given
 // case_types.code. Building it here (not inline at call-sites) keeps the
 // path in one place and lets the apiClient interceptor attach auth headers
@@ -124,6 +140,41 @@ export const casesApi = {
       { editedHtml }
     );
     return data;
+  },
+
+  // Upload a single image attachment to a case. Multipart form, field
+  // name "file" — must match the multer config on the backend. Returns
+  // the persisted record including a fresh signed URL for immediate
+  // use in the editor.
+  uploadAttachment: async (
+    caseId: string,
+    file: File
+  ): Promise<ApiCaseAttachment> => {
+    const formData = new FormData();
+    formData.append("file", file);
+    const { data } = await apiClient.post<{ attachment: ApiCaseAttachment }>(
+      `/cases/${caseId}/attachments`,
+      formData
+    );
+    return data.attachment;
+  },
+
+  // Fetch the current attachment list for a case. Every URL is freshly
+  // minted with a 1-hour TTL, so calling this on case open is what
+  // makes the editor's restored HTML survive past the previous URL's
+  // expiry — the floating-image src gets rewritten with these.
+  listAttachments: async (caseId: string): Promise<ApiCaseAttachment[]> => {
+    const { data } = await apiClient.get<{ attachments: ApiCaseAttachment[] }>(
+      `/cases/${caseId}/attachments`
+    );
+    return data.attachments;
+  },
+
+  deleteAttachment: async (
+    caseId: string,
+    attachmentId: string
+  ): Promise<void> => {
+    await apiClient.delete(`/cases/${caseId}/attachments/${attachmentId}`);
   },
 };
 

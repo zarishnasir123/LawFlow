@@ -19,6 +19,7 @@ DROP TABLE IF EXISTS auth_sessions                  CASCADE;
 DROP TABLE IF EXISTS password_reset_tokens          CASCADE;
 DROP TABLE IF EXISTS email_verification_otps        CASCADE;
 DROP TABLE IF EXISTS lawyer_verification_documents  CASCADE;
+DROP TABLE IF EXISTS case_attachments               CASCADE;
 DROP TABLE IF EXISTS lawyer_profiles                CASCADE;
 DROP TABLE IF EXISTS registrar_profiles             CASCADE;
 DROP TABLE IF EXISTS client_profiles                CASCADE;
@@ -414,6 +415,39 @@ CREATE TABLE cases (
   updated_at      TIMESTAMP NOT NULL DEFAULT NOW(),
   submitted_at    TIMESTAMP
 );
+
+-- =====================================================================
+-- Case attachments: lawyer-uploaded image evidence / supporting files
+-- that get drag-dropped into the docx editor as floating overlays
+-- (Word's "In Front of Text" layout). The actual bytes live in
+-- Supabase Storage under cases/{caseId}/{attachmentId}/{filename};
+-- this row holds the metadata + the storage path so we can re-mint
+-- a signed URL on every case re-open.
+--
+-- The editor's saved HTML (cases.edited_html) contains <img> tags
+-- pointing at signed URLs that EXPIRE — when the lawyer reopens the
+-- case the frontend fetches the attachment list, mints fresh signed
+-- URLs, and rewrites the restored DOM. That's why we store
+-- storage_path here even though the URL is what the <img> ultimately
+-- needs: paths are stable, URLs are not.
+-- =====================================================================
+CREATE TABLE case_attachments (
+  id      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  case_id UUID NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
+  uploaded_by_user_id UUID NOT NULL REFERENCES users(id),
+
+  file_name TEXT NOT NULL,
+  mime_type VARCHAR(100) NOT NULL,
+  file_size BIGINT NOT NULL,
+
+  storage_bucket VARCHAR(100) NOT NULL,
+  storage_path   TEXT NOT NULL,
+
+  created_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+-- Index on case_id since every listing call filters by it.
+CREATE INDEX idx_case_attachments_case_id ON case_attachments(case_id);
 
 -- =====================================================================
 -- Signature requests: ONE row PER SIGNER per "Send for signature" action.

@@ -59,8 +59,22 @@ interface DocumentEditorState {
   setLoading: (loading: boolean) => void;
   hasContent: (docId: string) => boolean;
 
-  // Existing attachment/upload methods
-  addAttachment: (attachment: Omit<Attachment, "id" | "uploadedAt">) => void;
+  // Existing attachment/upload methods. Optional id lets the caller
+  // pass the backend's UUID so the in-store id matches the
+  // case_attachments row — required for the refresh-on-restore flow
+  // that re-mints signed URLs by attachment id.
+  addAttachment: (
+    attachment: Omit<Attachment, "id" | "uploadedAt"> & { id?: string }
+  ) => void;
+  // Reconcile the in-store attachment list with the backend's
+  // authoritative list. Drops any ATTACHMENT bundle item whose refId
+  // is no longer on the server (cleans up stale localStorage rows
+  // from before persistence existed) and ensures every server row
+  // has a bundle entry with a fresh URL. Idempotent — safe to call
+  // on every case open.
+  reconcileAttachmentsFromBackend: (
+    serverAttachments: Array<Omit<Attachment, "uploadedAt"> & { uploadedAt?: string }>
+  ) => void;
   removeAttachment: (id: string) => void;
   saveDraft: (caseId?: string) => void;
   loadDraft: (caseId?: string) => void;
@@ -120,47 +134,154 @@ export const useDocumentEditorStore = create<DocumentEditorState>((set, get) => 
   addAttachment: (attachment) => {
     const newAttachment: Attachment = {
       ...attachment,
-      id: `att_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      // Use the caller-supplied id (backend UUID) when present.
+      // Falls back to the legacy local id for purely-local flows.
+      id: attachment.id ?? `att_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
       uploadedAt: new Date().toISOString(),
     };
 
-    // Create bundle item for this attachment
-    const bundleItem: BundleItem = {
-      id: `bundle_att_${newAttachment.id}`,
-      type: 'ATTACHMENT',
-      refId: newAttachment.id,
-      title: newAttachment.name,
-      createdAt: newAttachment.uploadedAt,
-    };
+    set((state) => {
+      // Dedup by id. The mount-time hydration from listAttachments
+      // calls addAttachment once per persisted row; without this
+      // check, each page refresh would keep adding more sidebar
+      // rows for the same backend attachment because the previous
+      // session's bundleItems (restored from localStorage) already
+      // contain a row for it. We update the URL + metadata in
+      // place so a freshly signed URL replaces a stale one.
+      if (state.attachmentsById[newAttachment.id]) {
+        const merged: Attachment = {
+          ...state.attachmentsById[newAttachment.id],
+          ...newAttachment,
+          // Preserve the original uploadedAt so the sidebar's sort
+          // order doesn't shuffle on every refresh.
+          uploadedAt:
+            state.attachmentsById[newAttachment.id].uploadedAt ||
+            newAttachment.uploadedAt,
+        };
+        return {
+          attachments: state.attachments.map((a) =>
+            a.id === merged.id ? merged : a
+          ),
+          attachmentsById: {
+            ...state.attachmentsById,
+            [merged.id]: merged,
+          },
+          // bundleItems untouched — the existing row already points
+          // to this attachment refId.
+        };
+      }
 
-    set((state) => ({
-      attachments: [...state.attachments, newAttachment],
-      attachmentsById: {
-        ...state.attachmentsById,
-        [newAttachment.id]: newAttachment,
-      },
-      bundleItems: (() => {
-        const items = [...state.bundleItems];
-        let insertIndex = -1;
+      const bundleItem: BundleItem = {
+        id: `bundle_att_${newAttachment.id}`,
+        type: "ATTACHMENT",
+        refId: newAttachment.id,
+        title: newAttachment.name,
+        createdAt: newAttachment.uploadedAt,
+      };
 
-        // Try to insert after currently selected document
-        if (state.currentDocId) {
-          const currentIndex = items.findIndex(item => item.refId === state.currentDocId);
-          if (currentIndex !== -1) {
-            insertIndex = currentIndex + 1;
-          }
+      const items = [...state.bundleItems];
+      let insertIndex = -1;
+
+      // Try to insert after currently selected document
+      if (state.currentDocId) {
+        const currentIndex = items.findIndex(
+          (item) => item.refId === state.currentDocId
+        );
+        if (currentIndex !== -1) {
+          insertIndex = currentIndex + 1;
         }
+      }
 
-        // Fallback: Add to end
-        if (insertIndex === -1) {
-          insertIndex = items.length;
-        }
+      // Fallback: Add to end
+      if (insertIndex === -1) {
+        insertIndex = items.length;
+      }
 
-        items.splice(insertIndex, 0, bundleItem);
-        return items;
-      })(),
-      isDirty: true,
-    }));
+      items.splice(insertIndex, 0, bundleItem);
+
+      return {
+        attachments: [...state.attachments, newAttachment],
+        attachmentsById: {
+          ...state.attachmentsById,
+          [newAttachment.id]: newAttachment,
+        },
+        bundleItems: items,
+        isDirty: true,
+      };
+    });
+  },
+
+  reconcileAttachmentsFromBackend: (serverAttachments) => {
+    // Backend is the source of truth. Build the new attachmentsById
+    // map from scratch, preserving the in-memory `uploadedAt` when
+    // we already had the row (avoids the sidebar shuffling on every
+    // refresh due to a server timestamp tick).
+    set((state) => {
+      const nextById: Record<string, Attachment> = {};
+      const nextArray: Attachment[] = [];
+
+      for (const incoming of serverAttachments) {
+        const previous = state.attachmentsById[incoming.id];
+        const merged: Attachment = {
+          id: incoming.id,
+          name: incoming.name,
+          type: incoming.type,
+          size: incoming.size,
+          url: incoming.url,
+          uploadedAt:
+            previous?.uploadedAt ||
+            incoming.uploadedAt ||
+            new Date().toISOString(),
+        };
+        nextById[merged.id] = merged;
+        nextArray.push(merged);
+      }
+
+      // Walk the existing bundleItems and drop ATTACHMENT entries
+      // whose refId isn't in the server list (stale localStorage
+      // duplicates from before persistence shipped). DOC items pass
+      // through untouched.
+      const filtered = state.bundleItems.filter(
+        (item) => item.type !== "ATTACHMENT" || Boolean(nextById[item.refId])
+      );
+
+      // Dedup ATTACHMENT items just in case localStorage had two
+      // bundle entries for the same refId. Keeps the first occurrence
+      // so the user's chosen ordering survives.
+      const seen = new Set<string>();
+      const deduped = filtered.filter((item) => {
+        if (item.type !== "ATTACHMENT") return true;
+        if (seen.has(item.refId)) return false;
+        seen.add(item.refId);
+        return true;
+      });
+
+      // Append a bundle entry for any server attachment we don't
+      // yet have one for (first-time mount after a fresh upload
+      // happened in another tab, for instance).
+      const haveRefIds = new Set(
+        deduped
+          .filter((item) => item.type === "ATTACHMENT")
+          .map((item) => item.refId)
+      );
+      const additions: BundleItem[] = [];
+      for (const att of nextArray) {
+        if (haveRefIds.has(att.id)) continue;
+        additions.push({
+          id: `bundle_att_${att.id}`,
+          type: "ATTACHMENT",
+          refId: att.id,
+          title: att.name,
+          createdAt: att.uploadedAt,
+        });
+      }
+
+      return {
+        attachments: nextArray,
+        attachmentsById: nextById,
+        bundleItems: [...deduped, ...additions],
+      };
+    });
   },
 
   removeAttachment: (id) => {

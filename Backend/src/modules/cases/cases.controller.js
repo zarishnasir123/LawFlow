@@ -1,10 +1,13 @@
 import {
   createCase,
+  deleteCaseAttachment,
   getCaseForLawyer,
+  listCaseAttachments,
   listCaseTypes,
   listCasesForLawyer,
   resolveCaseTemplate,
-  updateCase
+  updateCase,
+  uploadAttachmentToCase
 } from "./cases.service.js";
 
 export async function getCaseTypes(req, res) {
@@ -78,4 +81,34 @@ export async function patchMyCase(req, res) {
   });
 
   return res.status(200).json({ case: updated });
+}
+
+// =====================================================================
+// Case attachments
+// =====================================================================
+
+export async function postCaseAttachment(req, res) {
+  const attachment = await uploadAttachmentToCase({
+    caseId: req.params.caseId,
+    lawyerUserId: req.user.sub,
+    file: req.file,
+  });
+  return res.status(201).json({ attachment });
+}
+
+export async function getCaseAttachments(req, res) {
+  const attachments = await listCaseAttachments({
+    caseId: req.params.caseId,
+    lawyerUserId: req.user.sub,
+  });
+  return res.status(200).json({ attachments });
+}
+
+export async function removeCaseAttachment(req, res) {
+  await deleteCaseAttachment({
+    caseId: req.params.caseId,
+    attachmentId: req.params.attachmentId,
+    lawyerUserId: req.user.sub,
+  });
+  return res.status(204).end();
 }

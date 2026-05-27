@@ -89,3 +89,10 @@ export const updateCaseValidator = [
   optionalStringField(["clientPhone"], "Client phone", { max: 30 }),
   optionalStringField(["oppositePartyName"], "Opposite party name", { max: 200 })
 ];
+
+// Attachment endpoints — caseId comes from the URL on all three;
+// the attachment-id-bearing routes (DELETE) need an extra param.
+export const attachmentIdParamValidator = [
+  uuidParam("caseId"),
+  uuidParam("attachmentId"),
+];
