@@ -136,9 +136,17 @@ export default function LawyerSignatureViewer() {
     const host = documentHostRef.current;
     if (!host || !filteredSnapshot) return;
     const parsed = new DOMParser().parseFromString(filteredSnapshot, "text/html");
+    // Strip bare `body { ... }` rules from the snapshot's stylesheets
+    // before injection. The snapshot's viewer-framing CSS sets
+    // `body { padding: 24px }` for standalone-iframe rendering, but
+    // here we're injecting INTO a host div, so that rule would leak
+    // onto our app's body and push the green header down with a 24px
+    // gap above it. The negative-character class on the regex avoids
+    // matching `.body-*` classes or selectors like `tbody`.
     const styleHtml = Array.from(parsed.head.querySelectorAll("style"))
       .map((s) => s.outerHTML)
-      .join("\n");
+      .join("\n")
+      .replace(/(^|[^.#:\w-])body\s*\{[^}]*\}/g, "$1");
     const bodyHtml = parsed.body.innerHTML;
     host.innerHTML = `${styleHtml}${bodyHtml}`;
   }, [filteredSnapshot]);

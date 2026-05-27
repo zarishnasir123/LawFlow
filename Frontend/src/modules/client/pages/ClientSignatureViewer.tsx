@@ -177,9 +177,19 @@ export default function ClientSignatureViewer() {
     // Move <style> tags from the parsed head into our host so the
     // wrapper-scoped CSS that docx-preview generated takes effect
     // without polluting the rest of the app.
+    //
+    // CRITICAL: strip any rule targeting bare `body` selectors before
+    // injecting. The snapshot's viewer-framing CSS sets
+    // `body { padding: 24px }` for when the snapshot renders
+    // standalone in an iframe — but we're injecting INTO a host div,
+    // so that rule leaks out and applies to OUR app's body, pushing
+    // the green header down with a 24px gap above it. The regex below
+    // wipes those rules without touching `.body-*` class selectors or
+    // selectors like `tbody`.
     const styleHtml = Array.from(parsed.head.querySelectorAll("style"))
       .map((s) => s.outerHTML)
-      .join("\n");
+      .join("\n")
+      .replace(/(^|[^.#:\w-])body\s*\{[^}]*\}/g, "$1");
     const bodyHtml = parsed.body.innerHTML;
     host.innerHTML = `${styleHtml}${bodyHtml}`;
   }, [filteredSnapshot]);
@@ -422,7 +432,17 @@ export default function ClientSignatureViewer() {
   const pageCount = request.pageIndices?.length || 0;
 
   return (
-    <ClientLayout brandSubtitle="Sign Document">
+    // pageSubtitle shows the case title under the "LawFlow" brand
+    // wordmark (same pattern the editor uses for "umar's property
+    // case") so the header carries real context, not just a generic
+    // "Sign Document" label. Back arrow returns to /case-tracking.
+    <ClientLayout
+      brandSubtitle="Sign Document"
+      pageSubtitle={request.caseTitle}
+      showBackButton
+      onBackClick={() => navigate({ to: "/case-tracking" })}
+      backLabel="Back to pending"
+    >
       <div className="space-y-4">
         {/* Hero card — amber-tinted to match the /case-tracking
             pending signatures card, so the signing surface visually
