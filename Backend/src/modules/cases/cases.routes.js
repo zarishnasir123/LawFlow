@@ -3,17 +3,22 @@ import { Router } from "express";
 import { asyncHandler } from "../../middleware/asyncHandler.js";
 import { authenticate } from "../../middleware/authenticate.js";
 import { authorizeRoles } from "../../middleware/authorizeRoles.js";
+import { uploadCaseAttachment } from "../../middleware/uploadCaseAttachment.js";
 import { validateRequest } from "../../middleware/validateRequest.js";
 
 import {
   createMyCase,
   downloadCaseTemplate,
+  getCaseAttachments,
   getCaseTypes,
   getMyCase,
   listMyCases,
-  patchMyCase
+  patchMyCase,
+  postCaseAttachment,
+  removeCaseAttachment
 } from "./cases.controller.js";
 import {
+  attachmentIdParamValidator,
   caseIdParamValidator,
   caseTypeCodeParamValidator,
   createCaseValidator,
@@ -71,6 +76,40 @@ router.patch(
   updateCaseValidator,
   validateRequest,
   asyncHandler(patchMyCase)
+);
+
+// =====================================================================
+// Case attachments — image evidence the lawyer drag-drops onto the
+// docx editor canvas as floating overlays. Upload goes to Supabase
+// (private bucket); list returns fresh signed URLs every call so the
+// editor's restored HTML works even after the cached URL expired.
+// =====================================================================
+router.post(
+  "/:caseId/attachments",
+  authenticate,
+  authorizeRoles("lawyer"),
+  uploadCaseAttachment,
+  caseIdParamValidator,
+  validateRequest,
+  asyncHandler(postCaseAttachment)
+);
+
+router.get(
+  "/:caseId/attachments",
+  authenticate,
+  authorizeRoles("lawyer"),
+  caseIdParamValidator,
+  validateRequest,
+  asyncHandler(getCaseAttachments)
+);
+
+router.delete(
+  "/:caseId/attachments/:attachmentId",
+  authenticate,
+  authorizeRoles("lawyer"),
+  attachmentIdParamValidator,
+  validateRequest,
+  asyncHandler(removeCaseAttachment)
 );
 
 export default router;

@@ -4,6 +4,7 @@ import { pool } from "../../config/db.js";
 import { ApiError } from "../../utils/apiError.js";
 import {
   queueSignatureRequestEmail,
+  queueSignatureRequestCancelledEmail,
   queueSignatureCompletionEmail,
 } from "../../services/email.service.js";
 import { compileCaseSignedPdf } from "./signatures.compiler.js";
@@ -574,10 +575,26 @@ export async function submitSignature({
 // =====================================================================
 
 export async function cancelSignatureRequest({ requestId, lawyerUserId }) {
+  // Single round-trip ownership + email-context lookup. JOINing the
+  // recipient + canceller rows here means we don't need a second
+  // SELECT after the UPDATE just to build the notification payload.
   const owned = await pool.query(
-    `SELECT sr.id, sr.status
+    `SELECT
+       sr.id,
+       sr.status,
+       sr.recipient_user_id,
+       sr.signer_role,
+       sr.page_indices,
+       c.title AS case_title,
+       recipient.email      AS recipient_email,
+       recipient.first_name AS recipient_first_name,
+       canceller.first_name AS canceller_first_name,
+       canceller.last_name  AS canceller_last_name,
+       canceller.email      AS canceller_email
      FROM signature_requests sr
      JOIN cases c ON c.id = sr.case_id
+     JOIN users recipient ON recipient.id = sr.recipient_user_id
+     JOIN users canceller ON canceller.id = $2
      WHERE sr.id = $1 AND c.lawyer_user_id = $2`,
     [requestId, lawyerUserId]
   );
@@ -597,6 +614,43 @@ export async function cancelSignatureRequest({ requestId, lawyerUserId }) {
      RETURNING *`,
     [requestId]
   );
+
+  // Fire the withdrawal notification AFTER the UPDATE commits. We
+  // skip the self-cancel case (lawyer cancelling a row whose
+  // recipient is themselves — the "Both" signer flow creates one
+  // row per signer, so the lawyer's own row gets cancelled too).
+  // Same setImmediate + try/catch shape used by submitSignature
+  // for the completion email; per AGENTS.md, email sends never
+  // block the request that triggered them.
+  const isSelfCancel = row.recipient_user_id === lawyerUserId;
+  if (!isSelfCancel) {
+    const pageCount = Array.isArray(row.page_indices) ? row.page_indices.length : 0;
+    const cancellerName =
+      [row.canceller_first_name, row.canceller_last_name]
+        .filter(Boolean)
+        .join(" ")
+        .trim() || row.canceller_email;
+
+    setImmediate(() => {
+      try {
+        queueSignatureRequestCancelledEmail({
+          email: row.recipient_email,
+          firstName: row.recipient_first_name,
+          caseTitle: row.case_title,
+          requestingLawyerName: cancellerName,
+          pageCount,
+          signerRole: row.signer_role,
+        });
+      } catch (err) {
+        // queueEmailTask already swallows + logs downstream failures,
+        // but the wrapping try/catch defends against a synchronous
+        // throw if the helper itself blows up. We never want a
+        // notification failure to surface as a cancel failure.
+        console.error("[signature-cancelled email] queue failed:", err?.message);
+      }
+    });
+  }
+
   return mapSignatureRequest(result.rows[0]);
 }
 

@@ -35,6 +35,13 @@ export function getSupabaseStorageConfig() {
   // image. The dev needs to create this bucket in Supabase Studio with
   // "Public bucket" toggled on.
   const avatarBucket = process.env.SUPABASE_AVATAR_BUCKET || "user-avatars";
+  // Private bucket for case-editor attachments — images the lawyer
+  // drag-drops into the docx editor as floating overlays. Separate
+  // from the lawyer-verification bucket because they have a
+  // different lifecycle (per-case, not per-lawyer) and a different
+  // access path (case ownership check, not lawyer ownership).
+  const caseAttachmentBucket =
+    process.env.SUPABASE_CASE_ATTACHMENT_BUCKET || "case-attachments";
   const previewUrlExpiresIn = Number(process.env.SUPABASE_PREVIEW_URL_EXPIRES_IN || 900);
 
   const issues = [];
@@ -49,6 +56,7 @@ export function getSupabaseStorageConfig() {
     bucket,
     casePdfBucket,
     avatarBucket,
+    caseAttachmentBucket,
     previewUrlExpiresIn: Number.isFinite(previewUrlExpiresIn) && previewUrlExpiresIn > 0
       ? previewUrlExpiresIn
       : 900

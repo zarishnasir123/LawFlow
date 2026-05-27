@@ -18,6 +18,15 @@ type Corner = "nw" | "ne" | "sw" | "se";
 const SELECTED_CLASS = "lawflow-floating-image-selected";
 const FLOATING_CLASS = "lawflow-floating-image";
 const HANDLE_CLASS = "lawflow-resize-handle";
+const DELETE_CLASS = "lawflow-image-delete";
+// Marker attribute the wrapper carries so we can find the rehydrated
+// node by its source attachment after restoring from edited_html.
+// Lives on the DOM element AND survives serialization → restore.
+const ATTACHMENT_ID_ATTR = "data-attachment-id";
+// Boolean flag set on a wrapper once its interactions are wired up.
+// Prevents attachInteractions from running twice (which would double-
+// fire onMouseDown when the user re-mounts the same node).
+const INTERACTIONS_ATTR = "data-lawflow-interactions";
 
 interface MountOptions {
   // Image bytes / URL to display.
@@ -31,6 +40,11 @@ interface MountOptions {
   top: number;
   // Optional starting width — defaults to 240px, height auto-derived.
   width?: number;
+  // Source attachment id — stamped on the wrapper so a second drag of
+  // the same attachment can reuse the existing floating image instead
+  // of duplicating it. Optional for cases where the caller doesn't
+  // care about dedup (one-shot programmatic mounts).
+  attachmentId?: string;
   // Fires after any drag / resize completes so the caller can persist
   // the new document state (HTML serialization, autosave, etc.).
   onChange?: () => void;
@@ -65,6 +79,9 @@ function buildFloatingImage(opts: MountOptions): HTMLSpanElement {
   const wrapper = document.createElement("span");
   wrapper.className = FLOATING_CLASS;
   wrapper.setAttribute("contenteditable", "false");
+  if (opts.attachmentId) {
+    wrapper.setAttribute(ATTACHMENT_ID_ATTR, opts.attachmentId);
+  }
   wrapper.style.position = "absolute";
   wrapper.style.left = `${opts.left}px`;
   wrapper.style.top = `${opts.top}px`;
@@ -100,7 +117,28 @@ function buildFloatingImage(opts: MountOptions): HTMLSpanElement {
     wrapper.appendChild(handle);
   });
 
+  wrapper.appendChild(buildDeleteButton());
+
   return wrapper;
+}
+
+// Floating delete affordance — circular red X sitting just outside
+// the top-right corner of the wrapper. Wired up later by
+// attachInteractions so the click handler can fire onChange. Kept
+// as a separate factory so the rehydrate path can add it to legacy
+// snapshots that don't already have one.
+function buildDeleteButton(): HTMLButtonElement {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = DELETE_CLASS;
+  btn.setAttribute("aria-label", "Delete image");
+  btn.setAttribute("title", "Delete image");
+  // Pure SVG so the X scales with the button without an icon font.
+  btn.innerHTML =
+    '<svg viewBox="0 0 16 16" width="10" height="10" aria-hidden="true">' +
+    '<path d="M3 3 L13 13 M13 3 L3 13" stroke="white" stroke-width="2.5" stroke-linecap="round" fill="none" />' +
+    "</svg>";
+  return btn;
 }
 
 // Attach mouse-based drag + resize behaviour. Listeners on the wrapper
@@ -112,6 +150,14 @@ function attachInteractions(
   wrapper: HTMLSpanElement,
   onChange?: () => void
 ) {
+  // Idempotency guard. Calling this twice on the same node would
+  // double-fire the drag handler (each mousedown would attach two
+  // sets of global mousemove listeners) and cause images to jump.
+  // The marker survives within the DOM only — serialized HTML loses
+  // event listeners, so the flag also needs clearing on rehydrate.
+  if (wrapper.getAttribute(INTERACTIONS_ATTR) === "true") return;
+  wrapper.setAttribute(INTERACTIONS_ATTR, "true");
+
   let mode: null | "drag" | `resize-${Corner}` = null;
   let startX = 0;
   let startY = 0;
@@ -170,6 +216,10 @@ function attachInteractions(
 
   const onMouseDown = (e: MouseEvent) => {
     const target = e.target as HTMLElement;
+    // Clicks on the delete button are handled below — never start a
+    // drag or resize from them. The button has its own click listener
+    // wired further down that removes the wrapper.
+    if (target.closest(`.${DELETE_CLASS}`)) return;
     const isHandle = target.classList.contains(HANDLE_CLASS);
     if (isHandle) {
       mode = `resize-${target.dataset.corner as Corner}`;
@@ -201,6 +251,23 @@ function attachInteractions(
   };
 
   wrapper.addEventListener("mousedown", onMouseDown);
+
+  // Delete-button click: remove the wrapper from the DOM and fire
+  // onChange so the autosave snapshot picks up the deletion. We
+  // attach the listener here (not on buildDeleteButton) so the
+  // rehydrate path can also benefit — re-running attachInteractions
+  // on a restored wrapper rewires this click handler from scratch.
+  const deleteBtn = wrapper.querySelector<HTMLButtonElement>(
+    `.${DELETE_CLASS}`
+  );
+  if (deleteBtn) {
+    deleteBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      wrapper.remove();
+      onChange?.();
+    });
+  }
 }
 
 // Global click handler — clicking outside any floating image clears
@@ -305,8 +372,41 @@ export function alignSelectedImage(mode: ImageAlignMode): boolean {
 // Public entry point. Creates the floating image, parents it to the
 // page, wires interactions, and returns the wrapper element so callers
 // can hold a ref if they need to.
+//
+// If an attachmentId is supplied AND a floating image with the same
+// id already exists anywhere in the docx host, we move that existing
+// wrapper to the new page + position instead of creating a duplicate.
+// This is the "drag the same attachment twice" case: lawyer expects
+// the image to relocate, not multiply.
 export function mountFloatingImage(opts: MountOptions): HTMLSpanElement {
   ensurePagePositioning(opts.page);
+
+  const host = opts.page.closest(".docx-preview-host") as HTMLElement | null;
+
+  // Dedup path — same attachment already placed somewhere? Move it.
+  if (opts.attachmentId && host) {
+    const existing = host.querySelector<HTMLSpanElement>(
+      `.${FLOATING_CLASS}[${ATTACHMENT_ID_ATTR}="${CSS.escape(opts.attachmentId)}"]`
+    );
+    if (existing) {
+      // Re-parent to the new page (handles cross-page drags) and
+      // reset position. Width/height are preserved — the user already
+      // chose them; a relocate shouldn't reset their sizing.
+      if (existing.parentElement !== opts.page) {
+        opts.page.appendChild(existing);
+      }
+      existing.style.left = `${opts.left}px`;
+      existing.style.top = `${opts.top}px`;
+      // Interactions are already wired (idempotent guard makes a
+      // re-call safe anyway), but the onChange callback may have
+      // changed across renders. Re-attach defensively — the guard
+      // will short-circuit if the same closure was already bound.
+      attachInteractions(existing, opts.onChange);
+      if (host) installSelectionClearer(host);
+      opts.onChange?.();
+      return existing;
+    }
+  }
 
   const wrapper = buildFloatingImage(opts);
   opts.page.appendChild(wrapper);
@@ -315,8 +415,61 @@ export function mountFloatingImage(opts: MountOptions): HTMLSpanElement {
   // Click-outside-to-deselect needs to live on the docx-preview host so
   // every floating image on every page shares one listener. We climb up
   // from the page (.docx-wrapper > section.docx → .docx-wrapper → host).
-  const host = opts.page.closest(".docx-preview-host") as HTMLElement | null;
   if (host) installSelectionClearer(host);
 
   return wrapper;
+}
+
+// Re-wire drag / resize interactions on floating images that came
+// back from a saved HTML snapshot. The DOM nodes survive
+// serialization but their event listeners don't — without this call
+// the images render in the right place but feel "stuck" (no cursor
+// move, no resize handles light up, no Delete/Backspace removal).
+//
+// Safe to call multiple times; attachInteractions is idempotent via
+// the data-lawflow-interactions marker. The marker doesn't survive
+// HTML serialization, so we explicitly clear it on the rehydrate
+// path to force a fresh wire-up.
+export function rehydrateFloatingImages(
+  host: HTMLElement,
+  onChange?: () => void
+) {
+  const wrappers = host.querySelectorAll<HTMLSpanElement>(
+    `.${FLOATING_CLASS}`
+  );
+  wrappers.forEach((wrapper) => {
+    // Strip any stale interactions marker so attachInteractions
+    // doesn't short-circuit (the listeners themselves were lost in
+    // the HTML round-trip; the attribute alone is meaningless).
+    wrapper.removeAttribute(INTERACTIONS_ATTR);
+
+    // Re-arm the inner img guards. innerHTML / cloneNode preserves
+    // these attributes for us, but buildFloatingImage also sets
+    // img.pointerEvents and img.draggable imperatively — re-asserting
+    // is cheap insurance against partial restores.
+    const img = wrapper.querySelector("img");
+    if (img) {
+      img.draggable = false;
+      img.style.pointerEvents = "none";
+    }
+
+    // Backfill the delete button on legacy snapshots written before
+    // the X-button shipped. Without this, old saved cases would
+    // lose the delete affordance until the lawyer re-dropped the
+    // image. attachInteractions wires the click listener below.
+    if (!wrapper.querySelector(`.${DELETE_CLASS}`)) {
+      wrapper.appendChild(buildDeleteButton());
+    }
+
+    attachInteractions(wrapper, onChange);
+
+    // Pages need position:relative for the absolute children to land
+    // in the right coordinate space. docx-preview already sets it,
+    // but the saved snapshot path doesn't go through renderAsync, so
+    // we coerce defensively.
+    const page = wrapper.parentElement;
+    if (page) ensurePagePositioning(page as HTMLElement);
+  });
+
+  installSelectionClearer(host);
 }

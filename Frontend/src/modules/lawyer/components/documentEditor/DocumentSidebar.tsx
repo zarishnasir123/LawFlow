@@ -47,6 +47,7 @@ import {
   useDocumentEditorStore,
   type BundleItem,
 } from "../../store/documentEditor.store";
+import { casesApi } from "../../api/cases.api";
 import DocumentPagesPanel from "./DocumentPagesPanel";
 
 interface DocumentSidebarProps {
@@ -63,6 +64,10 @@ interface DocumentSidebarProps {
     number,
     { clientSigned: boolean; lawyerSigned: boolean }
   >;
+  // Page indices with a pending signature request — gates the per-row
+  // send icon so the lawyer can't fire a duplicate request while one
+  // is still in flight.
+  pendingPageIndices?: Set<number>;
   onSendPageToClient?: (pageIndex: number, pageElement: HTMLElement) => void;
   // Right-click on a page row in the PAGES sidebar. Bubbled up so the
   // CaseDocumentEditor can render its custom <PageContextMenu> at the
@@ -222,6 +227,14 @@ function SortableBundleItem({
             {formatFileSize(fileInfo.size)}
           </p>
         )}
+        {/* Drag affordance — only shown for draggable image rows. Sits
+            as a hover-revealed subtitle so the lawyer learns the
+            mechanic without it cluttering the row at rest. */}
+        {isImageAttachment && (
+          <p className="mt-0.5 hidden text-[10px] font-medium text-[var(--primary)] group-hover:block">
+            ↗ Drag onto a page to insert
+          </p>
+        )}
         {signedLabel && (
           <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 ring-1 ring-emerald-200">
             <span className="w-1 h-1 rounded-full bg-emerald-500" />
@@ -260,6 +273,7 @@ export default function DocumentSidebar({
   caseId,
   pages = [],
   signatureStatusByPageIndex,
+  pendingPageIndices,
   onSendPageToClient,
   onPageContextMenu,
 }: DocumentSidebarProps) {
@@ -455,14 +469,51 @@ export default function DocumentSidebar({
                                 onAttachmentSelect?.(item.refId);
                                 return;
                               }
+                              // Image attachments: skip the preview
+                              // modal — it blocked the workflow. The
+                              // lawyer's primary action is drag-onto-
+                              // page, which the row's draggable + the
+                              // editor's drop-zone overlay surface
+                              // directly. The hover hint on the row
+                              // ("↗ Drag onto a page to insert")
+                              // teaches the affordance.
                               onAttachmentSelect?.(null);
-                              if (isPreviewableAttachment) {
+                              if (
+                                isPreviewableAttachment &&
+                                !fileInfo?.type?.startsWith("image/")
+                              ) {
                                 setPreviewAttachmentId(item.refId);
                               }
                             }
                           : undefined
                       }
-                      onRemove={() => removeFromBundle(item.id)}
+                      onRemove={async () => {
+                        // ATTACHMENT items get a real backend delete
+                        // so the row vanishes permanently, not just
+                        // until the next refresh. DOC items stay
+                        // client-side (the case template + uploaded
+                        // docs don't have a backend representation
+                        // beyond cases.edited_html). Fire-and-forget
+                        // the network call — the UI removes the row
+                        // optimistically; a backend failure leaves
+                        // an orphan record that the next reconcile
+                        // will surface.
+                        if (
+                          item.type === "ATTACHMENT" &&
+                          caseId &&
+                          caseId !== "default-case"
+                        ) {
+                          try {
+                            await casesApi.deleteAttachment(caseId, item.refId);
+                          } catch (err) {
+                            console.error(
+                              "[attachment] delete failed:",
+                              err
+                            );
+                          }
+                        }
+                        removeFromBundle(item.id);
+                      }}
                     />
                   );
                 })}
@@ -478,6 +529,7 @@ export default function DocumentSidebar({
       <DocumentPagesPanel
         pages={pages}
         signatureStatusByPageIndex={signatureStatusByPageIndex}
+        pendingPageIndices={pendingPageIndices}
         onSendPageToClient={onSendPageToClient}
         onPageContextMenu={onPageContextMenu}
         collapsed={collapsed}

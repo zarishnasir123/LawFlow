@@ -1,5 +1,7 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+import { ImagePlus } from "lucide-react";
 import { renderAsync } from "docx-preview";
+import { rehydrateFloatingImages } from "../../utils/floatingImage";
 
 interface DocxPreviewSurfaceProps {
   // The raw .docx bytes fetched from the backend. We deliberately accept
@@ -36,6 +38,13 @@ interface DocxPreviewSurfaceProps {
   // (x, y). Matches the same callback shape DocumentPagesPanel uses
   // for sidebar rows so the parent can route both to one handler.
   onPageContextMenu?: (pageIndex: number, x: number, y: number) => void;
+  // Map of attachmentId → fresh signed URL. After restoring a saved
+  // HTML snapshot, the floating-image <img src> values are still
+  // pointing at last session's signed URLs (which expire in an hour).
+  // We use this map to rewrite each wrapper's inner <img> to a fresh
+  // URL keyed by its data-attachment-id, so refreshes survive past
+  // the original URL's TTL.
+  attachmentUrlMap?: Record<string, string>;
 }
 
 export default function DocxPreviewSurface({
@@ -46,8 +55,41 @@ export default function DocxPreviewSurface({
   editable = false,
   onImageDropped,
   onPageContextMenu,
+  attachmentUrlMap,
 }: DocxPreviewSurfaceProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  // Visual drop-zone feedback while a sidebar image is being dragged
+  // over the editor. Native HTML5 drag events fire many times per
+  // second — we just flip a boolean and let the JSX overlay handle
+  // the rest. dragLeave is intentionally not used (it fires when the
+  // pointer crosses any child element); we reset on drop and on
+  // dragend via the window-level listener below.
+  const [isDragOver, setIsDragOver] = useState(false);
+
+  // Rewrite every floating-image's <img src> to the fresh signed URL
+  // keyed by its data-attachment-id. Runs whenever the parent passes
+  // a new attachmentUrlMap (initial fetch lands after mount; the user
+  // may also re-open the case past the previous URL's TTL). The
+  // rewrite is a no-op when src already matches, so this is cheap.
+  // Decoupled from the main render effect so a slow attachments fetch
+  // doesn't re-trigger the docx-preview render.
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container || !attachmentUrlMap) return;
+    const wrappers = container.querySelectorAll<HTMLSpanElement>(
+      ".lawflow-floating-image[data-attachment-id]"
+    );
+    wrappers.forEach((wrapper) => {
+      const id = wrapper.getAttribute("data-attachment-id");
+      if (!id) return;
+      const freshUrl = attachmentUrlMap[id];
+      if (!freshUrl) return;
+      const img = wrapper.querySelector("img");
+      if (img && img.getAttribute("src") !== freshUrl) {
+        img.setAttribute("src", freshUrl);
+      }
+    });
+  }, [attachmentUrlMap, editedHtml]);
   // onPagesReady is stored in a ref so we don't re-run the render effect
   // when the parent's callback identity changes — only re-render when the
   // bytes themselves change.
@@ -124,6 +166,14 @@ export default function DocxPreviewSurface({
             cb(idx, (e as MouseEvent).clientX, (e as MouseEvent).clientY);
           });
         });
+
+        // Re-wire drag / resize on floating images that came back
+        // from the snapshot. The DOM nodes survived serialization
+        // but their imperative mousedown listeners didn't — without
+        // this call the images render in the right place but feel
+        // "stuck" (can't drag, can't resize, Delete doesn't remove
+        // them). Idempotent, so re-renders are safe.
+        rehydrateFloatingImages(container);
 
         onPagesReadyRef.current?.(Array.from(pages));
       } catch (err) {
@@ -220,13 +270,33 @@ export default function DocxPreviewSurface({
     if (!e.dataTransfer.types.includes("application/x-lawflow-image")) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = "copy";
+    if (!isDragOver) setIsDragOver(true);
+  };
+
+  // dragleave fires whenever the pointer crosses a child boundary, so
+  // we only reset state when it leaves the scroll container entirely.
+  // relatedTarget === null OR not contained inside currentTarget means
+  // the cursor genuinely left the editor area.
+  const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+    if (!isDragOver) return;
+    const next = e.relatedTarget as Node | null;
+    if (!next || !e.currentTarget.contains(next)) {
+      setIsDragOver(false);
+    }
   };
 
   const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
-    if (!onImageDropped) return;
+    if (!onImageDropped) {
+      setIsDragOver(false);
+      return;
+    }
     const raw = e.dataTransfer.getData("application/x-lawflow-image");
-    if (!raw) return;
+    if (!raw) {
+      setIsDragOver(false);
+      return;
+    }
     e.preventDefault();
+    setIsDragOver(false);
     try {
       const { refId } = JSON.parse(raw) as { refId?: string };
       if (refId) {
@@ -243,10 +313,26 @@ export default function DocxPreviewSurface({
     // Slightly darker bg (gray-200) so the white pages read as paper-on-
     // desk; matches Google Docs' editing canvas tone.
     <div
-      className="h-full overflow-auto bg-[#f8f9fa] py-10"
+      className="relative h-full overflow-auto bg-[#f8f9fa] py-10"
       onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
+      {/* Drop-zone overlay — appears only while an image attachment
+          is being dragged. Sticky position so it stays in view even
+          if the lawyer is mid-scroll on a long document. Background
+          stays partly transparent so the lawyer can see exactly which
+          page they're about to drop onto. pointer-events: none lets
+          the drag/drop events still hit the underlying surface. */}
+      {isDragOver && onImageDropped ? (
+        <div
+          aria-hidden
+          className="pointer-events-none sticky top-4 z-30 mx-auto flex max-w-md items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-[var(--primary)] bg-white/95 px-5 py-3 text-sm font-semibold text-[var(--primary)] shadow-lg backdrop-blur"
+        >
+          <ImagePlus className="h-5 w-5" />
+          Drop to place image on this page
+        </div>
+      ) : null}
       {/* Override docx-preview's default chrome:
           - It sets `background: gray` on .docx-wrapper which fights our
             own bg-gray-100 and produces the dark "frame" the user saw.
@@ -311,6 +397,37 @@ export default function DocxPreviewSurface({
         .lawflow-resize-handle-ne { top: -6px; right: -6px; cursor: nesw-resize; }
         .lawflow-resize-handle-sw { bottom: -6px; left: -6px; cursor: nesw-resize; }
         .lawflow-resize-handle-se { bottom: -6px; right: -6px; cursor: nwse-resize; }
+        /* Delete affordance — red circle with white X just outside
+           the top-right corner. Same hover/select gating as the
+           resize handles so it doesn't clutter the page when the
+           lawyer isn't actively working with an image. */
+        .lawflow-image-delete {
+          position: absolute;
+          top: -10px;
+          right: -10px;
+          width: 20px;
+          height: 20px;
+          padding: 0;
+          background: #ef4444;
+          border: 2px solid white;
+          border-radius: 50%;
+          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+          cursor: pointer;
+          opacity: 0;
+          transition: opacity 0.15s ease, transform 0.15s ease, background 0.15s ease;
+          z-index: 3;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+        }
+        .lawflow-floating-image:hover .lawflow-image-delete,
+        .lawflow-floating-image-selected .lawflow-image-delete {
+          opacity: 1;
+        }
+        .lawflow-image-delete:hover {
+          background: #dc2626;
+          transform: scale(1.08);
+        }
       `}</style>
       <div
         ref={containerRef}

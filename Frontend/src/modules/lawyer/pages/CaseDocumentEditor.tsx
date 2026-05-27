@@ -16,6 +16,7 @@ import {
   type SignerRole,
 } from "../signatures/api/signatures.api";
 import { buildEditorSnapshot } from "../utils/editorSnapshot";
+import { getInMemoryAccessToken } from "../../auth/utils/authStorage";
 import ContentEditableToolbar from "../components/documentEditor/ContentEditableToolbar";
 import TopActionBar from "../components/documentEditor/TopActionBar";
 import DownloadModal from "../components/documentEditor/DownloadModal";
@@ -59,6 +60,7 @@ export default function CaseDocumentEditor() {
     saveDraft,
     loadDraft,
     addAttachment,
+    reconcileAttachmentsFromBackend,
     attachmentsById,
     initializeDefaultBundle,
     bundleItems,
@@ -107,6 +109,49 @@ export default function CaseDocumentEditor() {
   const pdfContainerRef = useRef<HTMLDivElement>(null);
 
   const signatureCaseId = effectiveCaseId;
+
+  // Hydrate the sidebar attachment list from the backend on case
+  // load. Each record carries a freshly-minted signed URL — the
+  // editor uses these as the <img src> for floating images, and
+  // DocxPreviewSurface uses the same map to rewrite stale URLs in
+  // the restored HTML snapshot.
+  //
+  // We use the reconcile action (not a loop of addAttachment calls)
+  // because the previous-session localStorage may already contain
+  // stale ATTACHMENT bundle entries from before persistence shipped.
+  // Reconcile drops anything the server doesn't know about, dedups
+  // any local doubles, and refreshes the URL on every existing row.
+  const [attachmentUrlMap, setAttachmentUrlMap] = useState<Record<string, string>>({});
+  useEffect(() => {
+    if (!effectiveCaseId || effectiveCaseId === "default-case") return;
+    let cancelled = false;
+    casesApi
+      .listAttachments(effectiveCaseId)
+      .then((items) => {
+        if (cancelled) return;
+        const urlMap: Record<string, string> = {};
+        for (const item of items) {
+          if (item.url) urlMap[item.id] = item.url;
+        }
+        reconcileAttachmentsFromBackend(
+          items.map((item) => ({
+            id: item.id,
+            name: item.fileName,
+            type: item.mimeType,
+            size: item.fileSize ?? 0,
+            url: item.url ?? "",
+            uploadedAt: item.createdAt,
+          }))
+        );
+        setAttachmentUrlMap(urlMap);
+      })
+      .catch((err) => {
+        console.error("[attachment] list failed:", err);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [effectiveCaseId, reconcileAttachmentsFromBackend]);
 
   // Refresh the backend-synced signature cache when the case loads /
   // switches. Initial fetch + 15-second poll so the editor reflects
@@ -171,7 +216,20 @@ export default function CaseDocumentEditor() {
     };
   }, [renderedPages]);
 
-  const signaturePendingCount = getPendingRequests(signatureCaseId).length;
+  // Pending requests — used both to surface the toolbar badge count
+  // and to lock per-page surfaces (sidebar send icon + signature
+  // panel checkboxes) so the lawyer can't fire a duplicate request
+  // for a page that's still in flight with its original recipient.
+  const pendingSignatureRequests = getPendingRequests(signatureCaseId);
+  const signaturePendingCount = pendingSignatureRequests.length;
+
+  const pendingPageIndices = useMemo(() => {
+    const set = new Set<number>();
+    for (const req of pendingSignatureRequests) {
+      for (const idx of req.pageIndices || []) set.add(idx);
+    }
+    return set;
+  }, [pendingSignatureRequests]);
 
   // Pull the latest signed requests from the cache for two consumers:
   //   1. SignatureOverlayLayer renders each one's PNG on the canvas at
@@ -429,6 +487,58 @@ export default function CaseDocumentEditor() {
     persistEditedHtmlRef.current = persistEditedHtml;
   }, [persistEditedHtml]);
 
+  // Last-chance save before the page unloads. fetch({ keepalive: true })
+  // lets the browser finish the request even after the tab is gone,
+  // closing the race where a fast refresh aborts the in-flight PUT
+  // from the auto-save loop. Captures the snapshot synchronously at
+  // unload time and ships it with the in-memory access token, so
+  // both the body and the auth header survive the navigation.
+  useEffect(() => {
+    if (!effectiveCaseId || effectiveCaseId === "default-case") return;
+
+    const handler = () => {
+      if (renderedPages.length === 0) return;
+      const snapshot = buildEditorSnapshot(renderedPages);
+      if (!snapshot || snapshot === lastSavedHtmlRef.current) return;
+
+      const apiBase =
+        (import.meta.env.VITE_API_URL as string | undefined) ??
+        "http://localhost:5000/api";
+      const accessToken = getInMemoryAccessToken();
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+      };
+      if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
+
+      try {
+        fetch(`${apiBase}/cases/${effectiveCaseId}/document`, {
+          method: "PUT",
+          credentials: "include",
+          headers,
+          body: JSON.stringify({ editedHtml: snapshot }),
+          // Without keepalive, the request gets aborted the moment
+          // the page unloads. With it, the browser holds the
+          // connection open long enough to flush the bytes (up to
+          // ~64 KB across all keepalive requests per the spec).
+          keepalive: true,
+        }).catch(() => {
+          // Errors here are unrecoverable — the page is going away.
+          // Swallowed silently; the next session's autosave will
+          // reconcile if anything was missed.
+        });
+      } catch {
+        // Same swallow rationale.
+      }
+    };
+
+    window.addEventListener("beforeunload", handler);
+    window.addEventListener("pagehide", handler);
+    return () => {
+      window.removeEventListener("beforeunload", handler);
+      window.removeEventListener("pagehide", handler);
+    };
+  }, [effectiveCaseId, renderedPages]);
+
   const handleSaveDraft = () => {
     if (currentDocId && activeEditorRef) {
       saveDocumentJSON(currentDocId, activeEditorRef.getJSON());
@@ -533,7 +643,7 @@ export default function CaseDocumentEditor() {
   // hidden <input> already restricts via `accept`), but we double-check
   // the MIME here so a drag-and-drop or paste-driven upload can't
   // slip past.
-  const handleAttachmentUpload = (
+  const handleAttachmentUpload = async (
     e: React.ChangeEvent<HTMLInputElement>
   ) => {
     const file = e.target.files?.[0];
@@ -544,16 +654,36 @@ export default function CaseDocumentEditor() {
       return;
     }
 
-    const url = URL.createObjectURL(file);
-    addAttachment({
-      name: file.name,
-      type: file.type,
-      size: file.size,
-      url,
-    });
-    saveDraft(effectiveCaseId);
-
+    // Clear the input early so the user can re-pick the same filename
+    // even if the upload below fails.
     if (attachmentInputRef.current) attachmentInputRef.current.value = "";
+
+    // Real persistence: push the bytes to the backend (Supabase
+    // private bucket), then drop the returned record into the
+    // sidebar. The signed URL the backend gives back is what the
+    // editor uses as the <img src> — survives refresh, expires after
+    // an hour, refreshed by listAttachments on next case open.
+    if (effectiveCaseId === "default-case" || !effectiveCaseId) {
+      console.warn("[attachment] no case id yet; upload skipped");
+      return;
+    }
+    try {
+      const created = await casesApi.uploadAttachment(effectiveCaseId, file);
+      addAttachment({
+        id: created.id,
+        name: created.fileName,
+        type: created.mimeType,
+        size: created.fileSize ?? file.size,
+        url: created.url ?? "",
+      });
+      saveDraft(effectiveCaseId);
+    } catch (err) {
+      // Surfacing this as a console error for now — the editor
+      // doesn't yet have a toast system. The user will see no new
+      // row appear in the sidebar, which is the failure mode they
+      // can recover from by retrying.
+      console.error("[attachment] upload failed:", err);
+    }
   };
 
   // Drops the image onto the page as a "floating" image — Word's
@@ -561,7 +691,7 @@ export default function CaseDocumentEditor() {
   // positioned overlay on the page, draggable anywhere and resizable
   // from any of its four corners with aspect ratio preserved. Doesn't
   // disturb the underlying text flow at all.
-  const handleImageDropped = (
+  const handleImageDropped = async (
     refId: string,
     clientX: number,
     clientY: number
@@ -587,10 +717,29 @@ export default function CaseDocumentEditor() {
       page,
       left: leftInPage,
       top: topInPage,
-      onChange: () => saveDraft(effectiveCaseId),
+      // Stamp the wrapper with the source attachment id so a second
+      // drag of the same row relocates the existing image instead of
+      // duplicating it. Without this every drag would create another
+      // copy stacked on the previous one.
+      attachmentId: refId,
+      // Fires on drag-end, resize-end, and delete-button click.
+      // Persist BOTH localStorage (instant client recovery) AND the
+      // backend (durable across devices / browser sessions). Using
+      // the ref so we always call the latest closure even though
+      // mountFloatingImage captured this callback at mount time.
+      onChange: () => {
+        saveDraft(effectiveCaseId);
+        void persistEditedHtmlRef.current();
+      },
     });
 
     saveDraft(effectiveCaseId);
+    // AWAIT (not fire-and-forget) so the placement reaches the
+    // backend before control returns. Without the await, a fast
+    // refresh aborted the in-flight PUT and the floating image was
+    // lost. ~100-300ms typical latency — invisible to the user
+    // since the image is already painted on the page by mountFloatingImage.
+    await persistEditedHtml();
   };
 
   const currentDocTitle =
@@ -661,6 +810,7 @@ export default function CaseDocumentEditor() {
             caseId={caseId}
             pages={renderedPages}
             signatureStatusByPageIndex={signatureStatusByPageIndex}
+            pendingPageIndices={pendingPageIndices}
             onSendPageToClient={() => {
               // Opens the signature panel. Per-page extraction (DOCX →
               // PDF for one page) is wired up in the next sub-phase;
@@ -761,6 +911,7 @@ export default function CaseDocumentEditor() {
                   onPageContextMenu={(pageIndex, x, y) =>
                     setPageMenu({ pageIndex, x, y })
                   }
+                  attachmentUrlMap={attachmentUrlMap}
                   editable
                 />
                 {/* Read-only signature overlay layer. Renders the

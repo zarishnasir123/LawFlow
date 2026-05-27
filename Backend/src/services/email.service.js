@@ -443,6 +443,55 @@ export function queueSignatureRequestEmail({
   );
 }
 
+// Signer-side cancellation notification: fired when the case-owning
+// lawyer cancels an existing pending signature_requests row. Mirrors
+// the signatureRequest pair so the recipient knows the previously-
+// sent link is no longer valid — no action needed on their side; a
+// fresh request will follow if the lawyer needs them to sign again.
+// Skip-self (lawyer cancelling their own self-assigned row) is the
+// caller's responsibility, not this helper's.
+export function sendSignatureRequestCancelledEmail({
+  email,
+  firstName,
+  caseTitle,
+  requestingLawyerName,
+  pageCount,
+  signerRole,
+}) {
+  const safePageCount = Number.isFinite(pageCount) && pageCount > 0 ? pageCount : 1;
+  const signerRoleLabel = signerRole === "lawyer" ? "as the advocate" : "as the client";
+
+  return send(email, "A signature request was withdrawn on LawFlow", "signatureRequestCancelled", {
+    firstName: firstName || "there",
+    caseTitle,
+    requestingLawyerName,
+    pageCount: safePageCount,
+    pageSuffix: safePageCount === 1 ? "" : "s",
+    signerRoleLabel,
+    loginUrl: `${getFrontendUrl()}/login`,
+  });
+}
+
+export function queueSignatureRequestCancelledEmail({
+  email,
+  firstName,
+  caseTitle,
+  requestingLawyerName,
+  pageCount,
+  signerRole,
+}) {
+  return queueEmailTask("signature-request-cancelled", () =>
+    sendSignatureRequestCancelledEmail({
+      email,
+      firstName,
+      caseTitle,
+      requestingLawyerName,
+      pageCount,
+      signerRole,
+    })
+  );
+}
+
 // Signer-completion notification: fired when a signature_requests row
 // transitions to status='signed'. Goes to the case's owning lawyer so
 // they know the case moved one step closer to submittable, with a CTA

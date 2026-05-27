@@ -431,3 +431,117 @@ export async function deleteLawyerStorageFolder({ lawyerKey }) {
     });
   }
 }
+
+// =====================================================================
+// Case attachments (private bucket — see config/supabase.js).
+//
+// Path convention: cases/{caseId}/{attachmentId}/{safeFileName} so
+// every attachment owns its own folder. Per-attachment folders make
+// cleanup trivial (one prefix delete per row) and keep collisions
+// impossible when two files share a name.
+//
+// The browser fetches via short-lived signed URLs (1-hour TTL). The
+// editor's saved HTML contains those URLs literally, so on case re-
+// open the frontend asks for a fresh batch from
+// GET /cases/:caseId/attachments and rewrites the <img src> on the
+// restored DOM. That's why a stable storage_path beats a baked-in
+// URL: paths don't expire.
+// =====================================================================
+
+function safeAttachmentFileName(originalName) {
+  // Strip path separators + control chars; keep the extension intact
+  // so contentType detection works downstream. Defensive only — the
+  // multer middleware also blocks weird names at the boundary.
+  const fallback = "file";
+  if (typeof originalName !== "string") return fallback;
+  const base = originalName.replace(/[\\/\0\r\n]+/g, "").trim();
+  if (!base) return fallback;
+  return base.slice(0, 120);
+}
+
+function buildCaseAttachmentPath({ caseId, attachmentId, originalName }) {
+  return `cases/${caseId}/${attachmentId}/${safeAttachmentFileName(originalName)}`;
+}
+
+export async function uploadCaseAttachment({
+  caseId,
+  attachmentId,
+  fileBuffer,
+  mimeType,
+  originalName,
+}) {
+  if (!fileBuffer || fileBuffer.length === 0) {
+    throw new ApiError(400, "Attachment file is empty");
+  }
+
+  const config = getSupabaseStorageConfig();
+  const supabase = getSupabaseClient();
+  if (!supabase) {
+    throw new ApiError(
+      503,
+      `Attachment storage is not configured. Missing or placeholder values: ${config.issues.join(", ")}`
+    );
+  }
+
+  const storagePath = buildCaseAttachmentPath({
+    caseId,
+    attachmentId,
+    originalName,
+  });
+
+  const { error } = await supabase.storage
+    .from(config.caseAttachmentBucket)
+    .upload(storagePath, fileBuffer, {
+      contentType: mimeType || "application/octet-stream",
+      // upsert: false — each attachmentId is a fresh UUID, so we
+      // never overwrite. A collision would mean a logic bug upstream
+      // and should fail loudly rather than silently replace bytes.
+      upsert: false,
+    });
+
+  if (error) {
+    throw new ApiError(
+      502,
+      `Failed to upload case attachment: ${error.message}`
+    );
+  }
+
+  return {
+    storageBucket: config.caseAttachmentBucket,
+    storagePath,
+  };
+}
+
+export async function getCaseAttachmentSignedUrl(storagePath, expiresInSeconds = 3600) {
+  if (!storagePath) return null;
+
+  const config = getSupabaseStorageConfig();
+  const supabase = getSupabaseClient();
+  if (!supabase) return null;
+
+  const ttl = Number.isFinite(expiresInSeconds) && expiresInSeconds > 0
+    ? expiresInSeconds
+    : 3600;
+
+  const { data, error } = await supabase.storage
+    .from(config.caseAttachmentBucket)
+    .createSignedUrl(storagePath, ttl);
+
+  if (error || !data?.signedUrl) return null;
+  return data.signedUrl;
+}
+
+export async function deleteCaseAttachment(storagePath) {
+  if (!storagePath) return;
+
+  const supabase = getSupabaseClient();
+  if (!supabase) return;
+
+  const config = getSupabaseStorageConfig();
+  // Best-effort cleanup — orphaning a storage object is far better
+  // than blocking the user's delete click. Matches the avatar pattern.
+  await supabase.storage
+    .from(config.caseAttachmentBucket)
+    .remove([storagePath])
+    .catch(() => {});
+}

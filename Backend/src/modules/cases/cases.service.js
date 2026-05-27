@@ -4,6 +4,11 @@ import { promises as fs } from "node:fs";
 
 import { pool } from "../../config/db.js";
 import { ApiError } from "../../utils/apiError.js";
+import {
+  deleteCaseAttachment as deleteCaseAttachmentObject,
+  getCaseAttachmentSignedUrl,
+  uploadCaseAttachment as uploadCaseAttachmentObject,
+} from "../../services/storage.service.js";
 
 // Absolute path to the case-templates root. Computed once at module load so
 // the path traversal check below is anchored to a single trusted directory.
@@ -278,4 +283,146 @@ export async function updateCase({ caseId, lawyerUserId, updates }) {
   }
 
   return getCaseForLawyer({ caseId, lawyerUserId });
+}
+
+// =====================================================================
+// Case attachments
+// =====================================================================
+
+async function mapCaseAttachment(row) {
+  // Mint a fresh signed URL on every map call. TTL is 1 hour — the
+  // editor uses it as the <img src> in the saved HTML, but on case
+  // re-open we re-fetch the list and rewrite the DOM with the
+  // latest URLs, so expiry is invisible to the user.
+  const signed = row.storage_path
+    ? await getCaseAttachmentSignedUrl(row.storage_path)
+    : null;
+  return {
+    id: row.id,
+    caseId: row.case_id,
+    fileName: row.file_name,
+    mimeType: row.mime_type,
+    fileSize: row.file_size !== null && row.file_size !== undefined
+      ? Number(row.file_size)
+      : null,
+    storageBucket: row.storage_bucket,
+    storagePath: row.storage_path,
+    createdAt: row.created_at,
+    url: signed,
+  };
+}
+
+// Ownership check — every attachment endpoint runs through this so
+// a lawyer can only touch attachments on their own cases. Returns
+// the case id when valid, throws 404 otherwise. Matches the pattern
+// the rest of cases.service.js uses (don't leak existence-vs-access).
+async function assertCaseOwnership({ caseId, lawyerUserId }) {
+  const result = await pool.query(
+    `SELECT id FROM cases WHERE id = $1 AND lawyer_user_id = $2`,
+    [caseId, lawyerUserId]
+  );
+  if (result.rowCount === 0) {
+    throw new ApiError(404, "Case not found");
+  }
+  return result.rows[0].id;
+}
+
+export async function uploadAttachmentToCase({
+  caseId,
+  lawyerUserId,
+  file,
+}) {
+  if (!file) {
+    throw new ApiError(400, "Attachment file is required");
+  }
+
+  await assertCaseOwnership({ caseId, lawyerUserId });
+
+  // Generate the attachment UUID up front so the storage path is
+  // predictable BEFORE the DB insert. Two reasons:
+  //   1. The path includes the attachmentId; we need it for upload
+  //   2. If the upload succeeds but the INSERT fails, we know the
+  //      exact orphan path to clean up
+  const idResult = await pool.query("SELECT gen_random_uuid() AS id");
+  const attachmentId = idResult.rows[0].id;
+
+  const { storageBucket, storagePath } = await uploadCaseAttachmentObject({
+    caseId,
+    attachmentId,
+    fileBuffer: file.buffer,
+    mimeType: file.mimetype,
+    originalName: file.originalname,
+  });
+
+  try {
+    const inserted = await pool.query(
+      `INSERT INTO case_attachments (
+         id, case_id, uploaded_by_user_id,
+         file_name, mime_type, file_size,
+         storage_bucket, storage_path
+       )
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       RETURNING *`,
+      [
+        attachmentId,
+        caseId,
+        lawyerUserId,
+        file.originalname || "file",
+        file.mimetype,
+        file.size,
+        storageBucket,
+        storagePath,
+      ]
+    );
+
+    return mapCaseAttachment(inserted.rows[0]);
+  } catch (err) {
+    // Roll back the storage upload so we don't leave an orphan
+    // object behind. Best-effort — the cleanup helper swallows its
+    // own errors, so this never re-throws above the original.
+    await deleteCaseAttachmentObject(storagePath);
+    throw err;
+  }
+}
+
+export async function listCaseAttachments({ caseId, lawyerUserId }) {
+  await assertCaseOwnership({ caseId, lawyerUserId });
+
+  const result = await pool.query(
+    `SELECT *
+     FROM case_attachments
+     WHERE case_id = $1
+     ORDER BY created_at ASC`,
+    [caseId]
+  );
+
+  return Promise.all(result.rows.map(mapCaseAttachment));
+}
+
+export async function deleteCaseAttachment({
+  caseId,
+  attachmentId,
+  lawyerUserId,
+}) {
+  await assertCaseOwnership({ caseId, lawyerUserId });
+
+  // Single-statement delete that doubles as the lookup so we know
+  // the storage path to clean up afterwards. RETURNING gives us the
+  // row before the row is gone; if the case_id doesn't match the
+  // attachment's case_id we surface 404.
+  const result = await pool.query(
+    `DELETE FROM case_attachments
+     WHERE id = $1 AND case_id = $2
+     RETURNING storage_path`,
+    [attachmentId, caseId]
+  );
+
+  if (result.rowCount === 0) {
+    throw new ApiError(404, "Attachment not found");
+  }
+
+  // Best-effort storage cleanup — leaving an orphan object is far
+  // better than blocking the user's delete click. Same convention
+  // as the avatar deletion path.
+  await deleteCaseAttachmentObject(result.rows[0].storage_path);
 }
