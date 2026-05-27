@@ -1,5 +1,7 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+import { ImagePlus } from "lucide-react";
 import { renderAsync } from "docx-preview";
+import { rehydrateFloatingImages } from "../../utils/floatingImage";
 
 interface DocxPreviewSurfaceProps {
   // The raw .docx bytes fetched from the backend. We deliberately accept
@@ -48,6 +50,13 @@ export default function DocxPreviewSurface({
   onPageContextMenu,
 }: DocxPreviewSurfaceProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  // Visual drop-zone feedback while a sidebar image is being dragged
+  // over the editor. Native HTML5 drag events fire many times per
+  // second — we just flip a boolean and let the JSX overlay handle
+  // the rest. dragLeave is intentionally not used (it fires when the
+  // pointer crosses any child element); we reset on drop and on
+  // dragend via the window-level listener below.
+  const [isDragOver, setIsDragOver] = useState(false);
   // onPagesReady is stored in a ref so we don't re-run the render effect
   // when the parent's callback identity changes — only re-render when the
   // bytes themselves change.
@@ -124,6 +133,14 @@ export default function DocxPreviewSurface({
             cb(idx, (e as MouseEvent).clientX, (e as MouseEvent).clientY);
           });
         });
+
+        // Re-wire drag / resize on floating images that came back
+        // from the snapshot. The DOM nodes survived serialization
+        // but their imperative mousedown listeners didn't — without
+        // this call the images render in the right place but feel
+        // "stuck" (can't drag, can't resize, Delete doesn't remove
+        // them). Idempotent, so re-renders are safe.
+        rehydrateFloatingImages(container);
 
         onPagesReadyRef.current?.(Array.from(pages));
       } catch (err) {
@@ -220,13 +237,33 @@ export default function DocxPreviewSurface({
     if (!e.dataTransfer.types.includes("application/x-lawflow-image")) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = "copy";
+    if (!isDragOver) setIsDragOver(true);
+  };
+
+  // dragleave fires whenever the pointer crosses a child boundary, so
+  // we only reset state when it leaves the scroll container entirely.
+  // relatedTarget === null OR not contained inside currentTarget means
+  // the cursor genuinely left the editor area.
+  const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+    if (!isDragOver) return;
+    const next = e.relatedTarget as Node | null;
+    if (!next || !e.currentTarget.contains(next)) {
+      setIsDragOver(false);
+    }
   };
 
   const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
-    if (!onImageDropped) return;
+    if (!onImageDropped) {
+      setIsDragOver(false);
+      return;
+    }
     const raw = e.dataTransfer.getData("application/x-lawflow-image");
-    if (!raw) return;
+    if (!raw) {
+      setIsDragOver(false);
+      return;
+    }
     e.preventDefault();
+    setIsDragOver(false);
     try {
       const { refId } = JSON.parse(raw) as { refId?: string };
       if (refId) {
@@ -243,10 +280,26 @@ export default function DocxPreviewSurface({
     // Slightly darker bg (gray-200) so the white pages read as paper-on-
     // desk; matches Google Docs' editing canvas tone.
     <div
-      className="h-full overflow-auto bg-[#f8f9fa] py-10"
+      className="relative h-full overflow-auto bg-[#f8f9fa] py-10"
       onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
+      {/* Drop-zone overlay — appears only while an image attachment
+          is being dragged. Sticky position so it stays in view even
+          if the lawyer is mid-scroll on a long document. Background
+          stays partly transparent so the lawyer can see exactly which
+          page they're about to drop onto. pointer-events: none lets
+          the drag/drop events still hit the underlying surface. */}
+      {isDragOver && onImageDropped ? (
+        <div
+          aria-hidden
+          className="pointer-events-none sticky top-4 z-30 mx-auto flex max-w-md items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-[var(--primary)] bg-white/95 px-5 py-3 text-sm font-semibold text-[var(--primary)] shadow-lg backdrop-blur"
+        >
+          <ImagePlus className="h-5 w-5" />
+          Drop to place image on this page
+        </div>
+      ) : null}
       {/* Override docx-preview's default chrome:
           - It sets `background: gray` on .docx-wrapper which fights our
             own bg-gray-100 and produces the dark "frame" the user saw.

@@ -226,6 +226,14 @@ function SortableBundleItem({
             {formatFileSize(fileInfo.size)}
           </p>
         )}
+        {/* Drag affordance — only shown for draggable image rows. Sits
+            as a hover-revealed subtitle so the lawyer learns the
+            mechanic without it cluttering the row at rest. */}
+        {isImageAttachment && (
+          <p className="mt-0.5 hidden text-[10px] font-medium text-[var(--primary)] group-hover:block">
+            ↗ Drag onto a page to insert
+          </p>
+        )}
         {signedLabel && (
           <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 ring-1 ring-emerald-200">
             <span className="w-1 h-1 rounded-full bg-emerald-500" />
@@ -460,8 +468,19 @@ export default function DocumentSidebar({
                                 onAttachmentSelect?.(item.refId);
                                 return;
                               }
+                              // Image attachments: skip the preview
+                              // modal — it blocked the workflow. The
+                              // lawyer's primary action is drag-onto-
+                              // page, which the row's draggable + the
+                              // editor's drop-zone overlay surface
+                              // directly. The hover hint on the row
+                              // ("↗ Drag onto a page to insert")
+                              // teaches the affordance.
                               onAttachmentSelect?.(null);
-                              if (isPreviewableAttachment) {
+                              if (
+                                isPreviewableAttachment &&
+                                !fileInfo?.type?.startsWith("image/")
+                              ) {
                                 setPreviewAttachmentId(item.refId);
                               }
                             }

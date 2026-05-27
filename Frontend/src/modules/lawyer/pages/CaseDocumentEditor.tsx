@@ -600,6 +600,11 @@ export default function CaseDocumentEditor() {
       page,
       left: leftInPage,
       top: topInPage,
+      // Stamp the wrapper with the source attachment id so a second
+      // drag of the same row relocates the existing image instead of
+      // duplicating it. Without this every drag would create another
+      // copy stacked on the previous one.
+      attachmentId: refId,
       onChange: () => saveDraft(effectiveCaseId),
     });
 
