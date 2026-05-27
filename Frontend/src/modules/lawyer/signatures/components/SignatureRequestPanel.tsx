@@ -121,6 +121,42 @@ export default function SignatureRequestPanel({
 
   const requests = getRequestsByCaseId(caseId);
 
+  // Set of page indices that already have a pending signature
+  // request. Used to gate the per-page checkbox: once a page has
+  // been sent to a signer, it stays locked until that batch is
+  // either cancelled (status → 'cancelled') or completed
+  // (status → 'signed'). Defence-in-depth: the backend would also
+  // reject a duplicate request, but the UI shouldn't tempt the
+  // lawyer to try.
+  const pendingPageIndices = useMemo(() => {
+    const set = new Set<number>();
+    for (const req of requests) {
+      if (req.status !== "pending") continue;
+      for (const idx of req.pageIndices || []) set.add(idx);
+    }
+    return set;
+  }, [requests]);
+
+  // If the requests cache lands after the panel mounted (or a
+  // request was just created), strip any pending pages out of the
+  // ticked selection so we never submit a Send action against
+  // already-locked pages.
+  useEffect(() => {
+    if (pendingPageIndices.size === 0) return;
+    setSelectedPages((prev) => {
+      let changed = false;
+      const next = new Set<number>();
+      for (const idx of prev) {
+        if (pendingPageIndices.has(idx)) {
+          changed = true;
+          continue;
+        }
+        next.add(idx);
+      }
+      return changed ? next : prev;
+    });
+  }, [pendingPageIndices]);
+
   const pageItems = useMemo(
     () =>
       pages.map((page, index) => ({
@@ -141,6 +177,10 @@ export default function SignatureRequestPanel({
   );
 
   const togglePage = (index: number) => {
+    // Pages with a pending request are locked — re-sending would
+    // overwrite an in-flight signature workflow on the recipient's
+    // side. The lawyer must cancel the existing request first.
+    if (pendingPageIndices.has(index)) return;
     setSelectedPages((prev) => {
       const next = new Set(prev);
       if (next.has(index)) {
@@ -255,8 +295,46 @@ export default function SignatureRequestPanel({
           ) : (
             <ul className="mt-3 space-y-2">
               {pageItems.map((item) => {
+                const isPending = pendingPageIndices.has(item.index);
                 const ticked = selectedPages.has(item.index);
                 const signer = signerByPage[item.index] || "client";
+
+                // Pending pages render as locked rows — no checkbox,
+                // muted styling, a "Pending signature" badge — so the
+                // lawyer immediately understands why the page can't be
+                // re-selected. Cancelling the existing request unlocks
+                // the row (the cache refresh strips it from
+                // pendingPageIndices).
+                if (isPending) {
+                  return (
+                    <li
+                      key={item.index}
+                      className="rounded-lg border border-amber-200 bg-amber-50/40 p-3"
+                    >
+                      <div className="flex items-start gap-3">
+                        <div
+                          aria-hidden
+                          className="mt-1 flex h-4 w-4 items-center justify-center rounded border border-amber-300 bg-white"
+                        >
+                          <span className="block h-1.5 w-1.5 rounded-full bg-amber-400" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="truncate text-sm font-medium text-gray-600">
+                            {item.index + 1}. {item.label}
+                          </p>
+                          <span className="mt-1.5 inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800 ring-1 ring-amber-200">
+                            Pending signature
+                          </span>
+                          <p className="mt-1 text-[11px] text-gray-500">
+                            Cancel the active request below to re-send
+                            this page.
+                          </p>
+                        </div>
+                      </div>
+                    </li>
+                  );
+                }
+
                 return (
                   <li
                     key={item.index}

@@ -63,6 +63,10 @@ interface DocumentSidebarProps {
     number,
     { clientSigned: boolean; lawyerSigned: boolean }
   >;
+  // Page indices with a pending signature request — gates the per-row
+  // send icon so the lawyer can't fire a duplicate request while one
+  // is still in flight.
+  pendingPageIndices?: Set<number>;
   onSendPageToClient?: (pageIndex: number, pageElement: HTMLElement) => void;
   // Right-click on a page row in the PAGES sidebar. Bubbled up so the
   // CaseDocumentEditor can render its custom <PageContextMenu> at the
@@ -260,6 +264,7 @@ export default function DocumentSidebar({
   caseId,
   pages = [],
   signatureStatusByPageIndex,
+  pendingPageIndices,
   onSendPageToClient,
   onPageContextMenu,
 }: DocumentSidebarProps) {
@@ -478,6 +483,7 @@ export default function DocumentSidebar({
       <DocumentPagesPanel
         pages={pages}
         signatureStatusByPageIndex={signatureStatusByPageIndex}
+        pendingPageIndices={pendingPageIndices}
         onSendPageToClient={onSendPageToClient}
         onPageContextMenu={onPageContextMenu}
         collapsed={collapsed}

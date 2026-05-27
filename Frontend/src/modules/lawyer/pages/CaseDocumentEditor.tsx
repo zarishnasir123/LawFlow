@@ -171,7 +171,20 @@ export default function CaseDocumentEditor() {
     };
   }, [renderedPages]);
 
-  const signaturePendingCount = getPendingRequests(signatureCaseId).length;
+  // Pending requests — used both to surface the toolbar badge count
+  // and to lock per-page surfaces (sidebar send icon + signature
+  // panel checkboxes) so the lawyer can't fire a duplicate request
+  // for a page that's still in flight with its original recipient.
+  const pendingSignatureRequests = getPendingRequests(signatureCaseId);
+  const signaturePendingCount = pendingSignatureRequests.length;
+
+  const pendingPageIndices = useMemo(() => {
+    const set = new Set<number>();
+    for (const req of pendingSignatureRequests) {
+      for (const idx of req.pageIndices || []) set.add(idx);
+    }
+    return set;
+  }, [pendingSignatureRequests]);
 
   // Pull the latest signed requests from the cache for two consumers:
   //   1. SignatureOverlayLayer renders each one's PNG on the canvas at
@@ -661,6 +674,7 @@ export default function CaseDocumentEditor() {
             caseId={caseId}
             pages={renderedPages}
             signatureStatusByPageIndex={signatureStatusByPageIndex}
+            pendingPageIndices={pendingPageIndices}
             onSendPageToClient={() => {
               // Opens the signature panel. Per-page extraction (DOCX →
               // PDF for one page) is wired up in the next sub-phase;

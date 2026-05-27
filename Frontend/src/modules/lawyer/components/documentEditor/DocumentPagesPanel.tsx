@@ -27,6 +27,11 @@ interface DocumentPagesPanelProps {
   // Map of 0-based page index → signature status. Pages absent from
   // the map (or with both flags false) get no badge.
   signatureStatusByPageIndex?: Record<number, PageSignatureStatus>;
+  // Page indices that currently have a pending signature request.
+  // Used to gate the per-row "Send for signature" icon — the lawyer
+  // shouldn't be able to fire a second request for a page that's
+  // still in flight with the original recipient.
+  pendingPageIndices?: Set<number>;
   // Sidebar collapsed mode — compact number-only pills.
   collapsed?: boolean;
 }
@@ -89,6 +94,7 @@ export default function DocumentPagesPanel({
   onSendPageToClient,
   onPageContextMenu,
   signatureStatusByPageIndex,
+  pendingPageIndices,
   collapsed = false,
 }: DocumentPagesPanelProps) {
   const [activeIndex, setActiveIndex] = useState<number>(0);
@@ -234,6 +240,17 @@ export default function DocumentPagesPanel({
                   >
                     {item.label}
                     {(() => {
+                      // Pending takes priority over signed because a
+                      // page can only be in one state at a time —
+                      // signed badges only render when the workflow
+                      // for that page is complete.
+                      if (pendingPageIndices?.has(item.index)) {
+                        return (
+                          <span className="ml-2 inline-flex items-center rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800 ring-1 ring-amber-200 whitespace-nowrap">
+                            Pending
+                          </span>
+                        );
+                      }
                       const badge = deriveSignatureBadge(
                         signatureStatusByPageIndex?.[item.index]
                       );
@@ -259,7 +276,11 @@ export default function DocumentPagesPanel({
                     )}
                   />
                 </button>
-                {onSendPageToClient && (
+                {/* Send-for-signature icon is hidden when the page
+                    already has a pending request — re-sending would
+                    overwrite an in-flight workflow. The lawyer must
+                    cancel the active request first (panel surface). */}
+                {onSendPageToClient && !pendingPageIndices?.has(item.index) && (
                   <button
                     type="button"
                     onClick={() => onSendPageToClient(item.index, item.element)}
