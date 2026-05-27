@@ -505,6 +505,12 @@ CREATE TABLE signature_requests (
   -- canvas — either typed-name-on-canvas or a user-uploaded PNG/JPG
   -- converted to data URL). NULL until the signer signs.
   signature_image            TEXT,
+  -- Where on the page the signer dropped their signature, as
+  -- fractions of the page's rendered dimensions:
+  --   { pageIndex, xPct, yPct, widthPct, heightPct }
+  -- Every coordinate is in [0,1] so the values survive any A4/Letter
+  -- rescale at PDF compile time. NULL until the signer submits.
+  signature_placement        JSONB,
   signed_at                  TIMESTAMP,
 
   status                     VARCHAR(30) NOT NULL DEFAULT 'pending'

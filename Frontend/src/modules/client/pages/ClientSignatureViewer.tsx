@@ -1,8 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import {
+  CalendarClock,
   CheckCircle2,
+  FileSignature,
+  GripVertical,
   Loader2,
+  MousePointer2,
   Pencil,
   Type as TypeIcon,
   Upload,
@@ -116,6 +120,12 @@ export default function ClientSignatureViewer() {
     "dancing"
   );
   const [signatureDataUrl, setSignatureDataUrl] = useState<string | null>(null);
+  // Drop-zone visual feedback while the user is dragging the preview
+  // from the sidebar over the document area.
+  const [isDragOver, setIsDragOver] = useState(false);
+  // True once the signature has been placed on a page. Drives the
+  // submit button enablement and the helper copy.
+  const [hasPlaced, setHasPlaced] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [signedSuccessfully, setSignedSuccessfully] = useState(false);
 
@@ -206,42 +216,86 @@ export default function ClientSignatureViewer() {
     };
   }, [mode, typedName, fontId]);
 
-  // Whenever the signature data URL changes, mount it onto the first
-  // assigned page so the user can drag it where they want.
+  // When the signature data URL changes (re-type, new upload), drop
+  // any existing on-document placement. The user re-drags the new
+  // preview onto a page to position it. This sidesteps the previous
+  // "auto-mount on first page bottom-right" UX which the user found
+  // confusing — now the placement is always explicit.
   useEffect(() => {
     if (!signatureDataUrl) return;
-    const host = documentHostRef.current;
-    if (!host) return;
-    const firstPage = host.querySelector<HTMLElement>(
-      ".docx-wrapper > section.docx"
-    );
-    if (!firstPage) return;
+    if (floatingRef.current && floatingRef.current.parentElement) {
+      floatingRef.current.remove();
+      floatingRef.current = null;
+      setHasPlaced(false);
+    }
+  }, [signatureDataUrl]);
 
-    // Replace any previously-mounted signature so re-typing or
-    // re-uploading doesn't stack copies on the page.
+  // Drag-from-sidebar onto the document. Uses a custom MIME type so
+  // OS-level image drags (e.g., a JPEG dragged from the desktop)
+  // don't accidentally trigger our placement logic. Mirrors the
+  // lawyer-editor's attachment drag-drop UX.
+  const handlePreviewDragStart = (e: React.DragEvent<HTMLImageElement>) => {
+    if (!signatureDataUrl) {
+      e.preventDefault();
+      return;
+    }
+    e.dataTransfer.setData("application/x-lawflow-signature", "1");
+    e.dataTransfer.effectAllowed = "copy";
+  };
+
+  const handleDocumentDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    if (!signatureDataUrl) return;
+    if (!e.dataTransfer.types.includes("application/x-lawflow-signature")) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "copy";
+    if (!isDragOver) setIsDragOver(true);
+  };
+
+  const handleDocumentDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+    if (!isDragOver) return;
+    const next = e.relatedTarget as Node | null;
+    if (!next || !e.currentTarget.contains(next)) setIsDragOver(false);
+  };
+
+  const handleDocumentDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    setIsDragOver(false);
+    if (!signatureDataUrl) return;
+    if (!e.dataTransfer.types.includes("application/x-lawflow-signature")) return;
+    e.preventDefault();
+
+    // Find which page the drop landed on. elementFromPoint gives the
+    // topmost element under the cursor; closest("section.docx") walks
+    // up to the page container.
+    const elementAtPoint = document.elementFromPoint(e.clientX, e.clientY);
+    const page = elementAtPoint?.closest("section.docx") as HTMLElement | null;
+    if (!page) return;
+
+    // Translate viewport coords → page-relative. Center the signature
+    // on the drop point so the cursor feels like it dropped the
+    // middle of the preview, not the top-left.
+    const pageRect = page.getBoundingClientRect();
+    const defaultWidth = Math.min(260, pageRect.width * 0.4);
+    const defaultHeight = defaultWidth * (140 / 600); // canvas aspect (600x140)
+    const left = Math.max(0, e.clientX - pageRect.left - defaultWidth / 2);
+    const top = Math.max(0, e.clientY - pageRect.top - defaultHeight / 2);
+
+    // Replace any previously-mounted signature so dragging again
+    // moves the placement instead of stacking copies.
     if (floatingRef.current && floatingRef.current.parentElement) {
       floatingRef.current.remove();
       floatingRef.current = null;
     }
 
-    // Default placement: just above the bottom-right corner of the
-    // first assigned page. Reads like a real signature on a real
-    // document and gives the user something to drag from rather than
-    // appearing in a default top-left position they have to move.
-    const pageRect = firstPage.getBoundingClientRect();
-    const defaultWidth = Math.min(260, pageRect.width * 0.4);
-    const left = Math.max(0, pageRect.width - defaultWidth - 60);
-    const top = Math.max(0, pageRect.height - 120);
-
     floatingRef.current = mountFloatingImage({
       src: signatureDataUrl,
       alt: "Signature",
-      page: firstPage,
+      page,
       left,
       top,
       width: defaultWidth,
     });
-  }, [signatureDataUrl]);
+    setHasPlaced(true);
+  };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -365,29 +419,66 @@ export default function ClientSignatureViewer() {
     );
   }
 
+  const pageCount = request.pageIndices?.length || 0;
+
   return (
-    <ClientLayout brandSubtitle={request.caseTitle}>
+    <ClientLayout brandSubtitle="Sign Document">
       <div className="space-y-4">
-        <header className="rounded-xl border border-gray-200 bg-white p-5">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-500">
-            Signature request
-          </p>
-          <h1 className="mt-1 text-lg font-semibold text-gray-900">
-            {request.caseTitle}
-          </h1>
-          <p className="mt-1 text-xs text-gray-500">
-            {request.pageIndices?.length || 0} page
-            {request.pageIndices?.length === 1 ? "" : "s"} need your signature.
-            Drag the signature on the page to where you want it, then submit.
-          </p>
+        {/* Hero card — amber-tinted to match the /case-tracking
+            pending signatures card, so the signing surface visually
+            belongs to the same workflow. */}
+        <header className="rounded-2xl border border-amber-100 bg-gradient-to-br from-white via-amber-50/40 to-white p-6 shadow-[0_18px_45px_-32px_rgba(120,53,15,0.35)]">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="flex items-start gap-3">
+              <div className="rounded-lg bg-amber-100 p-2 text-amber-700">
+                <FileSignature className="h-5 w-5" />
+              </div>
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-700">
+                  Signature request
+                </p>
+                <h1 className="mt-1 text-lg font-semibold text-gray-900">
+                  {request.caseTitle}
+                </h1>
+                <p className="mt-1 text-xs text-gray-600">
+                  {pageCount} page{pageCount === 1 ? "" : "s"} need your signature.
+                  Drag your signature from the panel onto the page, then submit.
+                </p>
+              </div>
+            </div>
+            <div className="inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-2.5 py-1 text-[11px] font-semibold text-amber-800">
+              <CalendarClock className="h-3 w-3" />
+              Pending Signature
+            </div>
+          </div>
         </header>
 
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
-          {/* Document with the signature placed as a floating draggable. */}
+          {/* Document with the signature placed as a floating draggable.
+              relative + onDragOver/onDrop turn this into a drop target
+              for the signature preview being dragged from the sidebar. */}
           <div
-            className="rounded-xl border border-gray-200 bg-[#f5f5f5] p-4 overflow-auto"
+            className={`relative rounded-xl border bg-[#f5f5f5] p-4 overflow-auto transition-colors ${
+              isDragOver ? "border-amber-400" : "border-gray-200"
+            }`}
             style={{ maxHeight: "82vh" }}
+            onDragOver={handleDocumentDragOver}
+            onDragLeave={handleDocumentDragLeave}
+            onDrop={handleDocumentDrop}
           >
+            {/* Drop-zone hint pill — appears at the top of the
+                document area while the user is dragging the
+                signature preview. Sticky so it stays in view if
+                they scroll mid-drag. */}
+            {isDragOver ? (
+              <div
+                aria-hidden
+                className="pointer-events-none sticky top-2 z-30 mx-auto flex max-w-md items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-amber-400 bg-white/95 px-5 py-2.5 text-sm font-semibold text-amber-700 shadow-lg backdrop-blur"
+              >
+                <MousePointer2 className="h-4 w-4" />
+                Drop on the page to place your signature
+              </div>
+            ) : null}
             {/* Styles for the floating signature wrapper + its corner
                 resize handles. mountFloatingImage creates the elements
                 but the editor owns the CSS — we duplicate the rules
@@ -435,9 +526,11 @@ export default function ClientSignatureViewer() {
                 Your signature
               </h2>
               <p className="mt-1 text-xs text-gray-500">
-                {signatureDataUrl
-                  ? "Drag it on the page to position. Drag corners to resize."
-                  : "Type your name or upload an image, then drag onto the page."}
+                {!signatureDataUrl
+                  ? "Type your name or upload an image — then drag the preview onto the document."
+                  : hasPlaced
+                    ? "Placed on the document. Drag to reposition, or drag the preview again to move it."
+                    : "Drag the preview below onto the page where you want to sign."}
               </p>
 
               <div className="mt-4 flex gap-2">
@@ -526,16 +619,33 @@ export default function ClientSignatureViewer() {
 
               {signatureDataUrl && (
                 <div className="mt-4">
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">
-                    Preview
-                  </p>
-                  <div className="mt-2 rounded-md border border-gray-200 bg-gray-50 p-3">
+                  <div className="flex items-center justify-between">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+                      Drag onto document
+                    </p>
+                    {hasPlaced ? (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700 ring-1 ring-emerald-200">
+                        <CheckCircle2 className="h-3 w-3" />
+                        Placed
+                      </span>
+                    ) : null}
+                  </div>
+                  {/* Draggable signature preview. The cursor-grab +
+                      GripVertical icon teach the affordance without
+                      a separate tutorial. */}
+                  <div className="mt-2 flex items-center gap-2 rounded-md border-2 border-dashed border-amber-200 bg-amber-50/40 p-3 cursor-grab active:cursor-grabbing">
+                    <GripVertical className="h-4 w-4 flex-shrink-0 text-amber-700" />
                     <img
                       src={signatureDataUrl}
-                      alt="Signature preview"
-                      className="max-h-20 mx-auto"
+                      alt="Signature preview — drag onto document"
+                      draggable
+                      onDragStart={handlePreviewDragStart}
+                      className="max-h-20 mx-auto select-none"
                     />
                   </div>
+                  <p className="mt-1.5 text-[11px] text-gray-500">
+                    Hold and drag the preview onto the page where you want to sign.
+                  </p>
                 </div>
               )}
 
@@ -543,10 +653,13 @@ export default function ClientSignatureViewer() {
                 <p className="mt-3 text-xs text-red-700">{error}</p>
               )}
 
+              {/* Submit is gated on actual placement — not just having a
+                  preview — so the signer can't submit a signature that
+                  was never dropped on a page. */}
               <button
                 type="button"
                 onClick={handleSubmit}
-                disabled={!signatureDataUrl || submitting}
+                disabled={!signatureDataUrl || !hasPlaced || submitting}
                 className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-md bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50 hover:bg-emerald-700"
               >
                 {submitting ? (
