@@ -16,6 +16,7 @@ import {
   type SignerRole,
 } from "../signatures/api/signatures.api";
 import { buildEditorSnapshot } from "../utils/editorSnapshot";
+import { getInMemoryAccessToken } from "../../auth/utils/authStorage";
 import ContentEditableToolbar from "../components/documentEditor/ContentEditableToolbar";
 import TopActionBar from "../components/documentEditor/TopActionBar";
 import DownloadModal from "../components/documentEditor/DownloadModal";
@@ -486,6 +487,58 @@ export default function CaseDocumentEditor() {
     persistEditedHtmlRef.current = persistEditedHtml;
   }, [persistEditedHtml]);
 
+  // Last-chance save before the page unloads. fetch({ keepalive: true })
+  // lets the browser finish the request even after the tab is gone,
+  // closing the race where a fast refresh aborts the in-flight PUT
+  // from the auto-save loop. Captures the snapshot synchronously at
+  // unload time and ships it with the in-memory access token, so
+  // both the body and the auth header survive the navigation.
+  useEffect(() => {
+    if (!effectiveCaseId || effectiveCaseId === "default-case") return;
+
+    const handler = () => {
+      if (renderedPages.length === 0) return;
+      const snapshot = buildEditorSnapshot(renderedPages);
+      if (!snapshot || snapshot === lastSavedHtmlRef.current) return;
+
+      const apiBase =
+        (import.meta.env.VITE_API_URL as string | undefined) ??
+        "http://localhost:5000/api";
+      const accessToken = getInMemoryAccessToken();
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+      };
+      if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
+
+      try {
+        fetch(`${apiBase}/cases/${effectiveCaseId}/document`, {
+          method: "PUT",
+          credentials: "include",
+          headers,
+          body: JSON.stringify({ editedHtml: snapshot }),
+          // Without keepalive, the request gets aborted the moment
+          // the page unloads. With it, the browser holds the
+          // connection open long enough to flush the bytes (up to
+          // ~64 KB across all keepalive requests per the spec).
+          keepalive: true,
+        }).catch(() => {
+          // Errors here are unrecoverable — the page is going away.
+          // Swallowed silently; the next session's autosave will
+          // reconcile if anything was missed.
+        });
+      } catch {
+        // Same swallow rationale.
+      }
+    };
+
+    window.addEventListener("beforeunload", handler);
+    window.addEventListener("pagehide", handler);
+    return () => {
+      window.removeEventListener("beforeunload", handler);
+      window.removeEventListener("pagehide", handler);
+    };
+  }, [effectiveCaseId, renderedPages]);
+
   const handleSaveDraft = () => {
     if (currentDocId && activeEditorRef) {
       saveDocumentJSON(currentDocId, activeEditorRef.getJSON());
@@ -638,7 +691,7 @@ export default function CaseDocumentEditor() {
   // positioned overlay on the page, draggable anywhere and resizable
   // from any of its four corners with aspect ratio preserved. Doesn't
   // disturb the underlying text flow at all.
-  const handleImageDropped = (
+  const handleImageDropped = async (
     refId: string,
     clientX: number,
     clientY: number
@@ -681,11 +734,12 @@ export default function CaseDocumentEditor() {
     });
 
     saveDraft(effectiveCaseId);
-    // Force-flush the backend save right now — before the user has
-    // a chance to refresh. Without this, the floating image only
-    // reached the backend via the 500ms blur or 30s interval, which
-    // meant a refresh in that window would lose the placement.
-    void persistEditedHtml();
+    // AWAIT (not fire-and-forget) so the placement reaches the
+    // backend before control returns. Without the await, a fast
+    // refresh aborted the in-flight PUT and the floating image was
+    // lost. ~100-300ms typical latency — invisible to the user
+    // since the image is already painted on the page by mountFloatingImage.
+    await persistEditedHtml();
   };
 
   const currentDocTitle =
