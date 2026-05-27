@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { useInfiniteQuery } from "@tanstack/react-query";
-import { Search } from "lucide-react";
+import { ChevronDown, Loader2, Search } from "lucide-react";
 import ClientLayout from "../components/ClientLayout";
 import LawyerCard from "../components/LawyerCard";
+import LawyerCardSkeleton from "../components/LawyerCardSkeleton";
 import { fetchLawyers, type ListLawyersParams } from "../api/lawyers";
 
 // Specialization filter values match the backend's closed-set
@@ -55,6 +56,8 @@ export default function FindLawyer() {
   const lawyers = data?.pages.flatMap((p) => p.items) ?? [];
   const total = data?.pages[0]?.pagination.total ?? 0;
   const shown = lawyers.length;
+  const remaining = Math.max(total - shown, 0);
+  const nextBatchSize = Math.min(PAGE_SIZE, remaining);
 
   return (
     <ClientLayout brandSubtitle="Find a Lawyer">
@@ -133,6 +136,16 @@ export default function FindLawyer() {
               />
             ))}
 
+            {/* Skeleton placeholders while the next page is in
+                flight. Count = remaining items (capped at the
+                page size) so the user sees roughly the number of
+                cards that are about to appear. */}
+            {isFetchingNextPage
+              ? Array.from({
+                  length: Math.min(PAGE_SIZE, Math.max(total - shown, 0)),
+                }).map((_, idx) => <LawyerCardSkeleton key={`skeleton-${idx}`} />)
+              : null}
+
             {lawyers.length === 0 && (
               <div className="col-span-full rounded-2xl border border-dashed border-gray-200 bg-white p-8 text-center text-sm text-gray-500">
                 No lawyers found matching your criteria.
@@ -140,27 +153,48 @@ export default function FindLawyer() {
             )}
           </div>
 
-          {/* Pagination footer — only renders when there's at least
-              one result. Shows the count even when all pages are
-              already loaded so the user knows they've seen
-              everything. */}
+          {/* Load-more footer. Click the button → fetchNextPage
+              kicks off; while it's in flight the button label
+              swaps to a spinner + "Loading more lawyers…", and the
+              skeleton cards above visually preview the incoming
+              batch. The count line gives the user orientation
+              regardless of state. */}
           {lawyers.length > 0 && (
-            <div className="mt-6 flex flex-col items-center gap-3">
+            <div className="mt-8 flex flex-col items-center gap-3">
               {hasNextPage ? (
                 <button
                   type="button"
                   onClick={() => fetchNextPage()}
                   disabled={isFetchingNextPage}
-                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#01411C] px-6 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#024a23] disabled:cursor-wait disabled:opacity-60"
+                  className="inline-flex min-w-[220px] items-center justify-center gap-2 rounded-xl bg-[#01411C] px-6 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[#024a23] hover:shadow-md disabled:cursor-wait disabled:opacity-80"
                 >
-                  {isFetchingNextPage ? "Loading…" : `Load ${Math.min(PAGE_SIZE, total - shown)} more`}
+                  {isFetchingNextPage ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Loading more lawyers…
+                    </>
+                  ) : (
+                    <>
+                      Load {nextBatchSize} more
+                      <ChevronDown className="h-4 w-4" />
+                    </>
+                  )}
                 </button>
               ) : null}
               <p className="text-xs text-gray-500">
-                Showing <span className="font-semibold text-gray-700">{shown}</span> of{" "}
-                <span className="font-semibold text-gray-700">{total}</span> lawyer
-                {total === 1 ? "" : "s"}
-                {hasNextPage ? "" : " · all loaded"}
+                {hasNextPage ? (
+                  <>
+                    Showing <span className="font-semibold text-gray-700">{shown}</span> of{" "}
+                    <span className="font-semibold text-gray-700">{total}</span> lawyer
+                    {total === 1 ? "" : "s"}
+                  </>
+                ) : (
+                  <>
+                    You&rsquo;ve seen all{" "}
+                    <span className="font-semibold text-gray-700">{total}</span> lawyer
+                    {total === 1 ? "" : "s"} &middot; all loaded
+                  </>
+                )}
               </p>
             </div>
           )}
