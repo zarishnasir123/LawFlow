@@ -339,28 +339,6 @@ export default function LawyerSignatureViewer() {
 
   if (!request) return null;
 
-  if (signedSuccessfully) {
-    return (
-      <LawyerLayout brandTitle="LawFlow" brandSubtitle="Sign Document">
-        <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-10 text-center">
-          <CheckCircle2 className="mx-auto h-12 w-12 text-emerald-600" />
-          <h2 className="mt-3 text-lg font-semibold text-emerald-900">
-            Signature recorded
-          </h2>
-          <p className="mt-1 text-sm text-emerald-800">
-            Your signature is now part of {request.caseTitle}.
-          </p>
-          <button
-            onClick={() => navigate({ to: "/lawyer-signatures" })}
-            className="mt-4 rounded-md bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700"
-          >
-            Back to inbox
-          </button>
-        </div>
-      </LawyerLayout>
-    );
-  }
-
   const pageCount = request.pageIndices?.length || 0;
 
   return (
@@ -603,6 +581,53 @@ export default function LawyerSignatureViewer() {
           </aside>
         </div>
       </div>
+
+      {signedSuccessfully && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="lawyer-sign-success-title"
+        >
+          <div className="w-full max-w-sm overflow-hidden rounded-2xl bg-white shadow-2xl">
+            <div className="bg-gradient-to-br from-emerald-50 via-white to-white px-6 pt-6 pb-5 text-center">
+              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100">
+                <CheckCircle2 className="h-7 w-7 text-emerald-600" />
+              </div>
+              <h2
+                id="lawyer-sign-success-title"
+                className="mt-4 text-lg font-semibold text-gray-900"
+              >
+                Signature recorded
+              </h2>
+              <p className="mt-2 text-sm leading-relaxed text-gray-600">
+                Your signature has been added to{" "}
+                <span className="font-medium text-gray-900">
+                  {request.caseTitle}
+                </span>
+                . The case will be marked fully signed once every signer
+                has completed their part.
+              </p>
+            </div>
+            <div className="flex gap-2 border-t border-gray-100 bg-gray-50/60 px-5 py-3">
+              <button
+                type="button"
+                onClick={() => setSignedSuccessfully(false)}
+                className="flex-1 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50"
+              >
+                Stay here
+              </button>
+              <button
+                type="button"
+                onClick={() => navigate({ to: "/lawyer-signatures" })}
+                className="flex-1 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-700"
+              >
+                Back to inbox
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </LawyerLayout>
   );
 }
