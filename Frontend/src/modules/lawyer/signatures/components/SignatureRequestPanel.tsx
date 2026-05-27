@@ -1,5 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
-import { AlertCircle, CheckCircle2, Loader2, Send, X } from "lucide-react";
+import {
+  AlertCircle,
+  CheckCircle2,
+  ChevronDown,
+  History,
+  Loader2,
+  Send,
+  X,
+} from "lucide-react";
 
 import { useSignatureRequestsStore } from "../store/signatureRequests.store";
 import {
@@ -111,6 +119,10 @@ export default function SignatureRequestPanel({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  // Activity log starts collapsed — lawyers rarely need to revisit
+  // cancelled / expired rows, and keeping it folded makes the
+  // active-requests section easier to scan.
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   // Load the existing batch list once the panel opens. CaseDocumentEditor
   // also loads on mount, but this guarantees freshness when the panel
@@ -120,6 +132,33 @@ export default function SignatureRequestPanel({
   }, [caseId, loadForCase]);
 
   const requests = getRequestsByCaseId(caseId);
+
+  // Split the cached requests into "active" (anything the lawyer
+  // might still act on — pending or recently signed) and "history"
+  // (cancelled / expired — terminal states that shouldn't clutter
+  // the main list). The history bucket renders inside a collapsible
+  // activity-log section below, so the lawyer can still audit what
+  // was withdrawn / when, without it dominating the panel.
+  const { activeRequests, historyRequests } = useMemo(() => {
+    const active: typeof requests = [];
+    const history: typeof requests = [];
+    for (const req of requests) {
+      if (req.status === "pending" || req.status === "signed") {
+        active.push(req);
+      } else {
+        history.push(req);
+      }
+    }
+    // History is best-read newest-first — server returns oldest-first
+    // for the active list, so we reverse-sort the historical bucket
+    // alone. updatedAt would be more accurate if it ever shipped on
+    // the API shape; createdAt is the safe fallback we already have.
+    history.sort(
+      (a, b) =>
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
+    return { activeRequests: active, historyRequests: history };
+  }, [requests]);
 
   // Set of page indices that already have a pending signature
   // request. Used to gate the per-page checkbox: once a page has
@@ -426,13 +465,13 @@ export default function SignatureRequestPanel({
           <h3 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-gray-500">
             Active signature requests
           </h3>
-          {requests.length === 0 ? (
+          {activeRequests.length === 0 ? (
             <div className="mt-3 rounded-lg border border-dashed border-gray-200 p-4 text-center text-xs text-gray-500">
               None yet. Pick pages above and hit Send.
             </div>
           ) : (
             <ul className="mt-3 space-y-2">
-              {requests.map((req) => {
+              {activeRequests.map((req) => {
                 const badge = statusBadge(req.status);
                 const pageCount = req.pageIndices?.length || 0;
                 return (
@@ -474,6 +513,71 @@ export default function SignatureRequestPanel({
             </ul>
           )}
         </section>
+
+        {/* Activity log — collapsed by default, shows cancelled +
+            expired rows so the panel still has a paper trail without
+            burying the active list. Header doubles as the toggle. */}
+        {historyRequests.length > 0 && (
+          <section>
+            <button
+              type="button"
+              onClick={() => setHistoryOpen((prev) => !prev)}
+              aria-expanded={historyOpen}
+              className="flex w-full items-center justify-between rounded-md px-1 py-1 text-left transition-colors hover:bg-gray-50"
+            >
+              <span className="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-gray-500">
+                <History className="h-3 w-3" />
+                Activity log
+                <span className="rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] font-semibold text-gray-600">
+                  {historyRequests.length}
+                </span>
+              </span>
+              <ChevronDown
+                className={`h-3.5 w-3.5 text-gray-400 transition-transform ${
+                  historyOpen ? "rotate-180" : ""
+                }`}
+              />
+            </button>
+
+            {historyOpen && (
+              <ul className="mt-2 space-y-1">
+                {historyRequests.map((req) => {
+                  const pageCount = req.pageIndices?.length || 0;
+                  const signerLabel =
+                    req.signerRole === "client" ? "client" : "lawyer";
+                  const actionVerb =
+                    req.status === "cancelled" ? "Withdrew" : "Expired";
+                  const date = new Date(req.createdAt).toLocaleDateString(
+                    undefined,
+                    { month: "short", day: "numeric" }
+                  );
+                  return (
+                    <li
+                      key={req.id}
+                      className="flex items-start gap-2 rounded-md px-2 py-1.5 text-[11px] text-gray-500 hover:bg-gray-50"
+                    >
+                      <span
+                        aria-hidden
+                        className={`mt-1.5 inline-block h-1.5 w-1.5 flex-shrink-0 rounded-full ${
+                          req.status === "cancelled"
+                            ? "bg-red-300"
+                            : "bg-gray-300"
+                        }`}
+                      />
+                      <span className="leading-relaxed">
+                        <span className="font-medium text-gray-700">{date}</span>{" "}
+                        · {actionVerb} {signerLabel} request for{" "}
+                        <span className="font-medium text-gray-700">
+                          {pageCount} page{pageCount === 1 ? "" : "s"}
+                        </span>
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </section>
+        )}
       </div>
 
       <footer className="border-t border-gray-200 px-5 py-4">
