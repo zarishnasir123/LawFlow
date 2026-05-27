@@ -119,10 +119,11 @@ export default function FindLawyer() {
         </div>
       ) : (
         <>
-          {/* Photo-first grid. 1 column on mobile, 2 on tablet,
-              3 on desktop+. Cap at 3 even on very wide viewports
-              so each tile's photo stays a usable size. */}
-          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+          {/* Multi-column grid. 1 column on mobile, 2 on tablet+,
+              3 on very wide desktops. Each card is self-contained
+              (vertical layout) so widths flex without breaking the
+              internal hierarchy. */}
+          <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
             {lawyers.map((lawyer) => (
               <LawyerCard
                 key={lawyer.lawyerProfileId}
