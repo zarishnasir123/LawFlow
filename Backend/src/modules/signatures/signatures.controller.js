@@ -4,6 +4,7 @@ import {
   getSignatureRequestForSigner,
   getSignedCasePdfDownload,
   isCaseFullySigned,
+  listHistoryForRecipient,
   listPendingForRecipient,
   listSignatureRequestsForCase,
   saveEditedDocument,
@@ -104,6 +105,16 @@ export async function deleteSignatureRequest(req, res) {
 // inbox. Filters server-side to status='pending' AND not expired.
 export async function getMyPendingSignatures(req, res) {
   const requests = await listPendingForRecipient({ userId: req.user.sub });
+  return res.status(200).json({ signatureRequests: requests });
+}
+
+// "What happened with my past signature requests?" — drives the
+// client dashboard's Activity log section. Returns terminal-state
+// rows (cancelled, signed, and pending-but-expired) so the
+// recipient can audit "did the lawyer pull that back, or did I
+// already sign it?" without digging through email.
+export async function getMySignatureHistory(req, res) {
+  const requests = await listHistoryForRecipient({ userId: req.user.sub });
   return res.status(200).json({ signatureRequests: requests });
 }
 

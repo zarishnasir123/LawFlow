@@ -385,6 +385,42 @@ export async function listPendingForRecipient({ userId }) {
   }));
 }
 
+// Historical signature requests for the recipient: cancelled (lawyer
+// withdrew), expired (past expires_at while still pending), and
+// signed (already completed). Powers the client-side audit log so a
+// recipient can answer "did the lawyer pull that back?" without
+// having to dig through email. Same shape as listPendingForRecipient
+// so the frontend can render both lists with the same row component.
+export async function listHistoryForRecipient({ userId }) {
+  const result = await pool.query(
+    `SELECT sr.*,
+            c.title AS case_title,
+            creator.email AS creator_email,
+            creator.first_name AS creator_first_name,
+            creator.last_name AS creator_last_name
+     FROM signature_requests sr
+     JOIN cases c ON c.id = sr.case_id
+     JOIN users creator ON creator.id = sr.created_by_user_id
+     WHERE sr.recipient_user_id = $1
+       AND (
+         sr.status IN ('cancelled', 'signed')
+         OR (sr.status = 'pending' AND sr.expires_at <= NOW())
+       )
+     ORDER BY sr.updated_at DESC`,
+    [userId]
+  );
+
+  return result.rows.map((row) => ({
+    ...mapSignatureRequest(row),
+    caseTitle: row.case_title,
+    requestingLawyerName:
+      [row.creator_first_name, row.creator_last_name]
+        .filter(Boolean)
+        .join(" ")
+        .trim() || row.creator_email,
+  }));
+}
+
 // =====================================================================
 // Recipient-side: fetch one signature request with its snapshot
 //

@@ -78,6 +78,18 @@ export const mySignaturesApi = {
     return data.signatureRequests;
   },
 
+  // List MY terminal-state signature requests — cancelled (lawyer
+  // withdrew), signed (I already completed), and pending-but-expired
+  // rows. Powers the client dashboard's Activity log so the
+  // recipient can audit "did the lawyer pull that back?" or "did I
+  // sign that already?" in-app instead of through email.
+  listHistory: async (): Promise<ApiPendingSignature[]> => {
+    const { data } = await apiClient.get<{
+      signatureRequests: ApiPendingSignature[];
+    }>(`/me/signature-requests/history`);
+    return data.signatureRequests;
+  },
+
   // Fetch one request for the signing UI — server gates access by
   // recipient_user_id matching the authenticated user.
   getOne: async (requestId: string): Promise<ApiSignatureRequestDetail> => {

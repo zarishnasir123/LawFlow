@@ -9,6 +9,7 @@ import {
   deleteSignatureRequest,
   getCaseSignatureRequests,
   getMyPendingSignatures,
+  getMySignatureHistory,
   getMySignatureRequest,
   getSignedPdfDownloadUrl,
   postSignature,
@@ -97,6 +98,16 @@ mySignatureRoutes.get(
   "/signature-requests",
   authenticate,
   asyncHandler(getMyPendingSignatures)
+);
+
+// "What happened with my past requests?" — list terminal-state rows
+// (cancelled, signed, expired) for the recipient's activity log.
+// Placed BEFORE /signature-requests/:requestId so "history" doesn't
+// get captured as a requestId param.
+mySignatureRoutes.get(
+  "/signature-requests/history",
+  authenticate,
+  asyncHandler(getMySignatureHistory)
 );
 
 // Fetch one signature request (with HTML snapshot) for the signing UI.
