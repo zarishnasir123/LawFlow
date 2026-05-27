@@ -20,7 +20,10 @@ import {
   getMySignaturesErrorMessage,
 } from "../../../shared/api/mySignatures.api";
 import { mountFloatingImage } from "../utils/floatingImage";
-import { captureSignedPages } from "../utils/capturePages";
+import {
+  applyPriorCapturesToHost,
+  captureSignedPages,
+} from "../utils/capturePages";
 
 // Lawyer self-signing viewer (FE-7) — see ClientSignatureViewer for the
 // architecture comment. Same direct-render + floating-image flow,
@@ -149,7 +152,23 @@ export default function LawyerSignatureViewer() {
       .replace(/(^|[^.#:\w-])body\s*\{[^}]*\}/g, "$1");
     const bodyHtml = parsed.body.innerHTML;
     host.innerHTML = `${styleHtml}${bodyHtml}`;
-  }, [filteredSnapshot]);
+
+    // Multi-signer co-page support: if another signer already captured
+    // one of these pages, render their capture as the page background
+    // so this signer's fresh capture composites the prior signature in
+    // automatically. See applyPriorCapturesToHost for the mechanism.
+    if (
+      request?.priorSignedPages &&
+      request.priorSignedPages.length > 0 &&
+      request.pageIndices
+    ) {
+      applyPriorCapturesToHost(
+        host,
+        request.pageIndices,
+        request.priorSignedPages
+      );
+    }
+  }, [filteredSnapshot, request?.priorSignedPages, request?.pageIndices]);
 
   useEffect(() => {
     if (mode !== "type") return;

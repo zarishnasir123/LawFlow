@@ -25,7 +25,10 @@ import {
 // helper has no React/lawyer-store coupling, it just attaches DOM
 // listeners to an HTMLElement.
 import { mountFloatingImage } from "../../lawyer/utils/floatingImage";
-import { captureSignedPages } from "../../lawyer/utils/capturePages";
+import {
+  applyPriorCapturesToHost,
+  captureSignedPages,
+} from "../../lawyer/utils/capturePages";
 
 // =====================================================================
 // Client signing viewer (FE-6).
@@ -192,7 +195,23 @@ export default function ClientSignatureViewer() {
       .replace(/(^|[^.#:\w-])body\s*\{[^}]*\}/g, "$1");
     const bodyHtml = parsed.body.innerHTML;
     host.innerHTML = `${styleHtml}${bodyHtml}`;
-  }, [filteredSnapshot]);
+
+    // Multi-signer co-page support: if another signer already captured
+    // one of these pages, render their capture as the page background
+    // so this signer's fresh capture composites the prior signature in
+    // automatically. See applyPriorCapturesToHost for the mechanism.
+    if (
+      request?.priorSignedPages &&
+      request.priorSignedPages.length > 0 &&
+      request.pageIndices
+    ) {
+      applyPriorCapturesToHost(
+        host,
+        request.pageIndices,
+        request.priorSignedPages
+      );
+    }
+  }, [filteredSnapshot, request?.priorSignedPages, request?.pageIndices]);
 
   // Live-render the typed signature into a canvas any time the name
   // or the chosen font changes. Stays in sync without an explicit

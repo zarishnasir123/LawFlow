@@ -435,9 +435,65 @@ export async function getSignatureRequestForSigner({ requestId, userId }) {
   if (status === "expired") throw new ApiError(410, "This signature request has expired");
   if (status === "cancelled") throw new ApiError(410, "This signature request was cancelled");
 
+  // Pull prior signers' page captures for the SAME case so the viewer
+  // can render them as the page background. Without this, a co-page
+  // scenario (e.g. lawyer signing the same page client already signed)
+  // would lose the prior signature: each signer captures only what
+  // they saw, and the compiler picks the freshest capture per page —
+  // so the later signer's "fresh" PNG would lack the earlier signature.
+  //
+  // By showing the earlier capture beneath the new signer's drop area,
+  // the later signer's capture naturally contains both signatures, and
+  // the compiler's "freshest wins" logic produces the correct composite.
+  //
+  // Filter to only the page indices THIS signer is responsible for
+  // (intersection with their page_indices array) so we don't ship
+  // captures the signer doesn't need.
+  let priorSignedPages = [];
+  const myPageIndices = Array.isArray(row.page_indices) ? row.page_indices : [];
+  if (myPageIndices.length > 0) {
+    const priorRows = await pool.query(
+      `SELECT signed_page_images, signed_at
+       FROM signature_requests
+       WHERE case_id = $1
+         AND id <> $2
+         AND status = 'signed'
+         AND signed_page_images IS NOT NULL
+       ORDER BY signed_at DESC`,
+      [row.case_id, requestId]
+    );
+    // First-seen-wins per pageIndex → newest capture for each page
+    // because the rows are signed_at DESC.
+    const seenIndices = new Set();
+    for (const r of priorRows.rows) {
+      const captures =
+        typeof r.signed_page_images === "string"
+          ? JSON.parse(r.signed_page_images)
+          : r.signed_page_images;
+      if (!Array.isArray(captures)) continue;
+      for (const cap of captures) {
+        if (
+          !cap ||
+          typeof cap.pageIndex !== "number" ||
+          typeof cap.imageDataUrl !== "string"
+        ) {
+          continue;
+        }
+        if (!myPageIndices.includes(cap.pageIndex)) continue;
+        if (seenIndices.has(cap.pageIndex)) continue;
+        seenIndices.add(cap.pageIndex);
+        priorSignedPages.push({
+          pageIndex: cap.pageIndex,
+          imageDataUrl: cap.imageDataUrl,
+        });
+      }
+    }
+  }
+
   return {
     ...mapSignatureRequest(row, { includeSnapshot: true }),
     caseTitle: row.case_title,
+    priorSignedPages,
   };
 }
 

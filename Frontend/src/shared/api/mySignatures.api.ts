@@ -35,8 +35,24 @@ export type ApiPendingSignature = {
   requestingLawyerName: string;
 };
 
+// PNG-per-assigned-page captured on the signer's device at submit time.
+// These bytes ARE the truth for the final signed PDF — the compiler
+// embeds them verbatim, no re-rendering, no layout drift. One entry
+// per page index in the signature_request.page_indices array.
+export type SignedPageCapture = {
+  pageIndex: number;
+  imageDataUrl: string;
+};
+
 // Detail view: includes the frozen HTML snapshot so the viewer can render
 // the document the lawyer sent.
+//
+// `priorSignedPages` carries page-captures from OTHER signers who
+// already finished signing this case. For each page index in this
+// signer's pageIndices, if another signer captured that page first
+// (e.g. client signed before lawyer), their PNG appears here. The
+// viewer overlays it beneath the floating-signature drop area so the
+// fresh capture composes correctly with prior signatures.
 export type ApiSignatureRequestDetail = {
   id: string;
   caseId: string;
@@ -52,15 +68,7 @@ export type ApiSignatureRequestDetail = {
   expiresAt: string;
   createdAt: string;
   updatedAt: string;
-};
-
-// PNG-per-assigned-page captured on the signer's device at submit time.
-// These bytes ARE the truth for the final signed PDF — the compiler
-// embeds them verbatim, no re-rendering, no layout drift. One entry
-// per page index in the signature_request.page_indices array.
-export type SignedPageCapture = {
-  pageIndex: number;
-  imageDataUrl: string;
+  priorSignedPages: SignedPageCapture[];
 };
 
 export const mySignaturesApi = {
