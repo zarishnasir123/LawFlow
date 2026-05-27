@@ -364,6 +364,37 @@ export default function DocxPreviewSurface({
         .lawflow-resize-handle-ne { top: -6px; right: -6px; cursor: nesw-resize; }
         .lawflow-resize-handle-sw { bottom: -6px; left: -6px; cursor: nesw-resize; }
         .lawflow-resize-handle-se { bottom: -6px; right: -6px; cursor: nwse-resize; }
+        /* Delete affordance — red circle with white X just outside
+           the top-right corner. Same hover/select gating as the
+           resize handles so it doesn't clutter the page when the
+           lawyer isn't actively working with an image. */
+        .lawflow-image-delete {
+          position: absolute;
+          top: -10px;
+          right: -10px;
+          width: 20px;
+          height: 20px;
+          padding: 0;
+          background: #ef4444;
+          border: 2px solid white;
+          border-radius: 50%;
+          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+          cursor: pointer;
+          opacity: 0;
+          transition: opacity 0.15s ease, transform 0.15s ease, background 0.15s ease;
+          z-index: 3;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+        }
+        .lawflow-floating-image:hover .lawflow-image-delete,
+        .lawflow-floating-image-selected .lawflow-image-delete {
+          opacity: 1;
+        }
+        .lawflow-image-delete:hover {
+          background: #dc2626;
+          transform: scale(1.08);
+        }
       `}</style>
       <div
         ref={containerRef}

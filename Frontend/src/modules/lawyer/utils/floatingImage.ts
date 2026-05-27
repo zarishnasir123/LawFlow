@@ -18,6 +18,7 @@ type Corner = "nw" | "ne" | "sw" | "se";
 const SELECTED_CLASS = "lawflow-floating-image-selected";
 const FLOATING_CLASS = "lawflow-floating-image";
 const HANDLE_CLASS = "lawflow-resize-handle";
+const DELETE_CLASS = "lawflow-image-delete";
 // Marker attribute the wrapper carries so we can find the rehydrated
 // node by its source attachment after restoring from edited_html.
 // Lives on the DOM element AND survives serialization → restore.
@@ -116,7 +117,28 @@ function buildFloatingImage(opts: MountOptions): HTMLSpanElement {
     wrapper.appendChild(handle);
   });
 
+  wrapper.appendChild(buildDeleteButton());
+
   return wrapper;
+}
+
+// Floating delete affordance — circular red X sitting just outside
+// the top-right corner of the wrapper. Wired up later by
+// attachInteractions so the click handler can fire onChange. Kept
+// as a separate factory so the rehydrate path can add it to legacy
+// snapshots that don't already have one.
+function buildDeleteButton(): HTMLButtonElement {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = DELETE_CLASS;
+  btn.setAttribute("aria-label", "Delete image");
+  btn.setAttribute("title", "Delete image");
+  // Pure SVG so the X scales with the button without an icon font.
+  btn.innerHTML =
+    '<svg viewBox="0 0 16 16" width="10" height="10" aria-hidden="true">' +
+    '<path d="M3 3 L13 13 M13 3 L3 13" stroke="white" stroke-width="2.5" stroke-linecap="round" fill="none" />' +
+    "</svg>";
+  return btn;
 }
 
 // Attach mouse-based drag + resize behaviour. Listeners on the wrapper
@@ -194,6 +216,10 @@ function attachInteractions(
 
   const onMouseDown = (e: MouseEvent) => {
     const target = e.target as HTMLElement;
+    // Clicks on the delete button are handled below — never start a
+    // drag or resize from them. The button has its own click listener
+    // wired further down that removes the wrapper.
+    if (target.closest(`.${DELETE_CLASS}`)) return;
     const isHandle = target.classList.contains(HANDLE_CLASS);
     if (isHandle) {
       mode = `resize-${target.dataset.corner as Corner}`;
@@ -225,6 +251,23 @@ function attachInteractions(
   };
 
   wrapper.addEventListener("mousedown", onMouseDown);
+
+  // Delete-button click: remove the wrapper from the DOM and fire
+  // onChange so the autosave snapshot picks up the deletion. We
+  // attach the listener here (not on buildDeleteButton) so the
+  // rehydrate path can also benefit — re-running attachInteractions
+  // on a restored wrapper rewires this click handler from scratch.
+  const deleteBtn = wrapper.querySelector<HTMLButtonElement>(
+    `.${DELETE_CLASS}`
+  );
+  if (deleteBtn) {
+    deleteBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      wrapper.remove();
+      onChange?.();
+    });
+  }
 }
 
 // Global click handler — clicking outside any floating image clears
@@ -408,6 +451,14 @@ export function rehydrateFloatingImages(
     if (img) {
       img.draggable = false;
       img.style.pointerEvents = "none";
+    }
+
+    // Backfill the delete button on legacy snapshots written before
+    // the X-button shipped. Without this, old saved cases would
+    // lose the delete affordance until the lawyer re-dropped the
+    // image. attachInteractions wires the click listener below.
+    if (!wrapper.querySelector(`.${DELETE_CLASS}`)) {
+      wrapper.appendChild(buildDeleteButton());
     }
 
     attachInteractions(wrapper, onChange);
