@@ -137,12 +137,11 @@ export async function getMySignatureRequest(req, res) {
 // artifact is byte-identical to what the signer reviewed.
 export async function postSignature(req, res) {
   const { requestId } = req.params;
-  const { signatureImage, signaturePlacement, signedPages } = req.body;
+  const { signatureImage, signedPages } = req.body;
   const updated = await submitSignature({
     requestId,
     userId: req.user.sub,
     signatureImage,
-    signaturePlacement,
     signedPages,
   });
   return res.status(200).json({ signatureRequest: updated });

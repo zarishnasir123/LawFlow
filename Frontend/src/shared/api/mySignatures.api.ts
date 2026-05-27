@@ -54,25 +54,6 @@ export type ApiSignatureRequestDetail = {
   updatedAt: string;
 };
 
-// Position metadata captured when the signer drag-placed their signature
-// on the page. All values are FRACTIONS of the parent page (0..1) so
-// they survive any output-size rescale in the eventual PDF compile.
-//   - pageIndex: which page in the document the signature sits on (the
-//     absolute index, not an index into pageIndices)
-//   - xPct / yPct: top-left corner relative to the page's content area
-//   - widthPct / heightPct: size relative to the page
-//
-// Retained for the case-tracking analytics view ("client signed on page
-// 3 at the bottom-right") even though the compiled PDF no longer
-// derives geometry from it — final pages come from `signedPages`.
-export type SignaturePlacement = {
-  pageIndex: number;
-  xPct: number;
-  yPct: number;
-  widthPct: number;
-  heightPct: number;
-};
-
 // PNG-per-assigned-page captured on the signer's device at submit time.
 // These bytes ARE the truth for the final signed PDF — the compiler
 // embeds them verbatim, no re-rendering, no layout drift. One entry
@@ -114,21 +95,17 @@ export const mySignaturesApi = {
 
   // Submit a signature. `signedPages` carries one PNG per assigned page
   // — captured by the viewer AFTER the signer drag-placed their
-  // signature — and is what the compiler uses to build the final PDF.
-  // `signaturePlacement` is still stored for analytics ("where did the
-  // signer drop it?") but is no longer load-bearing for the rendered
-  // artifact.
+  // signature — and is what the compiler embeds verbatim into the final
+  // signed PDF.
   submit: async (
     requestId: string,
     signatureImage: string,
-    signaturePlacement?: SignaturePlacement | null,
     signedPages?: SignedPageCapture[]
   ): Promise<ApiSignatureRequestDetail> => {
     const { data } = await apiClient.post<{
       signatureRequest: ApiSignatureRequestDetail;
     }>(`/me/signature-requests/${requestId}/sign`, {
       signatureImage,
-      signaturePlacement: signaturePlacement ?? null,
       signedPages: signedPages ?? null,
     });
     return data.signatureRequest;

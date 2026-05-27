@@ -6,10 +6,6 @@ import { Document, Page, pdfjs } from "react-pdf";
 import LawyerLayout from "../components/LawyerLayout";
 import DocumentSidebar from "../components/documentEditor/DocumentSidebar";
 import DocxPreviewSurface from "../components/documentEditor/DocxPreviewSurface";
-// SignatureOverlayLayer is intentionally not imported anymore — the
-// editor renders a clean working surface; signatures appear in the
-// compiled PDF, not on the editor pages. See the disabled-mount
-// block further down for the rationale.
 import PageContextMenu, {
   type PageContextMenuState,
 } from "../components/documentEditor/PageContextMenu";
@@ -234,11 +230,9 @@ export default function CaseDocumentEditor() {
     return set;
   }, [pendingSignatureRequests]);
 
-  // Pull the latest signed requests from the cache for two consumers:
-  //   1. SignatureOverlayLayer renders each one's PNG on the canvas at
-  //      its captured placement.
-  //   2. The PAGES sidebar's per-page status badges (client / lawyer /
-  //      both) derive from these rows' pageIndices + signer_role.
+  // Pull the latest signed requests from the cache so the PAGES sidebar
+  // can render per-page status badges (client / lawyer / both) from each
+  // row's pageIndices + signer_role.
   const signedSignatureRequests = getSignedRequests(signatureCaseId);
 
   const signatureStatusByPageIndex = useMemo(() => {
@@ -917,28 +911,6 @@ export default function CaseDocumentEditor() {
                   attachmentUrlMap={attachmentUrlMap}
                   editable
                 />
-                {/* Read-only signature overlay layer. Renders the
-                    captured signature PNGs at their page-fractional
-                    placements as the lawyer edits — so the editor view
-                    matches what the compiled signed PDF will look like.
-                    Updates whenever the 15s poll surfaces new signed
-                    rows; pointer-events: none keeps the underlying
-                    contenteditable text fully accessible.
-
-                    DISABLED: per product call, the editor is a clean
-                    working surface for drafting. Signed signatures
-                    appear in the compiled PDF (downloadable from the
-                    Cases listing / TopActionBar / Submission preview)
-                    and overlaying them on the editor's pages mixes
-                    drafting and finalised-state UX in a way that
-                    confused users. The PDF compile reads
-                    signature_requests directly from the database, so
-                    removing this purely-visual layer breaks nothing
-                    downstream. */}
-                {/* <SignatureOverlayLayer
-                  pages={renderedPages}
-                  signedRequests={signedSignatureRequests}
-                /> */}
               </div>
             </div>
           )}

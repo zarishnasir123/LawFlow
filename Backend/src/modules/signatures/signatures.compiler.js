@@ -136,11 +136,7 @@ async function buildPdfFromCaptures(captureMap) {
 // to surface the error to the signer.
 export async function compileCaseSignedPdf({ caseId, lawyerUserId }) {
   const { rows: signedRequests } = await pool.query(
-    `SELECT id,
-            page_indices,
-            signature_placement,
-            signed_page_images,
-            signed_at
+    `SELECT id, signed_page_images, signed_at
      FROM signature_requests
      WHERE case_id = $1 AND status = 'signed'
      ORDER BY signed_at DESC`,

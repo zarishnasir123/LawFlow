@@ -75,28 +75,6 @@ export const submitSignatureValidator = [
     .withMessage("signatureImage must be a PNG/JPEG data URL")
     .isLength({ max: MAX_SIGNATURE_BYTES })
     .withMessage("Signature image is too large"),
-  // Placement metadata captured when the signer drag-dropped their
-  // signature on the page. Optional: a signer can submit without a
-  // placement (e.g., they typed but didn't drag), in which case the
-  // PDF compile uses a default position. Stored values are FRACTIONS
-  // (0..1) of the page so they survive any rendered page-size scale.
-  body("signaturePlacement").optional({ nullable: true }).isObject(),
-  body("signaturePlacement.pageIndex")
-    .optional({ nullable: true })
-    .isInt({ min: 0 })
-    .withMessage("signaturePlacement.pageIndex must be a non-negative integer"),
-  body("signaturePlacement.xPct")
-    .optional({ nullable: true })
-    .isFloat({ min: 0, max: 1 }),
-  body("signaturePlacement.yPct")
-    .optional({ nullable: true })
-    .isFloat({ min: 0, max: 1 }),
-  body("signaturePlacement.widthPct")
-    .optional({ nullable: true })
-    .isFloat({ min: 0, max: 1 }),
-  body("signaturePlacement.heightPct")
-    .optional({ nullable: true })
-    .isFloat({ min: 0, max: 1 }),
   // Per-page rendered captures the signer's browser produced after
   // placing the signature. The compiler uses these directly to build
   // the final PDF — see signatures.compiler.js.

@@ -18,7 +18,7 @@ const DEFAULT_TTL_DAYS = 14;
 // Mapping
 // =====================================================================
 
-function mapSignatureRequest(row, { includeSnapshot = false, includeImage = false } = {}) {
+function mapSignatureRequest(row, { includeSnapshot = false } = {}) {
   if (!row) return null;
   return {
     id: row.id,
@@ -29,19 +29,13 @@ function mapSignatureRequest(row, { includeSnapshot = false, includeImage = fals
     caseBatchId: row.case_batch_id,
     pageIndices: row.page_indices,
     signedAt: row.signed_at,
-    // Position metadata captured when the signer drag-placed their
-    // signature on the page. Stored as percentages of the page
-    // dimensions so Phase 2 PDF compile can scale to any output size.
-    signaturePlacement: row.signature_placement,
     status: row.status,
     expiresAt: row.expires_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
-    // Big payloads are opt-in. List endpoints skip them; the per-row
-    // signing view loads the snapshot, and only the lawyer's final
-    // compile step needs the signature image bytes alongside the row.
+    // documentHtmlSnapshot is opt-in: list endpoints skip the
+    // multi-KB HTML payload; only the per-row signing view loads it.
     ...(includeSnapshot ? { documentHtmlSnapshot: row.document_html_snapshot } : {}),
-    ...(includeImage ? { signatureImage: row.signature_image } : {}),
   };
 }
 
@@ -338,18 +332,8 @@ export async function listSignatureRequestsForCase({ caseId, lawyerUserId }) {
     [caseId]
   );
 
-  // Include the signature image bytes ONLY on signed rows — that's
-  // the data the editor's SignatureOverlayLayer needs to render each
-  // signature on the page where the signer placed it. Pending /
-  // expired / cancelled rows have no image to ship, so we don't pay
-  // the payload cost for them. Mapper still gates on
-  // includeImage flag → the rows we mark get the field; the rest
-  // serialize without it.
   return result.rows.map((row) =>
-    mapSignatureRequest(
-      { ...row, status: effectiveStatus(row) },
-      { includeImage: row.status === "signed" }
-    )
+    mapSignatureRequest({ ...row, status: effectiveStatus(row) })
   );
 }
 
@@ -468,7 +452,6 @@ export async function submitSignature({
   requestId,
   userId,
   signatureImage,
-  signaturePlacement,
   signedPages,
 }) {
   if (!signatureImage || typeof signatureImage !== "string") {
@@ -495,15 +478,6 @@ export async function submitSignature({
     throw new ApiError(409, "This signature request has already been signed");
   }
 
-  // signature_placement is JSONB; stringify so node-postgres serializes
-  // it correctly. Null is fine — kept now purely for analytics (where
-  // on the page did the signer drop the stamp?), no longer load-bearing
-  // for the rendered artifact.
-  const placementJson =
-    signaturePlacement && typeof signaturePlacement === "object"
-      ? JSON.stringify(signaturePlacement)
-      : null;
-
   // signed_pages is the array of per-page PNG captures the signer's
   // browser produced AFTER drag-placing the signature. The compiler
   // embeds these verbatim into the final PDF (see signatures.compiler.js
@@ -517,14 +491,13 @@ export async function submitSignature({
   const updated = await pool.query(
     `UPDATE signature_requests
      SET signature_image = $1,
-         signature_placement = $2,
-         signed_page_images = $3,
+         signed_page_images = $2,
          signed_at = NOW(),
          status = 'signed',
          updated_at = NOW()
-     WHERE id = $4
+     WHERE id = $3
      RETURNING *`,
-    [signatureImage, placementJson, signedPagesJson, requestId]
+    [signatureImage, signedPagesJson, requestId]
   );
 
   const updatedRow = updated.rows[0];
@@ -582,13 +555,13 @@ export async function submitSignature({
 
   // If this submission tips the case over the line — every required
   // signature now collected — fire the PDF compile in the BACKGROUND.
-  // Compile is puppeteer + pdf-lib + Supabase upload, which takes
-  // 2-4 seconds. We don't make the signer wait, and crucially we
-  // don't tie up the backend's event loop while the lawyer's editor
-  // is fetching the case in parallel — that race was the cause of
-  // the "Untitled document / No document loaded" state in the editor
-  // after sign-off. The 15s poll on the lawyer's editor picks up
-  // signed_pdf_storage_path once compile finishes.
+  // Compile is pdf-lib (embedding the signer-captured page PNGs) +
+  // Supabase upload; takes <1 second. We don't make the signer wait,
+  // and crucially we don't tie up the backend's event loop while the
+  // lawyer's editor is fetching the case in parallel — that race was
+  // the cause of the "Untitled document / No document loaded" state
+  // in the editor after sign-off. The 15s poll on the lawyer's editor
+  // picks up signed_pdf_storage_path once compile finishes.
   //
   // setImmediate is the same pattern email sends use (see
   // queueEmailTask in email.service.js) — defers to the next

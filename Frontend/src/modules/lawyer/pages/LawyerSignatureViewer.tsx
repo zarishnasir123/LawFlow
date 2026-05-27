@@ -17,7 +17,6 @@ import {
   filterSnapshotToPages,
   mySignaturesApi,
   type ApiSignatureRequestDetail,
-  type SignaturePlacement,
   getMySignaturesErrorMessage,
 } from "../../../shared/api/mySignatures.api";
 import { mountFloatingImage } from "../utils/floatingImage";
@@ -265,40 +264,8 @@ export default function LawyerSignatureViewer() {
     }
   };
 
-  const computePlacement = (): SignaturePlacement | null => {
-    if (!floatingRef.current || !request) return null;
-    const wrapper = floatingRef.current;
-    const page = wrapper.parentElement as HTMLElement | null;
-    if (!page) return null;
-    const pageWidth = page.clientWidth || 1;
-    const pageHeight = page.clientHeight || 1;
-    const left = parseFloat(wrapper.style.left) || 0;
-    const top = parseFloat(wrapper.style.top) || 0;
-    const width = wrapper.offsetWidth;
-    const height = wrapper.offsetHeight;
-    const host = documentHostRef.current;
-    if (!host) return null;
-    const sections = Array.from(
-      host.querySelectorAll<HTMLElement>(".docx-wrapper > section.docx")
-    );
-    const sectionIdx = sections.indexOf(page);
-    if (sectionIdx < 0) return null;
-    const absolutePageIndex =
-      request.pageIndices && request.pageIndices[sectionIdx] !== undefined
-        ? request.pageIndices[sectionIdx]
-        : sectionIdx;
-    return {
-      pageIndex: absolutePageIndex,
-      xPct: left / pageWidth,
-      yPct: top / pageHeight,
-      widthPct: width / pageWidth,
-      heightPct: height / pageHeight,
-    };
-  };
-
   const handleSubmit = async () => {
     if (!requestId || !signatureDataUrl) return;
-    const placement = computePlacement();
     setSubmitting(true);
     setError(null);
     try {
@@ -313,12 +280,7 @@ export default function LawyerSignatureViewer() {
         signedPages = await captureSignedPages(host, request.pageIndices);
       }
 
-      await mySignaturesApi.submit(
-        requestId,
-        signatureDataUrl,
-        placement,
-        signedPages
-      );
+      await mySignaturesApi.submit(requestId, signatureDataUrl, signedPages);
       setSignedSuccessfully(true);
     } catch (err) {
       setError(getMySignaturesErrorMessage(err));
