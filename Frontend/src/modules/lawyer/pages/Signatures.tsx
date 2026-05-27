@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 
 import LawyerLayout from "../components/LawyerLayout";
+import SignedPdfPreviewModal from "../components/SignedPdfPreviewModal";
 import {
   mySignaturesApi,
   type ApiPendingSignature,
@@ -19,6 +20,39 @@ import {
 } from "../../../shared/api/mySignatures.api";
 import { casesApi, type ApiCase, getCasesErrorMessage } from "../api/cases.api";
 import { signaturesApi } from "../signatures/api/signatures.api";
+
+// Render a "Client + Lawyer" / "Client only" / "Lawyer only" pill from the
+// distinct signer-role set the backend ships on each signed case. Lawyers
+// were mixing up self-signed artifacts with counter-signed ones at a
+// glance; this chip makes the signer-mix unambiguous on the tracker row.
+function SignerMixBadge({ roles }: { roles: ApiCase["signedByRoles"] }) {
+  const set = new Set(roles ?? []);
+  const hasClient = set.has("client");
+  const hasLawyer = set.has("lawyer");
+
+  if (hasClient && hasLawyer) {
+    return (
+      <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-semibold text-indigo-700 ring-1 ring-indigo-100">
+        Client + Lawyer
+      </span>
+    );
+  }
+  if (hasClient) {
+    return (
+      <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700 ring-1 ring-amber-100">
+        Client only
+      </span>
+    );
+  }
+  if (hasLawyer) {
+    return (
+      <span className="rounded-full bg-sky-50 px-2 py-0.5 text-[10px] font-semibold text-sky-700 ring-1 ring-sky-100">
+        Lawyer only
+      </span>
+    );
+  }
+  return null;
+}
 
 // Lawyer's own signatures inbox + activity log.
 //
@@ -87,6 +121,11 @@ export default function Signatures() {
   // Mirrors the lawyer-editor signature panel and the client
   // /case-tracking pattern.
   const [historyOpen, setHistoryOpen] = useState(false);
+  // Case being previewed in the popup PDF viewer. The previous flow
+  // navigated to /lawyer-submit-case, which dropped the lawyer into
+  // the registrar-submission UI just to look at a signed file — too
+  // much context switching for a quick verification pass.
+  const [previewCase, setPreviewCase] = useState<ApiCase | null>(null);
 
   // Open the signed PDF in a new tab. Fresh 5-min signed URL is
   // minted on every call so a stale URL never blocks the download.
@@ -354,6 +393,7 @@ export default function Signatures() {
                       <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-medium text-gray-600 ring-1 ring-gray-200">
                         {c.caseTypeName}
                       </span>
+                      <SignerMixBadge roles={c.signedByRoles} />
                     </div>
                     <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-gray-500">
                       <span className="inline-flex items-center gap-1">
@@ -379,9 +419,7 @@ export default function Signatures() {
                     </button>
                     <button
                       type="button"
-                      onClick={() =>
-                        navigate({ to: `/lawyer-submit-case/${c.id}` })
-                      }
+                      onClick={() => setPreviewCase(c)}
                       className="inline-flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-xs font-medium text-gray-700 hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700"
                     >
                       <FileSignature className="h-3.5 w-3.5" />
@@ -394,6 +432,15 @@ export default function Signatures() {
           )}
         </section>
       </div>
+
+      {previewCase && (
+        <SignedPdfPreviewModal
+          caseId={previewCase.id}
+          caseTitle={previewCase.title}
+          compiledAt={previewCase.signedPdfGeneratedAt}
+          onClose={() => setPreviewCase(null)}
+        />
+      )}
     </LawyerLayout>
   );
 }
