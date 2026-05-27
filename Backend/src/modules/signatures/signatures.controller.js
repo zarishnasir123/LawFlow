@@ -130,15 +130,20 @@ export async function getMySignatureRequest(req, res) {
 }
 
 // Recipient submits their signature image (typed name canvas OR uploaded
-// PNG/JPG, both produced as base64 data URLs client-side).
+// PNG/JPG, both produced as base64 data URLs client-side) ALONG WITH
+// the rendered page captures — one PNG per assigned page taken on the
+// signer's device with the signature already placed. The page PNGs are
+// what the compiler embeds in the final signed PDF, so the signed
+// artifact is byte-identical to what the signer reviewed.
 export async function postSignature(req, res) {
   const { requestId } = req.params;
-  const { signatureImage, signaturePlacement } = req.body;
+  const { signatureImage, signaturePlacement, signedPages } = req.body;
   const updated = await submitSignature({
     requestId,
     userId: req.user.sub,
     signatureImage,
     signaturePlacement,
+    signedPages,
   });
   return res.status(200).json({ signatureRequest: updated });
 }

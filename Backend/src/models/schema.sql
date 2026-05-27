@@ -511,6 +511,13 @@ CREATE TABLE signature_requests (
   -- Every coordinate is in [0,1] so the values survive any A4/Letter
   -- rescale at PDF compile time. NULL until the signer submits.
   signature_placement        JSONB,
+  -- Per-page PNG captures uploaded by the signer's browser at submit
+  -- time: [{ pageIndex, imageDataUrl }, ...]. These ARE the rendered
+  -- bytes of the assigned pages with the signature already drawn on
+  -- them — the compiler embeds them verbatim into the final signed
+  -- PDF, so there's no server-side puppeteer re-render to drift away
+  -- from what the signer actually saw and approved.
+  signed_page_images         JSONB,
   signed_at                  TIMESTAMP,
 
   status                     VARCHAR(30) NOT NULL DEFAULT 'pending'

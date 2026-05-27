@@ -10,6 +10,14 @@ const MAX_HTML_BYTES = 2 * 1024 * 1024;
 // using the sign endpoint as a binary blob upload channel.
 const MAX_SIGNATURE_BYTES = 1024 * 1024;
 
+// Per-page PNG capture from html2canvas at submit time. An A4 page at
+// devicePixelRatio=2 lands around 400–800 KB; 3 MB is generous headroom
+// for high-DPI captures with embedded images, while still bounding the
+// HTTP body for a typical 1-page request well under the JSON parser's
+// limit. Caps applied per element in the array AND on the array length.
+const MAX_PAGE_IMAGE_BYTES = 3 * 1024 * 1024;
+const MAX_PAGES_PER_SUBMIT = 50;
+
 const uuidParam = (name) =>
   param(name).isUUID().withMessage(`${name} must be a valid UUID`);
 
@@ -89,6 +97,24 @@ export const submitSignatureValidator = [
   body("signaturePlacement.heightPct")
     .optional({ nullable: true })
     .isFloat({ min: 0, max: 1 }),
+  // Per-page rendered captures the signer's browser produced after
+  // placing the signature. The compiler uses these directly to build
+  // the final PDF — see signatures.compiler.js.
+  body("signedPages")
+    .optional({ nullable: true })
+    .isArray({ max: MAX_PAGES_PER_SUBMIT })
+    .withMessage(
+      `signedPages must be an array of at most ${MAX_PAGES_PER_SUBMIT} items`
+    ),
+  body("signedPages.*.pageIndex")
+    .isInt({ min: 0 })
+    .withMessage("signedPages[].pageIndex must be a non-negative integer"),
+  body("signedPages.*.imageDataUrl")
+    .isString()
+    .matches(/^data:image\/(png|jpeg|jpg);base64,/)
+    .withMessage("signedPages[].imageDataUrl must be a PNG/JPEG data URL")
+    .isLength({ max: MAX_PAGE_IMAGE_BYTES })
+    .withMessage("signedPages[].imageDataUrl is too large"),
 ];
 
 // ===== Lawyer-side: save edited HTML state =====

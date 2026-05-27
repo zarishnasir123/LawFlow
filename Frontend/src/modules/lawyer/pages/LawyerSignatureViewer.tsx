@@ -21,6 +21,7 @@ import {
   getMySignaturesErrorMessage,
 } from "../../../shared/api/mySignatures.api";
 import { mountFloatingImage } from "../utils/floatingImage";
+import { captureSignedPages } from "../utils/capturePages";
 
 // Lawyer self-signing viewer (FE-7) — see ClientSignatureViewer for the
 // architecture comment. Same direct-render + floating-image flow,
@@ -301,7 +302,23 @@ export default function LawyerSignatureViewer() {
     setSubmitting(true);
     setError(null);
     try {
-      await mySignaturesApi.submit(requestId, signatureDataUrl, placement);
+      // Capture each assigned page AS RENDERED, with the floating
+      // signature wrapper already on it. The captured PNGs become the
+      // final PDF pages — no server-side puppeteer re-render, no
+      // chance of font / media-type drift moving content out from
+      // under the signature.
+      let signedPages: { pageIndex: number; imageDataUrl: string }[] = [];
+      const host = documentHostRef.current;
+      if (host && request?.pageIndices && request.pageIndices.length > 0) {
+        signedPages = await captureSignedPages(host, request.pageIndices);
+      }
+
+      await mySignaturesApi.submit(
+        requestId,
+        signatureDataUrl,
+        placement,
+        signedPages
+      );
       setSignedSuccessfully(true);
     } catch (err) {
       setError(getMySignaturesErrorMessage(err));

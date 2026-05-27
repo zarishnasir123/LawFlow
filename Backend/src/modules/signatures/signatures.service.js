@@ -469,6 +469,7 @@ export async function submitSignature({
   userId,
   signatureImage,
   signaturePlacement,
+  signedPages,
 }) {
   if (!signatureImage || typeof signatureImage !== "string") {
     throw new ApiError(400, "Signature image is required");
@@ -495,23 +496,35 @@ export async function submitSignature({
   }
 
   // signature_placement is JSONB; stringify so node-postgres serializes
-  // it correctly. Null is fine — Phase 2 compile falls back to a default
-  // bottom-right slot if no placement is captured.
+  // it correctly. Null is fine — kept now purely for analytics (where
+  // on the page did the signer drop the stamp?), no longer load-bearing
+  // for the rendered artifact.
   const placementJson =
     signaturePlacement && typeof signaturePlacement === "object"
       ? JSON.stringify(signaturePlacement)
+      : null;
+
+  // signed_pages is the array of per-page PNG captures the signer's
+  // browser produced AFTER drag-placing the signature. The compiler
+  // embeds these verbatim into the final PDF (see signatures.compiler.js
+  // for the rationale — server-side re-rendering kept drifting layout
+  // away from what the signer approved).
+  const signedPagesJson =
+    Array.isArray(signedPages) && signedPages.length > 0
+      ? JSON.stringify(signedPages)
       : null;
 
   const updated = await pool.query(
     `UPDATE signature_requests
      SET signature_image = $1,
          signature_placement = $2,
+         signed_page_images = $3,
          signed_at = NOW(),
          status = 'signed',
          updated_at = NOW()
-     WHERE id = $3
+     WHERE id = $4
      RETURNING *`,
-    [signatureImage, placementJson, requestId]
+    [signatureImage, placementJson, signedPagesJson, requestId]
   );
 
   const updatedRow = updated.rows[0];

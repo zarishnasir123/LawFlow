@@ -26,6 +26,7 @@ import {
 // helper has no React/lawyer-store coupling, it just attaches DOM
 // listeners to an HTMLElement.
 import { mountFloatingImage } from "../../lawyer/utils/floatingImage";
+import { captureSignedPages } from "../../lawyer/utils/capturePages";
 
 // =====================================================================
 // Client signing viewer (FE-6).
@@ -367,7 +368,23 @@ export default function ClientSignatureViewer() {
     setSubmitting(true);
     setError(null);
     try {
-      await mySignaturesApi.submit(requestId, signatureDataUrl, placement);
+      // Capture each assigned page AS RENDERED in the client's browser,
+      // with the floating signature wrapper already on it. The captured
+      // PNGs become the final PDF pages — no server-side puppeteer
+      // re-render, so font / media-type drift can't move the
+      // surrounding text out from under the signature.
+      let signedPages: { pageIndex: number; imageDataUrl: string }[] = [];
+      const host = documentHostRef.current;
+      if (host && request?.pageIndices && request.pageIndices.length > 0) {
+        signedPages = await captureSignedPages(host, request.pageIndices);
+      }
+
+      await mySignaturesApi.submit(
+        requestId,
+        signatureDataUrl,
+        placement,
+        signedPages
+      );
       setSignedSuccessfully(true);
     } catch (err) {
       setError(getMySignaturesErrorMessage(err));
