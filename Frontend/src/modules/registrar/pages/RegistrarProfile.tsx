@@ -97,16 +97,17 @@ export default function RegistrarProfile() {
   return (
     <RegistrarLayout pageSubtitle="My Profile">
       <div className="px-6 py-8">
-        {/* No onEdit handler: registrar identity (name, email, CNIC) and
-            court assignment are admin-managed. If a registrar needs a
-            change they ask the admin, who edits via the admin panel.
-            Account-level controls (password, deactivate) stay in the
-            registrar's hands below. */}
+        {/* Edit button takes the registrar to the dedicated edit page
+            where they can update name / email / phone / avatar. CNIC,
+            court, and tehsil stay locked there (admin-managed and
+            backend-enforced). Account-level controls (change password,
+            deactivate) remain on this view below. */}
         <ProfileCard
           name={fullName}
           memberSince={memberSince}
           roleLabel={roleLabel}
           avatarUrl={currentUser.avatarUrl}
+          onEdit={() => navigate({ to: "/registrar-profile/edit" })}
         >
           {/* Identity — admin-provisioned, read-only here */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

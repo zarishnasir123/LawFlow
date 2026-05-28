@@ -18,13 +18,14 @@ type ResetPasswordPayload = {
 //
 // barLicenseNumber is deliberately absent — it's UNIQUE + tied to
 // the lawyer's verification, so changing it would require a re-
-// verification flow we don't expose to the user.
+// verification flow we don't expose to the user. cnic is also
+// deliberately absent — it's immutable post-registration; the backend
+// rejects any cnic in the PATCH body.
 export type UpdateMyProfilePayload = {
   firstName?: string;
   lastName?: string;
   email?: string;
   phone?: string;
-  cnic?: string;
   address?: string;
   city?: string;
   tehsil?: string;

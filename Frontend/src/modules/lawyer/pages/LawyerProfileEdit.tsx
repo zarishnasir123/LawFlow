@@ -73,7 +73,8 @@ function buildPatch(initial: CurrentUser, form: FormState): UpdateMyProfilePaylo
   if (form.lastName !== (initial.lastName ?? "")) patch.lastName = form.lastName;
   if (form.email !== initial.email) patch.email = form.email;
   if (form.phone !== (initial.phone ?? "")) patch.phone = form.phone;
-  if (form.cnic !== (initial.cnic ?? "")) patch.cnic = form.cnic;
+  // CNIC is intentionally not diffed — it's locked in the UI and the
+  // backend's updateMyProfileValidator rejects any cnic in the body.
 
   const initialSpec = initial.specialization ?? "";
   if (form.specialization !== initialSpec) {
@@ -322,12 +323,21 @@ export default function LawyerProfileEdit() {
                 value={form.phone}
                 onChange={(v) => handleChange("phone", v)}
               />
-              <EditableField
-                label="CNIC Number"
-                value={form.cnic}
-                placeholder="12345-1234567-1"
-                onChange={(v) => handleChange("cnic", v)}
-              />
+              {/* CNIC is set at registration and treated as immutable —
+                  same lock applies to clients and registrars. Backend
+                  rejects any cnic in the PATCH body. */}
+              <div>
+                <label className="text-sm font-medium text-gray-700">CNIC Number</label>
+                <input
+                  type="text"
+                  value={form.cnic}
+                  disabled
+                  className="mt-1 w-full rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-500 cursor-not-allowed"
+                />
+                <p className="mt-1 text-xs text-gray-400">
+                  Contact support if your CNIC was set incorrectly.
+                </p>
+              </div>
             </div>
           </div>
 

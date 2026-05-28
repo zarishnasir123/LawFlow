@@ -14,7 +14,6 @@ import AdminLayout from "../modules/admin/components/AdminLayout";
 import AdminDashboardPage from "../modules/admin/pages/Dashboard";
 import AdminRegistrarsPage from "../modules/admin/pages/Registrars";
 import CreateRegistrar from "../modules/admin/pages/CreateRegistrar";
-import EditRegistrar from "../modules/admin/pages/EditRegistrar";
 import AdminStatisticPage from "../modules/admin/pages/Reports";
 import AdminTemplatesPage from "../modules/admin/pages/Templates";
 import AdminVerificationsPage from "../modules/admin/pages/Verifications";
@@ -54,7 +53,7 @@ const adminLayoutRoute = createRoute({
   getParentRoute: () => rootRoute,
   // Underscore prefix is TanStack's convention for pathless layout routes —
   // signals "not a URL segment" at a glance, and the prefix is the only
-  // part that leaks into typed `from` strings (see EditRegistrar.tsx).
+  // part that leaks into typed `from` strings (e.g. "/_admin/registrars").
   id: "_admin",
   beforeLoad: requireAdmin(),
   component: AdminLayout,
@@ -76,12 +75,6 @@ const createRegistrarRoute = createRoute({
   getParentRoute: () => adminLayoutRoute,
   path: "registrars/create",
   component: CreateRegistrar,
-});
-
-const editRegistrarRoute = createRoute({
-  getParentRoute: () => adminLayoutRoute,
-  path: "registrars/edit/$id",
-  component: EditRegistrar,
 });
 
 const statisticsRoute = createRoute({
@@ -127,7 +120,6 @@ const routeTree = rootRoute.addChildren([
     dashboardRoute,
     registrarsRoute,
     createRegistrarRoute,
-    editRegistrarRoute,
     statisticsRoute,
     templatesRoute,
     verificationsRoute,

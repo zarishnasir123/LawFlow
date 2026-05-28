@@ -67,6 +67,7 @@ import ApprovedCases from "../modules/registrar/pages/ApprovedCases";
 import ReturnCase from "../modules/registrar/pages/ReturnCase";
 import ScheduleHearing from "../modules/registrar/pages/ScheduleHearing";
 import RegistrarProfile from "../modules/registrar/pages/RegistrarProfile";
+import RegistrarProfileEdit from "../modules/registrar/pages/RegistrarProfileEdit";
 
 
 /* =====================================================
@@ -445,6 +446,13 @@ const registrarProfileRoute = createRoute({
   component: RegistrarProfile,
 });
 
+const registrarProfileEditRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "registrar-profile/edit",
+  beforeLoad: registrarBeforeLoad,
+  component: RegistrarProfileEdit,
+});
+
 /* =====================================================
    ROUTE TREE - Combines all routes into hierarchy
    ===================================================== */
@@ -506,6 +514,7 @@ const routeTree = rootRoute.addChildren([
   returnCaseRoute,
   scheduleHearingRoute,
   registrarProfileRoute,
+  registrarProfileEditRoute,
 ]);
 
 export const router = createRouter({ routeTree });

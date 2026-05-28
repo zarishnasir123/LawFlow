@@ -1,8 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import {
   MoreVertical,
-  PenSquare,
   Send,
   Trash2,
   UserPlus,
@@ -32,6 +31,21 @@ function getInitials(firstName: string, lastName: string): string {
   return `${first}${last}` || "??";
 }
 
+// Render the gap between `from` and now as a short relative phrase
+// ("Just now", "2m ago", "1h ago"). Keeps the freshness chip
+// compact so it doesn't compete with the main header content.
+function formatRelativeTime(from: Date | null, now: Date): string {
+  if (!from) return "";
+  const seconds = Math.max(0, Math.floor((now.getTime() - from.getTime()) / 1000));
+  if (seconds < 10) return "Just now";
+  if (seconds < 60) return `${seconds}s ago`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return from.toLocaleString();
+}
+
 export default function Registrars() {
   const navigate = useNavigate();
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
@@ -42,6 +56,20 @@ export default function Registrars() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  // Driven by every successful fetch — surfaced in the header as
+  // "Updated X ago" so admins see at a glance that the list is live,
+  // even without a visible Refresh button. Null until the first fetch
+  // completes (the header just hides the chip until then).
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
+  // A separate "now" clock that ticks every minute so the relative
+  // timestamp ("2m ago" → "3m ago") refreshes without re-rendering
+  // the whole list. We don't tick every second — second-level
+  // precision is just visual noise on an admin dashboard.
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(new Date()), 60_000);
+    return () => window.clearInterval(id);
+  }, []);
   const [toast, setToast] = useState<{
     open: boolean;
     type: "success" | "error";
@@ -53,6 +81,16 @@ export default function Registrars() {
     title: "",
   });
 
+  // How long between background refetches while the tab is visible.
+  // Long enough to be cheap on the network, short enough that a
+  // registrar self-update lands here within ~30s without any admin
+  // action. Refetch-on-focus + refetch-on-visibility handle the "I
+  // just came back to this tab" case so this interval is the slow
+  // safety net, not the primary signal.
+  const POLL_MS = 30_000;
+
+  // Loud fetch — drives the page-level spinner and the Retry path
+  // (via reloadToken). Errors are surfaced as a banner with Retry.
   useEffect(() => {
     let cancelled = false;
 
@@ -63,6 +101,7 @@ export default function Registrars() {
         const response = await fetchRegistrars({ limit: 100, offset: 0 });
         if (cancelled) return;
         setRegistrars(response.items);
+        setLastUpdatedAt(new Date());
       } catch (error) {
         if (!cancelled) {
           setLoadError(extractApiErrorMessage(error, "Unable to load registrars."));
@@ -77,6 +116,59 @@ export default function Registrars() {
       cancelled = true;
     };
   }, [reloadToken]);
+
+  // Silent background refetch — does NOT toggle `loading` so the
+  // periodic pull doesn't flash a spinner over a list the admin is
+  // actively scanning. Errors are swallowed: a transient network
+  // blip shouldn't blow away the currently-rendered list. The Retry
+  // button still goes through the loud `load()` above.
+  const silentRefresh = useCallback(async () => {
+    try {
+      const response = await fetchRegistrars({ limit: 100, offset: 0 });
+      setRegistrars(response.items);
+      setLastUpdatedAt(new Date());
+      setLoadError(null);
+    } catch {
+      // ignored — keep what we last had on screen
+    }
+  }, []);
+
+  // Auto-refresh loop. Only ticks while the tab is visible so a
+  // backgrounded admin tab doesn't burn the network. On visibility
+  // restore we also pull once immediately so the admin doesn't see
+  // a stale list right after switching back to the tab.
+  useEffect(() => {
+    let intervalId: number | undefined;
+
+    function startPolling() {
+      stopPolling();
+      intervalId = window.setInterval(silentRefresh, POLL_MS);
+    }
+    function stopPolling() {
+      if (intervalId !== undefined) {
+        window.clearInterval(intervalId);
+        intervalId = undefined;
+      }
+    }
+    function handleVisibility() {
+      if (document.visibilityState === "visible") {
+        silentRefresh();
+        startPolling();
+      } else {
+        stopPolling();
+      }
+    }
+
+    if (document.visibilityState === "visible") startPolling();
+    document.addEventListener("visibilitychange", handleVisibility);
+    window.addEventListener("focus", silentRefresh);
+
+    return () => {
+      stopPolling();
+      document.removeEventListener("visibilitychange", handleVisibility);
+      window.removeEventListener("focus", silentRefresh);
+    };
+  }, [silentRefresh]);
 
   // Close the kebab menu on outside click and on Escape so it behaves like
   // a native dropdown without pulling in a headless-ui dependency.
@@ -279,13 +371,34 @@ export default function Registrars() {
               </div>
             </div>
 
-            <button
-              onClick={() => navigate({ to: "/registrars/create" })}
-              className="inline-flex items-center gap-2 rounded-xl bg-[#01411C] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#024a23] hover:shadow"
-            >
-              <UserPlus className="h-4 w-4" />
-              Create Registrar
-            </button>
+            <div className="flex items-center gap-3">
+              {/* Freshness indicator. The list auto-refreshes on tab
+                  focus, on visibility-change, and every 30s while
+                  visible — this chip just tells the admin when the
+                  most recent successful fetch landed. Tooltip carries
+                  the exact timestamp for precise debugging. */}
+              {lastUpdatedAt ? (
+                <span
+                  className="hidden sm:inline-flex items-center gap-1.5 rounded-full bg-white px-2.5 py-1 text-xs font-medium text-gray-600 ring-1 ring-gray-200"
+                  title={`Last updated ${lastUpdatedAt.toLocaleString()} — auto-refreshes every 30s and on tab focus`}
+                >
+                  <span
+                    className={`h-1.5 w-1.5 rounded-full ${
+                      loading ? "bg-amber-500 animate-pulse" : "bg-emerald-500"
+                    }`}
+                  />
+                  {loading ? "Updating…" : `Updated ${formatRelativeTime(lastUpdatedAt, now)}`}
+                </span>
+              ) : null}
+
+              <button
+                onClick={() => navigate({ to: "/registrars/create" })}
+                className="inline-flex items-center gap-2 rounded-xl bg-[#01411C] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#024a23] hover:shadow"
+              >
+                <UserPlus className="h-4 w-4" />
+                Create Registrar
+              </button>
+            </div>
           </div>
         </section>
 
@@ -343,15 +456,36 @@ export default function Registrars() {
                 >
                   <div className="flex items-start justify-between gap-3 p-5">
                     <div className="flex items-center gap-3 min-w-0">
-                      <div
-                        className={`flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full text-sm font-semibold ring-2 ${
-                          isActive
-                            ? "bg-[#01411C] text-white ring-green-100"
-                            : "bg-gray-300 text-white ring-gray-100"
-                        }`}
-                      >
-                        {getInitials(r.firstName, r.lastName)}
-                      </div>
+                      {/* Avatar: signed Supabase URL when the registrar
+                          has uploaded one, otherwise an initials circle.
+                          Both share the same 44px round shape so the
+                          card layout never shifts when an avatar
+                          arrives on a refetch. <img onError> falls back
+                          to initials if the signed URL has expired
+                          (1h TTL) — the next auto-refresh re-signs it. */}
+                      {r.avatarUrl ? (
+                        <img
+                          src={r.avatarUrl}
+                          alt={`${r.firstName} ${r.lastName}`}
+                          className={`h-11 w-11 flex-shrink-0 rounded-full object-cover ring-2 ${
+                            isActive ? "ring-green-100" : "ring-gray-100 opacity-80"
+                          }`}
+                          draggable={false}
+                          onError={(e) => {
+                            e.currentTarget.style.display = "none";
+                          }}
+                        />
+                      ) : (
+                        <div
+                          className={`flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full text-sm font-semibold ring-2 ${
+                            isActive
+                              ? "bg-[#01411C] text-white ring-green-100"
+                              : "bg-gray-300 text-white ring-gray-100"
+                          }`}
+                        >
+                          {getInitials(r.firstName, r.lastName)}
+                        </div>
+                      )}
                       <div className="min-w-0">
                         <h3 className="truncate text-base font-semibold text-gray-900">
                           {r.firstName} {r.lastName}
@@ -383,20 +517,12 @@ export default function Registrars() {
                           role="menu"
                           className="absolute right-0 z-20 mt-1 w-52 overflow-hidden rounded-xl border border-gray-200 bg-white py-1 shadow-lg ring-1 ring-black/5"
                         >
-                          <button
-                            role="menuitem"
-                            onClick={() => {
-                              setOpenMenuId(null);
-                              navigate({
-                                to: `/registrars/edit/${r.registrarProfileId}`,
-                              });
-                            }}
-                            className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
-                          >
-                            <PenSquare className="h-4 w-4 text-gray-500" />
-                            Edit details
-                          </button>
-
+                          {/* No Edit action: identity (name / phone /
+                              avatar) is owned by the registrar and edited
+                              from /registrar-profile in the registrar
+                              portal. Changes there land in the same DB
+                              rows this list reads, so refreshing the page
+                              surfaces them here automatically. */}
                           <button
                             role="menuitem"
                             onClick={() => {
