@@ -46,12 +46,18 @@ export default function CreateRegistrar() {
 
     setSubmitting(true);
     try {
+      // Court / tehsil are optional. Empty string means the admin left
+      // the dropdown on "— Select —"; forward `null` so the backend
+      // stores NULL (the registrar's profile renders "Not assigned")
+      // rather than an empty string.
       const { registrar, emailDelivery } = await createRegistrar({
         firstName: nameParts.firstName,
         lastName: nameParts.lastName,
         email: values.email,
         phone: values.phone,
         cnic: values.cnic,
+        assignedCourt: values.assignedCourt.trim() || null,
+        assignedTehsil: values.assignedTehsil.trim() || null,
       });
 
       // Account creation succeeded server-side regardless of email outcome.
