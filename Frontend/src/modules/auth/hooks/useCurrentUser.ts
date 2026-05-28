@@ -54,6 +54,13 @@ export type CurrentUser = {
   // lawyer hasn't filled it in yet.
   bio: string | null;
 
+  // Registrar-profile fields, sourced from registrar_profiles via the
+  // same /auth/me JOIN. Null for non-registrar roles. The registrar's
+  // own profile page renders these read-only — only an admin can
+  // change them via the admin Edit Registrar flow.
+  assignedCourt: string | null;
+  assignedTehsil: string | null;
+
   // True after the user has opened any dashboard at least once. The first
   // /me call after registration / admin-creation flips this from false to
   // true atomically on the server, so the dashboard header can show

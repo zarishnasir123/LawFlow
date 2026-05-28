@@ -98,7 +98,13 @@ async function mapAuthUser(row) {
       row.lawyer_consultation_fee !== null && row.lawyer_consultation_fee !== undefined
         ? Number(row.lawyer_consultation_fee)
         : null,
-    bio: row.lawyer_bio || null
+    bio: row.lawyer_bio || null,
+    // Registrar-profile fields, surfaced via the same /auth/me JOIN as
+    // the lawyer/client fields. Both null for non-registrar roles (no
+    // registrar_profiles row exists). The registrar's profile page
+    // renders them read-only — only the admin can change court/tehsil.
+    assignedCourt: row.registrar_assigned_court || null,
+    assignedTehsil: row.registrar_assigned_tehsil || null
   };
 }
 
@@ -238,11 +244,14 @@ async function findAuthUserById(userId) {
       lawyer_profiles.bio AS lawyer_bio,
       client_profiles.address AS address,
       client_profiles.city AS city,
-      client_profiles.tehsil AS tehsil
+      client_profiles.tehsil AS tehsil,
+      registrar_profiles.assigned_court AS registrar_assigned_court,
+      registrar_profiles.assigned_tehsil AS registrar_assigned_tehsil
     FROM users
     JOIN roles ON roles.id = users.role_id
     LEFT JOIN lawyer_profiles ON lawyer_profiles.user_id = users.id
     LEFT JOIN client_profiles ON client_profiles.user_id = users.id
+    LEFT JOIN registrar_profiles ON registrar_profiles.user_id = users.id
     WHERE users.id = $1`,
     [userId]
   );

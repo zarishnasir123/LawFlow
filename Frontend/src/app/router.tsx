@@ -66,6 +66,7 @@ import ReviewCases from "../modules/registrar/pages/ReviewCases";
 import ApprovedCases from "../modules/registrar/pages/ApprovedCases";
 import ReturnCase from "../modules/registrar/pages/ReturnCase";
 import ScheduleHearing from "../modules/registrar/pages/ScheduleHearing";
+import RegistrarProfile from "../modules/registrar/pages/RegistrarProfile";
 
 
 /* =====================================================
@@ -437,6 +438,13 @@ const scheduleHearingRoute = createRoute({
   component: ScheduleHearing,
 });
 
+const registrarProfileRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "registrar-profile",
+  beforeLoad: registrarBeforeLoad,
+  component: RegistrarProfile,
+});
+
 /* =====================================================
    ROUTE TREE - Combines all routes into hierarchy
    ===================================================== */
@@ -497,6 +505,7 @@ const routeTree = rootRoute.addChildren([
   approvedCasesRoute,
   returnCaseRoute,
   scheduleHearingRoute,
+  registrarProfileRoute,
 ]);
 
 export const router = createRouter({ routeTree });
