@@ -99,9 +99,12 @@ export const registrarManagementLimiter = rateLimiter({
   message: "Too many registrar management requests. Please try again after 15 minutes."
 });
 
-// Resending credentials triggers an email + password reset, so cap tighter.
+// Resending credentials triggers an email + password reset. The cap is a
+// safety net against a stolen admin token spamming a registrar's inbox or a
+// runaway client loop — set high enough that a real admin doing normal work
+// (or repeated developer testing) will never trip it.
 export const registrarCredentialsLimiter = rateLimiter({
   windowMs: 15 * 60 * 1000,
-  max: 10,
+  max: 100,
   message: "Too many credentials emails requested. Please try again after 15 minutes."
 });

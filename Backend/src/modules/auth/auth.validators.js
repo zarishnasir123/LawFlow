@@ -245,18 +245,17 @@ export const updateMyProfileValidator = [
 
   optionalStringField(["phoneNumber", "phone_number", "phone"], "Phone number", { max: 20 }),
 
-  // CNIC stays optional but, when present, must still pass the
-  // Pakistan-format + district-scope checks the registration uses.
+  // CNIC is the user's national identity number. It's set at
+  // registration (or by an admin for admin-provisioned accounts) and
+  // is treated as immutable from there on — changing it would silently
+  // rewrite the identity that audit trails, lawyer verifications, and
+  // unique constraints all depend on. The Edit Profile UI for every
+  // role renders CNIC as a locked field; this validator is the
+  // defense-in-depth layer for anyone bypassing the UI.
   body().custom((_, { req }) => {
     const value = getTrimmedField(req.body, "cnic", "CNIC");
-    if (!value) return true;
-    if (!isValidPakistanCnic(value)) {
-      throw new Error("CNIC must follow Pakistan format: 12345-1234567-1");
-    }
-    if (!isAllowedDistrictCnic(value)) {
-      throw new Error("CNIC is not allowed for the configured district scope");
-    }
-    return true;
+    if (value === undefined || value === "") return true;
+    throw new Error("CNIC cannot be changed. Contact an administrator if it was set incorrectly.");
   }),
 
   optionalStringField(["address"], "Address"),

@@ -1,24 +1,22 @@
-import { useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
+import { useNavigate } from "@tanstack/react-router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Trash2 } from "lucide-react";
 
-import ClientLayout from "../components/ClientLayout";
+import RegistrarLayout from "../components/RegistrarLayout";
 import ProfileCard from "../../../shared/components/profile/ProfileCard";
 import AvatarCropperModal from "../../../shared/components/profile/AvatarCropperModal";
 import {
   useCurrentUser,
   type CurrentUser,
 } from "../../auth/hooks/useCurrentUser";
+import { useEnforcePasswordChange } from "../../auth/hooks/useEnforcePasswordChange";
 import {
   authApi,
   getAuthErrorMessage,
   type UpdateMyProfilePayload,
 } from "../../auth/api";
 
-// Format users.created_at (ISO) as "Month dd, yyyy". Defensive fallback
-// keeps the header card from showing "Invalid Date" if the timestamp is
-// ever missing.
 function formatMemberSince(iso: string | null | undefined): string {
   if (!iso) return "";
   const date = new Date(iso);
@@ -30,32 +28,9 @@ function formatMemberSince(iso: string | null | undefined): string {
   });
 }
 
-function capitalize(role: string): string {
-  if (!role) return "";
-  return role.charAt(0).toUpperCase() + role.slice(1);
-}
-
-// Build the PATCH payload by including only fields that the user
-// actually changed. This keeps the server's diff small and means an
-// unchanged email doesn't trigger the unique-violation path on the
-// backend. City + tehsil are explicit form fields — the backend's
-// address-deriver only fires as a fallback when these are left
-// empty, so explicit values from the user always win.
-function buildPatch(
-  initial: CurrentUser,
-  form: FormState
-): UpdateMyProfilePayload {
-  const patch: UpdateMyProfilePayload = {};
-  if (form.firstName !== (initial.firstName ?? "")) patch.firstName = form.firstName;
-  if (form.lastName !== (initial.lastName ?? "")) patch.lastName = form.lastName;
-  if (form.email !== initial.email) patch.email = form.email;
-  if (form.phone !== (initial.phone ?? "")) patch.phone = form.phone;
-  // CNIC is intentionally not diffed — it's locked in the UI and the
-  // backend's updateMyProfileValidator rejects any cnic in the body.
-  if (form.address !== (initial.address ?? "")) patch.address = form.address;
-  if (form.city !== (initial.city ?? "")) patch.city = form.city;
-  if (form.tehsil !== (initial.tehsil ?? "")) patch.tehsil = form.tehsil;
-  return patch;
+function capitalize(value: string | null | undefined): string {
+  if (!value) return "";
+  return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
 interface FormState {
@@ -63,28 +38,33 @@ interface FormState {
   lastName: string;
   email: string;
   phone: string;
-  cnic: string;
-  address: string;
-  city: string;
-  tehsil: string;
 }
 
-export default function ClientProfileEdit() {
+// Build a minimal PATCH payload: only fields the user actually
+// changed are forwarded. CNIC, court, and tehsil are not in the form
+// at all (admin-managed and locked in the UI), and the backend would
+// reject CNIC on PATCH anyway.
+function buildPatch(initial: CurrentUser, form: FormState): UpdateMyProfilePayload {
+  const patch: UpdateMyProfilePayload = {};
+  if (form.firstName !== (initial.firstName ?? "")) patch.firstName = form.firstName;
+  if (form.lastName !== (initial.lastName ?? "")) patch.lastName = form.lastName;
+  if (form.email !== initial.email) patch.email = form.email;
+  if (form.phone !== (initial.phone ?? "")) patch.phone = form.phone;
+  return patch;
+}
+
+export default function RegistrarProfileEdit() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  useEnforcePasswordChange();
   const { data: currentUser, isLoading } = useCurrentUser();
 
-  // Local form state — initialized once we have the user, then driven
-  // by inputs. Keeping the form local (not in a store) means a stale
-  // navigation away mid-edit doesn't pollute the next visit.
   const [form, setForm] = useState<FormState | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Avatar editing state. Only mounted on this page (the view page
-  // shows the avatar read-only). Two-stage flow: file pick → crop
-  // modal → confirmed upload. `pendingCropFile` holds the raw file
-  // between those stages so the upload doesn't fire until the user
-  // hits "Apply" in the cropper.
+  // Avatar editing — two-stage flow (file pick → crop modal → upload),
+  // identical to the client + lawyer edit pages so registrars get the
+  // same picture-cropping UX.
   const [pendingCropFile, setPendingCropFile] = useState<File | null>(null);
   const [avatarError, setAvatarError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -96,32 +76,24 @@ export default function ClientProfileEdit() {
       lastName: currentUser.lastName ?? "",
       email: currentUser.email,
       phone: currentUser.phone ?? "",
-      cnic: currentUser.cnic ?? "",
-      address: currentUser.address ?? "",
-      city: currentUser.city ?? "",
-      tehsil: currentUser.tehsil ?? "",
     });
   }, [currentUser, form]);
 
   const mutation = useMutation({
     mutationFn: authApi.updateMyProfile,
     onSuccess: (updated) => {
-      // Replace the cached user in place so the profile page renders
-      // the new values immediately on navigation. The invalidate
-      // schedules a background refetch so we're never out-of-sync
-      // with the server.
+      // Hot-swap the cached user so the view page renders the new
+      // values immediately; the invalidate schedules a background
+      // refetch so we stay in sync with the server.
       queryClient.setQueryData(["currentUser"], updated);
       queryClient.invalidateQueries({ queryKey: ["currentUser"] });
-      navigate({ to: "/client-profile" });
+      navigate({ to: "/registrar-profile" });
     },
     onError: (err) => {
       setError(getAuthErrorMessage(err));
     },
   });
 
-  // Avatar upload. Stays on this page after success (no navigation)
-  // so the user sees the new picture in the header immediately
-  // and can keep editing other fields without losing form state.
   const avatarUploadMutation = useMutation({
     mutationFn: authApi.uploadAvatar,
     onSuccess: (updated: CurrentUser) => {
@@ -134,9 +106,6 @@ export default function ClientProfileEdit() {
     },
   });
 
-  // Avatar removal. Same cache-swap pattern as upload — the user
-  // doesn't navigate away, the avatar slot just flips back to the
-  // initials fallback in place.
   const avatarRemoveMutation = useMutation({
     mutationFn: authApi.removeAvatar,
     onSuccess: (updated: CurrentUser) => {
@@ -149,7 +118,8 @@ export default function ClientProfileEdit() {
     },
   });
 
-  const avatarBusy = avatarUploadMutation.isPending || avatarRemoveMutation.isPending;
+  const avatarBusy =
+    avatarUploadMutation.isPending || avatarRemoveMutation.isPending;
 
   const handleAvatarClick = () => {
     if (avatarBusy) return;
@@ -159,16 +129,16 @@ export default function ClientProfileEdit() {
 
   const handleAvatarFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    // Clear the input value so picking the SAME file twice still
-    // fires onChange (browsers suppress the event when value is
-    // unchanged).
+    // Clear so picking the same file twice still fires onChange.
     if (e.target) e.target.value = "";
     if (!file) return;
     setPendingCropFile(file);
   };
 
   const handleCropConfirmed = (blob: Blob) => {
-    const cropped = new File([blob], "avatar.png", { type: blob.type || "image/png" });
+    const cropped = new File([blob], "avatar.png", {
+      type: blob.type || "image/png",
+    });
     setPendingCropFile(null);
     avatarUploadMutation.mutate(cropped);
   };
@@ -180,17 +150,13 @@ export default function ClientProfileEdit() {
 
   if (isLoading || !currentUser || !form) {
     return (
-      <ClientLayout
-        brandSubtitle="Edit Profile"
-        showBackButton
-        onBackClick={() => navigate({ to: "/client-profile" })}
-      >
+      <RegistrarLayout pageSubtitle="Edit Profile">
         <div className="px-6 py-8">
           <div className="max-w-4xl mx-auto bg-white rounded-xl border p-6 text-sm text-gray-500">
             Loading profile…
           </div>
         </div>
-      </ClientLayout>
+      </RegistrarLayout>
     );
   }
 
@@ -207,21 +173,15 @@ export default function ClientProfileEdit() {
     if (!form) return;
     setError(null);
     const patch = buildPatch(currentUser, form);
-    // Empty diff → nothing to save; just navigate back so the lawyer
-    // doesn't see a silent no-op spinner.
     if (Object.keys(patch).length === 0) {
-      navigate({ to: "/client-profile" });
+      navigate({ to: "/registrar-profile" });
       return;
     }
     mutation.mutate(patch);
   };
 
   return (
-    <ClientLayout
-      brandSubtitle="Edit Profile"
-      showBackButton
-      onBackClick={() => navigate({ to: "/client-profile" })}
-    >
+    <RegistrarLayout pageSubtitle="Edit Profile">
       <div className="px-6 py-8">
         <ProfileCard
           name={fullName || currentUser.email}
@@ -231,9 +191,6 @@ export default function ClientProfileEdit() {
           onAvatarClick={handleAvatarClick}
           avatarUploading={avatarBusy}
         >
-          {/* Hidden file picker — the avatar circle's onClick opens
-              this; the change handler kicks off the cropper, which
-              kicks off the upload mutation on Apply. */}
           <input
             ref={fileInputRef}
             type="file"
@@ -242,10 +199,6 @@ export default function ClientProfileEdit() {
             onChange={handleAvatarFileChange}
           />
 
-          {/* Remove-photo affordance. Only shown when there's an
-              avatar to remove (avoids a useless click when the user
-              already has the initials fallback). Sits in its own
-              row so it doesn't crowd the cropper trigger. */}
           {currentUser.avatarUrl && (
             <div className="flex items-center gap-3 -mt-2">
               <button
@@ -268,9 +221,8 @@ export default function ClientProfileEdit() {
               {avatarError}
             </div>
           )}
-          {/* Editable Fields. First/Last split into two inputs maps
-              cleanly to the users.first_name / users.last_name columns
-              and avoids ambiguous splits on multi-word last names. */}
+
+          {/* Identity — editable */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <EditableField
               label="First Name"
@@ -293,38 +245,27 @@ export default function ClientProfileEdit() {
               value={form.phone}
               onChange={(v) => handleChange("phone", v)}
             />
-            {/* CNIC is set at registration and treated as immutable —
-                changing it would silently rewrite the identity that
-                audit trails and unique constraints depend on. Backend
-                rejects any cnic in the PATCH body. */}
-            <LockedField
-              label="CNIC Number"
-              value={form.cnic}
-              hint="Contact support if your CNIC was set incorrectly."
-            />
           </div>
 
-          <EditableField
-            label="Address"
-            value={form.address}
-            onChange={(v) => handleChange("address", v)}
-          />
-
-          {/* City + tehsil are free-text so the client can enter the
-              actual values themselves (the backend's address-deriver
-              guesses from punctuation, which fails on continuous-
-              prose addresses). When left empty, the backend still
-              tries to fill them in from the address as a fallback. */}
+          {/* Locked fields — admin-managed identity / assignment. CNIC
+              is immutable (defense-in-depth at the backend validator);
+              court + tehsil are set by the admin via the Edit Registrar
+              flow. The PATCH endpoint does not touch any of them. */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <EditableField
-              label="City"
-              value={form.city}
-              onChange={(v) => handleChange("city", v)}
+            <LockedField
+              label="CNIC Number"
+              value={currentUser.cnic ?? ""}
+              hint="CNIC is set at account creation and cannot be changed here."
             />
-            <EditableField
-              label="Tehsil"
-              value={form.tehsil}
-              onChange={(v) => handleChange("tehsil", v)}
+            <LockedField
+              label="Assigned Court"
+              value={currentUser.assignedCourt ?? "Not assigned"}
+              hint="Court is assigned by the system administrator."
+            />
+            <LockedField
+              label="Assigned Tehsil"
+              value={currentUser.assignedTehsil ?? "Not assigned"}
+              hint="Tehsil is assigned by the system administrator."
             />
           </div>
 
@@ -334,19 +275,18 @@ export default function ClientProfileEdit() {
             </div>
           )}
 
-          {/* Buttons */}
           <div className="flex flex-wrap gap-3 pt-6 border-t">
             <button
               onClick={handleSave}
               disabled={mutation.isPending}
-              className="bg-[#01411C] hover:bg-[#024a23] disabled:bg-gray-400 text-white px-4 py-2 rounded-md text-sm"
+              className="bg-[#01411C] hover:bg-[#024a23] disabled:bg-gray-400 text-white px-6 py-2 rounded-md text-sm font-medium transition"
             >
               {mutation.isPending ? "Saving…" : "Save Changes"}
             </button>
             <button
-              onClick={() => navigate({ to: "/client-profile" })}
+              onClick={() => navigate({ to: "/registrar-profile" })}
               disabled={mutation.isPending}
-              className="border px-4 py-2 rounded-md text-sm hover:bg-gray-50 disabled:opacity-60"
+              className="border border-gray-300 px-6 py-2 rounded-md text-sm hover:bg-gray-50 disabled:opacity-60 transition"
             >
               Cancel
             </button>
@@ -354,21 +294,15 @@ export default function ClientProfileEdit() {
         </ProfileCard>
       </div>
 
-      {/* Crop / framing modal. Mounted at the layout root so its
-          overlay covers the whole viewport. Hands back a Blob on
-          Apply which we re-wrap into a File for the upload mutation. */}
       <AvatarCropperModal
         file={pendingCropFile}
         onClose={() => setPendingCropFile(null)}
         onConfirm={handleCropConfirmed}
       />
-    </ClientLayout>
+    </RegistrarLayout>
   );
 }
 
-/* ───────────────────────────────
-   Editable Input Field Component
-──────────────────────────────── */
 interface EditableFieldProps {
   label: string;
   value: string;
@@ -398,10 +332,6 @@ function EditableField({
   );
 }
 
-// Read-only counterpart for fields that should display the current
-// value but cannot be modified from this page (e.g. CNIC). Visually
-// matches the disabled "Bar License Number" input the lawyer edit
-// page uses so users get a consistent "this is locked" signal.
 interface LockedFieldProps {
   label: string;
   value: string;

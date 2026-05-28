@@ -14,6 +14,11 @@ export type Registrar = {
   assignedCourt: string | null;
   assignedTehsil: string | null;
   credentialsEmailSentAt: string | null;
+  // Signed Supabase URL to the registrar's avatar, with a ?v=<timestamp>
+  // cache-buster so a freshly-uploaded picture (via the registrar's own
+  // profile page) shows up immediately in the admin list. Null when the
+  // registrar hasn't uploaded one yet — render an initials circle.
+  avatarUrl: string | null;
   createdAt: string;
   updatedAt: string;
 };

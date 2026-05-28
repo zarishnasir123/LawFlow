@@ -5,6 +5,7 @@ import {
   deliverRegistrarCredentialsEmail,
   queueRegistrarCredentialsEmail
 } from "../../services/email.service.js";
+import { getUserAvatarSignedUrl } from "../../services/storage.service.js";
 import { ApiError } from "../../utils/apiError.js";
 import { hashValue } from "../../utils/hash.js";
 
@@ -25,10 +26,28 @@ const REGISTRAR_RETURNING_COLUMNS = `
   users.cnic,
   users.account_status,
   users.email_verified,
-  users.must_change_password
+  users.must_change_password,
+  users.avatar_storage_path,
+  users.updated_at                               AS user_updated_at
 `;
 
-function mapRegistrar(row) {
+// Async because we sign the avatar storage path on the fly (Supabase
+// service-role-signed URL with a 1h TTL). Same pattern as /auth/me and
+// the public lawyer directory. The ?v=<updated_at-ms> cache buster
+// makes a freshly-uploaded picture show up immediately on the admin's
+// list even within the signed URL's TTL.
+async function mapRegistrar(row) {
+  const signed = row.avatar_storage_path
+    ? await getUserAvatarSignedUrl(row.avatar_storage_path)
+    : null;
+  const avatarUrl = signed
+    ? `${signed}${signed.includes("?") ? "&" : "?"}v=${
+        row.user_updated_at
+          ? new Date(row.user_updated_at).getTime()
+          : Date.now()
+      }`
+    : null;
+
   return {
     id: row.user_id,
     registrarProfileId: row.registrar_profile_id,
@@ -43,6 +62,7 @@ function mapRegistrar(row) {
     assignedCourt: row.assigned_court,
     assignedTehsil: row.assigned_tehsil,
     credentialsEmailSentAt: row.credentials_email_sent_at,
+    avatarUrl,
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
@@ -208,7 +228,7 @@ export async function createRegistrar({
     });
 
     return {
-      registrar: mapRegistrar(profileResult.rows[0]),
+      registrar: await mapRegistrar(profileResult.rows[0]),
       emailDelivery
     };
   } catch (error) {
@@ -240,8 +260,14 @@ export async function listRegistrars({ limit = 20, offset = 0 } = {}) {
 
   const total = result.rows[0] ? Number(result.rows[0].total_count) : 0;
 
+  // Promise.all because each mapRegistrar issues a Supabase
+  // signed-URL call for the avatar. Serial awaits would scale O(n)
+  // round-trips; parallel keeps the list endpoint fast even with
+  // many registrars.
+  const items = await Promise.all(result.rows.map(mapRegistrar));
+
   return {
-    items: result.rows.map(mapRegistrar),
+    items,
     pagination: {
       total,
       limit: safeLimit,
@@ -257,7 +283,7 @@ export async function getRegistrar(registrarProfileId) {
     throw new ApiError(404, "Registrar not found");
   }
 
-  return mapRegistrar(row);
+  return await mapRegistrar(row);
 }
 
 export async function updateRegistrar({
@@ -322,7 +348,7 @@ export async function updateRegistrar({
 
     await client.query("COMMIT");
 
-    return mapRegistrar(refreshed.rows[0]);
+    return await mapRegistrar(refreshed.rows[0]);
   } catch (error) {
     await client.query("ROLLBACK");
     throw error;
@@ -385,7 +411,7 @@ export async function setRegistrarStatus({ registrarProfileId, accountStatus }) 
 
     await client.query("COMMIT");
 
-    return mapRegistrar(refreshed.rows[0]);
+    return await mapRegistrar(refreshed.rows[0]);
   } catch (error) {
     await client.query("ROLLBACK");
     throw error;
@@ -531,7 +557,7 @@ export async function resendRegistrarCredentials(registrarProfileId) {
   const emailDelivery = await deliverRegistrarCredentialsEmail(emailPayload);
 
   return {
-    registrar: mapRegistrar(refreshedRow),
+    registrar: await mapRegistrar(refreshedRow),
     emailDelivery
   };
 }
