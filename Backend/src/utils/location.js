@@ -1,5 +1,16 @@
+// Tehsils accepted by the registrar/lawyer assignment flows. The
+// admin's "Create Registrar" form renders a dropdown built from this
+// same list (mirrored on the frontend), so changing this default
+// is the single switch that adds a new jurisdiction to the deployment.
+// The bare "Gujranwala" entry stays in the list for backwards
+// compatibility with existing client_profiles rows that were stamped
+// with the wider district name before the per-tehsil breakdown
+// existed.
 export function getSupportedTehsils() {
-  return String(process.env.SUPPORTED_TEHSILS || "Gujranwala")
+  return String(
+    process.env.SUPPORTED_TEHSILS ||
+      "Gujranwala,Gujranwala City & Sadar,Kamoke,Nowshera Virkan"
+  )
     .split(",")
     .map((tehsil) => tehsil.trim().toLowerCase())
     .filter(Boolean);

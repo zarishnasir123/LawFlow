@@ -2,12 +2,44 @@ import { useEffect, useMemo, useState, type FormEvent } from "react";
 
 export type RegistrarRole = "Registrar";
 
+// Court options exposed in the Create form. Mirrors the Gujranwala
+// District jurisdiction tree: the main District Courts complex at
+// Civil Lines handles district-wide cases, and each named tehsil has
+// its own lower-court bench for local matters. When the deployment
+// expands to other districts the list grows here; the backend's
+// `assigned_court` column is plain text so no schema change is needed.
+export const REGISTRAR_COURT_OPTIONS = [
+  "Gujranwala District Courts (Civil Lines)",
+  "Tehsil Court — Gujranwala City & Sadar",
+  "Tehsil Court — Kamoke",
+  "Tehsil Court — Nowshera Virkan",
+] as const;
+
+// Tehsil options shown in the Create form. These match the entries in
+// SUPPORTED_TEHSILS on the backend — the registrar.validators.js
+// `validateTehsil` check does an exact case-insensitive match against
+// that env list, so the two must stay in sync. Adding a new tehsil
+// means appending here AND in Backend/.env (SUPPORTED_TEHSILS) +
+// Backend/src/utils/location.js default.
+export const REGISTRAR_TEHSIL_OPTIONS = [
+  "Gujranwala City & Sadar",
+  "Kamoke",
+  "Nowshera Virkan",
+] as const;
+
 export type RegistrarFormValues = {
   name: string;
   email: string;
   phone: string;
   cnic: string;
   role: RegistrarRole;
+  // Both optional on the form because the backend accepts a registrar
+  // with no court / tehsil set yet (renders as "Not assigned" on the
+  // registrar's own profile page). Empty string means "leave it
+  // unassigned"; a non-empty value must be one of the constants above
+  // for the backend's tehsil validator to accept it.
+  assignedCourt: string;
+  assignedTehsil: string;
 };
 
 type RegistrarFormProps = {
@@ -43,6 +75,8 @@ export default function RegistrarForm({
       phone: initialValues?.phone ?? "",
       cnic: initialValues?.cnic ?? "",
       role: initialValues?.role ?? "Registrar",
+      assignedCourt: initialValues?.assignedCourt ?? "",
+      assignedTehsil: initialValues?.assignedTehsil ?? "",
     }),
     [initialValues],
   );
@@ -156,6 +190,63 @@ export default function RegistrarForm({
               />
             </div>
           </div>
+
+          {/* Court + tehsil assignment. Both are optional at creation
+              — backend stores null and the registrar's profile page
+              shows "Not assigned" — but the dropdowns nudge the admin
+              to fill them in. Free-text would let typos through that
+              the backend's exact-match tehsil validator would later
+              reject. Edit mode hides this whole block because admin
+              cannot edit registrars post-creation; reassignment
+              requires creating a new account. */}
+          {editMode ? null : (
+            <div className="grid md:grid-cols-2 gap-4 pt-2">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Assigned Court</label>
+                <select
+                  className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2 focus:outline-none focus:ring-2 focus:ring-[#01411C] disabled:bg-gray-100"
+                  value={values.assignedCourt}
+                  onChange={(e) =>
+                    setValues({ ...values, assignedCourt: e.target.value })
+                  }
+                  disabled={submitting}
+                >
+                  <option value="">— Select court —</option>
+                  {REGISTRAR_COURT_OPTIONS.map((court) => (
+                    <option key={court} value={court}>
+                      {court}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-gray-500">
+                  The court where this registrar processes case bundles.
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Assigned Tehsil</label>
+                <select
+                  className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2 focus:outline-none focus:ring-2 focus:ring-[#01411C] disabled:bg-gray-100"
+                  value={values.assignedTehsil}
+                  onChange={(e) =>
+                    setValues({ ...values, assignedTehsil: e.target.value })
+                  }
+                  disabled={submitting}
+                >
+                  <option value="">— Select tehsil —</option>
+                  {REGISTRAR_TEHSIL_OPTIONS.map((tehsil) => (
+                    <option key={tehsil} value={tehsil}>
+                      {tehsil}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-gray-500">
+                  Tehsil jurisdiction. Defines which lawyer submissions
+                  route to this registrar's queue.
+                </p>
+              </div>
+            </div>
+          )}
         </div>
       </section>
 

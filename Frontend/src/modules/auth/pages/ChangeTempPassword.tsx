@@ -1,6 +1,6 @@
 import { useMemo, useState, type FormEvent } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { KeyRound } from "lucide-react";
 
 import { apiClient } from "../../../shared/api/axios";
@@ -26,6 +26,7 @@ async function changePassword(payload: ChangePasswordPayload) {
 // the new password.
 export default function ChangeTempPassword() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { data: currentUser } = useCurrentUser();
 
   const [currentPassword, setCurrentPassword] = useState("");
@@ -46,6 +47,15 @@ export default function ChangeTempPassword() {
       // through to /login. Carry a one-shot success flag via sessionStorage
       // so the login page can show "Password changed — please sign in".
       clearStoredAuth();
+      // Drop every cached query, including ["currentUser"]. Without this
+      // wipe, the useCurrentUser cache still holds mustChangePassword=true
+      // (staleTime is 5 min) — so on the next sign-in the dashboard's
+      // useEnforcePasswordChange hook reads the stale flag and bounces
+      // the user right back to this page on the first attempt. The
+      // second attempt only worked because a remount eventually
+      // refetched /auth/me. Matches the pattern used by the in-profile
+      // ChangePasswordModal for client / lawyer / registrar.
+      queryClient.clear();
       try {
         sessionStorage.setItem("lawflow_password_change_success", "1");
       } catch {
