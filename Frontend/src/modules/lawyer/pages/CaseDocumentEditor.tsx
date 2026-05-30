@@ -65,6 +65,7 @@ export default function CaseDocumentEditor() {
     setLoading,
     isLoading,
     saveDraft,
+    markSaved,
     loadDraft,
     addAttachment,
     reconcileAttachmentsFromBackend,
@@ -469,6 +470,10 @@ export default function CaseDocumentEditor() {
   // doesn't re-render on every keystroke.
   const lastSavedHtmlRef = useRef<string>("");
   const autoSaveInFlightRef = useRef<boolean>(false);
+  // Set when a save is requested while another is already in flight (e.g. an
+  // image dropped onto the page mid-autosave). The in-flight save re-runs on
+  // completion so the newest snapshot is never silently dropped.
+  const autoSavePendingRef = useRef<boolean>(false);
 
   // Persist the editor's current HTML state to cases.edited_html on
   // the backend. Skips when:
@@ -480,7 +485,14 @@ export default function CaseDocumentEditor() {
   const persistEditedHtml = useCallback(async () => {
     if (!caseId || caseId === "default-case") return;
     if (renderedPages.length === 0) return;
-    if (autoSaveInFlightRef.current) return;
+    if (autoSaveInFlightRef.current) {
+      // A save is already running. Flag that the document changed again so
+      // the in-flight save re-runs once it finishes — otherwise this newer
+      // snapshot (e.g. a just-dropped image, which doesn't fire the `input`
+      // event the autosave loop listens for) gets silently dropped.
+      autoSavePendingRef.current = true;
+      return;
+    }
     const snapshot = buildEditorSnapshot(renderedPages);
     if (!snapshot || snapshot === lastSavedHtmlRef.current) return;
 
@@ -488,6 +500,11 @@ export default function CaseDocumentEditor() {
     try {
       await casesApi.saveEditedHtml(effectiveCaseId, snapshot);
       lastSavedHtmlRef.current = snapshot;
+      // Reflect this backend save in the header's "Last edited" caption.
+      // The autosave path writes edited_html directly (bypassing the
+      // localStorage-draft saveDraft), so without this the status would
+      // only refresh on a manual Save.
+      markSaved();
     } catch (err) {
       console.error("[AUTO SAVE FAILED]", {
         caseId: effectiveCaseId,
@@ -496,7 +513,15 @@ export default function CaseDocumentEditor() {
     } finally {
       autoSaveInFlightRef.current = false;
     }
-  }, [caseId, effectiveCaseId, renderedPages]);
+
+    // Coalesced re-run: if a save was requested while the one above was in
+    // flight, run again now to capture the latest snapshot. Using the ref
+    // keeps this self-reference out of the useCallback dependency array.
+    if (autoSavePendingRef.current) {
+      autoSavePendingRef.current = false;
+      await persistEditedHtmlRef.current();
+    }
+  }, [caseId, effectiveCaseId, renderedPages, markSaved]);
 
   // Keep the ref pointing at the latest closure so the long-lived
   // blur/interval listeners above always call the fresh function.
