@@ -18,6 +18,8 @@ import {
   RemoveFormatting,
   Type,
   Save,
+  Check,
+  Loader2,
   Download,
   Paperclip,
 } from "lucide-react";
@@ -28,7 +30,7 @@ interface ContentEditableToolbarProps {
   // Utility actions live on the right side of the toolbar (Google Docs
   // pattern), so they're always next to formatting tools where the user
   // is already focused.
-  onSaveDraft?: () => void;
+  onSaveDraft?: () => void | Promise<void>;
   onDownload?: () => void;
   onAddAttachment?: () => void;
 }
@@ -58,7 +60,7 @@ function ToolbarButton({ onClick, isActive, title, disabled, children }: Toolbar
         isActive
           ? "bg-[var(--primary)] text-white shadow-sm"
           : "text-gray-600 hover:bg-gray-100 hover:text-gray-900",
-        disabled && "opacity-40 cursor-not-allowed"
+        disabled ? "opacity-40 cursor-not-allowed" : "cursor-pointer"
       )}
     >
       {children}
@@ -68,6 +70,66 @@ function ToolbarButton({ onClick, isActive, title, disabled, children }: Toolbar
 
 function Divider() {
   return <div className="w-px h-5 bg-gray-200" />;
+}
+
+// Save-draft button with transient feedback. Hovering shows a pointer
+// cursor; clicking flips to a spinner ("Saving…") and then a green check
+// ("Saved") for a beat, so the lawyer gets a clear, local confirmation that
+// their work persisted. The header's "Last edited" caption updates too, but
+// that's easy to miss while focused on the page.
+function SaveDraftButton({ onSave }: { onSave: () => void | Promise<void> }) {
+  const [state, setState] = useState<"idle" | "saving" | "saved">("idle");
+
+  useEffect(() => {
+    if (state !== "saved") return;
+    const t = window.setTimeout(() => setState("idle"), 1800);
+    return () => window.clearTimeout(t);
+  }, [state]);
+
+  const handleClick = async () => {
+    if (state === "saving") return;
+    setState("saving");
+    try {
+      await onSave();
+      setState("saved");
+    } catch {
+      // Save failed — drop back to idle so the lawyer can retry. The
+      // underlying saver surfaces its own error; we just avoid a false
+      // "Saved" confirmation.
+      setState("idle");
+    }
+  };
+
+  const label =
+    state === "saving" ? "Saving…" : state === "saved" ? "Saved" : "Save draft";
+
+  return (
+    <button
+      type="button"
+      // Keep the caret inside the contenteditable surface across the click,
+      // same as the formatting buttons.
+      onMouseDown={(e) => e.preventDefault()}
+      onClick={handleClick}
+      disabled={state === "saving"}
+      title={label}
+      className={clsx(
+        "inline-flex items-center gap-1.5 rounded-md px-2 py-1.5 text-[13px] font-medium transition-colors",
+        state === "saved"
+          ? "bg-emerald-50 text-emerald-700"
+          : "text-gray-600 hover:bg-gray-100 hover:text-gray-900",
+        state === "saving" ? "cursor-wait" : "cursor-pointer"
+      )}
+    >
+      {state === "saving" ? (
+        <Loader2 className="w-4 h-4 animate-spin" />
+      ) : state === "saved" ? (
+        <Check className="w-4 h-4" />
+      ) : (
+        <Save className="w-4 h-4" />
+      )}
+      {state !== "idle" && <span>{label}</span>}
+    </button>
+  );
 }
 
 // Lightweight contenteditable toolbar. Uses document.execCommand which is
@@ -279,11 +341,7 @@ export default function ContentEditableToolbar({
               <Download className="w-4 h-4" />
             </ToolbarButton>
           )}
-          {onSaveDraft && (
-            <ToolbarButton onClick={onSaveDraft} title="Save draft">
-              <Save className="w-4 h-4" />
-            </ToolbarButton>
-          )}
+          {onSaveDraft && <SaveDraftButton onSave={onSaveDraft} />}
         </>
       )}
     </div>

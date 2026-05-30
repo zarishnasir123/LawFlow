@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { type JSONContent } from "@tiptap/react";
-import { useNavigate, useParams } from "@tanstack/react-router";
+import { useParams } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Document, Page, pdfjs } from "react-pdf";
 import LawyerLayout from "../components/LawyerLayout";
@@ -10,7 +10,6 @@ import PageContextMenu, {
   type PageContextMenuState,
 } from "../components/documentEditor/PageContextMenu";
 import {
-  signaturesApi,
   getSignaturesErrorMessage,
   type SignerRole,
 } from "../signatures/api/signatures.api";
@@ -44,7 +43,6 @@ const isApiPath = (url: string) => url.startsWith("/cases/") || url.startsWith("
 
 export default function CaseDocumentEditor() {
   const { caseId } = useParams({ strict: false }) as { caseId?: string }; // Retrieve generic params
-  const navigate = useNavigate();
   const effectiveCaseId = caseId || "default-case";
 
   const {
@@ -536,14 +534,15 @@ export default function CaseDocumentEditor() {
     };
   }, [effectiveCaseId, renderedPages]);
 
-  const handleSaveDraft = () => {
+  const handleSaveDraft = async () => {
     if (currentDocId && activeEditorRef) {
       saveDocumentJSON(currentDocId, activeEditorRef.getJSON());
     }
     saveDraft(effectiveCaseId);
-    // Manual Save Draft also pushes the latest HTML to the backend so
-    // the lawyer can recover the case on a different device.
-    void persistEditedHtml();
+    // Manual Save Draft also pushes the latest HTML to the backend so the
+    // lawyer can recover the case on a different device. Awaited so the
+    // toolbar's Save button can show a truthful "Saving… → Saved" state.
+    await persistEditedHtml();
   };
 
   const handleDownload = () => {
@@ -611,23 +610,6 @@ export default function CaseDocumentEditor() {
     const t = window.setTimeout(() => setSignatureToast(null), 4000);
     return () => window.clearTimeout(t);
   }, [signatureToast]);
-
-  // Fetch a short-lived signed URL for the compiled signed-case PDF
-  // and open it in a new tab. URLs expire in 5 minutes so we always
-  // ask the server fresh — no client-side caching.
-  const handleDownloadSignedPdf = async () => {
-    try {
-      const { downloadUrl } = await signaturesApi.downloadSignedPdf(
-        signatureCaseId
-      );
-      window.open(downloadUrl, "_blank", "noopener,noreferrer");
-    } catch (err) {
-      // 409 = signing not complete yet (button shouldn't have shown);
-      // anything else = transport or storage misconfig. Surface the
-      // server's message rather than swallowing.
-      alert(getSignaturesErrorMessage(err));
-    }
-  };
 
   const handleAddAttachment = () => {
     attachmentInputRef.current?.click();
@@ -784,15 +766,7 @@ export default function CaseDocumentEditor() {
           onDownload={handleDownload}
           onRequestSignatures={() => setIsSignaturePanelOpen(true)}
           signaturePendingCount={signaturePendingCount}
-          onSubmitCase={() =>
-            navigate({ to: `/lawyer-submit-case/${effectiveCaseId}` })
-          }
           onAddAttachment={handleAddAttachment}
-          // Download signed PDF: only surfaced once every required
-          // signature is in. Backend compiles synchronously on the last
-          // signer's submit, so by the time this is true the PDF is
-          // already in Storage. Click → short-lived signed URL → new tab.
-          onDownloadSignedPdf={caseFullySigned ? handleDownloadSignedPdf : undefined}
         />
 
         <div className="flex flex-1 overflow-hidden">
