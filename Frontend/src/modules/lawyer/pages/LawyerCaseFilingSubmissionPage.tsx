@@ -315,7 +315,13 @@ export default function LawyerCaseFilingSubmissionPage() {
     queryKey: ["case", selectedCaseId],
     queryFn: () => casesApi.getCase(selectedCaseId),
     enabled: Boolean(selectedCaseId) && selectedCaseId !== "default-case",
-    staleTime: 1000 * 30,
+    // Always pull the freshest edited_html when the lawyer lands here (or
+    // refocuses the tab) so edits made in the editor show up without a manual
+    // page refresh. The editor saves to the backend but doesn't push its
+    // edits into this query's cache, so without an on-mount refetch React
+    // Query would keep serving the stale, first-loaded copy.
+    staleTime: 0,
+    refetchOnMount: "always",
   });
 
   // Signature requests for this case — we only need the set of absolute page
@@ -325,7 +331,8 @@ export default function LawyerCaseFilingSubmissionPage() {
     queryKey: ["case", selectedCaseId, "signature-requests"],
     queryFn: () => signaturesApi.listForCase(selectedCaseId),
     enabled: Boolean(selectedCaseId) && selectedCaseId !== "default-case",
-    staleTime: 1000 * 30,
+    staleTime: 0,
+    refetchOnMount: "always",
   });
 
   const signedPageIndices = useMemo(() => {
