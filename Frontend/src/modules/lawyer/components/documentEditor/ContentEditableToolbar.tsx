@@ -33,6 +33,11 @@ interface ContentEditableToolbarProps {
   onSaveDraft?: () => void | Promise<void>;
   onDownload?: () => void;
   onAddAttachment?: () => void;
+  // Word-style AutoSave switch. When on, the editor persists edits as the
+  // lawyer types (wired in CaseDocumentEditor); when off, only Save draft
+  // persists. Rendered only when onToggleAutoSave is provided.
+  autoSave?: boolean;
+  onToggleAutoSave?: () => void;
 }
 
 interface ToolbarButtonProps {
@@ -70,6 +75,54 @@ function ToolbarButton({ onClick, isActive, title, disabled, children }: Toolbar
 
 function Divider() {
   return <div className="w-px h-5 bg-gray-200" />;
+}
+
+// Word-style AutoSave switch: a label plus a sliding pill toggle. When on,
+// the editor saves as the lawyer types (the actual save loop lives in
+// CaseDocumentEditor); when off, only the manual Save draft button persists.
+function AutoSaveToggle({
+  enabled,
+  onToggle,
+}: {
+  enabled: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      // Keep the caret in the contenteditable surface across the click.
+      onMouseDown={(e) => e.preventDefault()}
+      onClick={onToggle}
+      role="switch"
+      aria-checked={enabled}
+      title={
+        enabled
+          ? "AutoSave is on — changes save as you type. Click to turn off."
+          : "AutoSave is off — use Save draft to persist. Click to turn on."
+      }
+      className={clsx(
+        "inline-flex items-center gap-2 rounded-full px-2.5 py-1 text-[12.5px] font-medium transition-colors cursor-pointer",
+        enabled
+          ? "text-emerald-700 hover:bg-emerald-50"
+          : "text-gray-500 hover:bg-gray-100"
+      )}
+    >
+      <span className="hidden sm:inline">AutoSave</span>
+      <span
+        className={clsx(
+          "relative inline-flex h-4 w-7 items-center rounded-full transition-colors",
+          enabled ? "bg-emerald-500" : "bg-gray-300"
+        )}
+      >
+        <span
+          className={clsx(
+            "inline-block h-3 w-3 transform rounded-full bg-white shadow transition-transform",
+            enabled ? "translate-x-3.5" : "translate-x-0.5"
+          )}
+        />
+      </span>
+    </button>
+  );
 }
 
 // Save-draft button with transient feedback. Hovering shows a pointer
@@ -142,6 +195,8 @@ export default function ContentEditableToolbar({
   onSaveDraft,
   onDownload,
   onAddAttachment,
+  autoSave,
+  onToggleAutoSave,
 }: ContentEditableToolbarProps = {}) {
   const [activeStates, setActiveStates] = useState<Record<string, boolean>>({});
 
@@ -326,9 +381,19 @@ export default function ContentEditableToolbar({
       {/* Utility cluster, right-aligned. The flex-1 spacer pushes the
           remaining buttons to the right edge — Google Docs pattern of
           formatting tools on the left, file actions on the right. */}
-      {(onAddAttachment || onDownload || onSaveDraft) && (
+      {(onToggleAutoSave || onAddAttachment || onDownload || onSaveDraft) && (
         <>
           <div className="flex-1" />
+
+          {onToggleAutoSave && (
+            <AutoSaveToggle
+              enabled={Boolean(autoSave)}
+              onToggle={onToggleAutoSave}
+            />
+          )}
+          {onToggleAutoSave && (onAddAttachment || onDownload || onSaveDraft) && (
+            <Divider />
+          )}
 
           {onAddAttachment && (
             <ToolbarButton onClick={onAddAttachment} title="Add attachment (PNG/JPG evidence photo)">

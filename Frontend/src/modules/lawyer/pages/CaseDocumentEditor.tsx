@@ -41,6 +41,16 @@ pdfjs.GlobalWorkerOptions.workerSrc = new URL(
 // transport to use.
 const isApiPath = (url: string) => url.startsWith("/cases/") || url.startsWith("/api/");
 
+// Persisted preference for the Word-style AutoSave toggle. Default on.
+const AUTOSAVE_PREF_KEY = "lawflow_editor_autosave";
+function readPersistedAutoSave(): boolean {
+  try {
+    return window.localStorage.getItem(AUTOSAVE_PREF_KEY) !== "off";
+  } catch {
+    return true;
+  }
+}
+
 export default function CaseDocumentEditor() {
   const { caseId } = useParams({ strict: false }) as { caseId?: string }; // Retrieve generic params
   const effectiveCaseId = caseId || "default-case";
@@ -178,40 +188,52 @@ export default function CaseDocumentEditor() {
   // every render.
   const persistEditedHtmlRef = useRef<() => Promise<void>>(async () => {});
 
-  // Two auto-save triggers:
-  //   1. On blur from anywhere in the docx-preview host — catches the
-  //      "lawyer typed something then clicked away" case. 500ms
-  //      debounce so a focus-shuffle inside the canvas (e.g., the
-  //      caret moving between sections via mouse) doesn't fire a
-  //      flurry of saves.
-  //   2. Every 30 seconds — heartbeat for the "lawyer keeps typing
-  //      forever without leaving the canvas" case. The saver itself
-  //      short-circuits when the snapshot hasn't changed, so this is
-  //      cheap when idle.
-  // Manual Save Draft (handleSaveDraft above) calls the same saver.
+  // Word-style AutoSave toggle. Default on; persisted so the lawyer's
+  // preference survives reloads. When on, edits save as you type (see the
+  // auto-save effect below); when off, only the manual Save Draft button
+  // persists.
+  const [autoSave, setAutoSave] = useState<boolean>(() => readPersistedAutoSave());
   useEffect(() => {
+    try {
+      window.localStorage.setItem(AUTOSAVE_PREF_KEY, autoSave ? "on" : "off");
+    } catch {
+      // localStorage unavailable (private mode etc.) — the in-session
+      // toggle still works, it just won't be remembered next time.
+    }
+  }, [autoSave]);
+
+  // AutoSave (Word-style). When enabled, the editor saves shortly after the
+  // lawyer stops typing (debounced on `input`) and a touch quicker on blur
+  // (clicking away from the canvas) — no fixed-interval heartbeat. When
+  // disabled, nothing auto-saves; the lawyer persists via the manual Save
+  // Draft button. The saver short-circuits when the snapshot hasn't changed,
+  // so a burst of keystrokes collapses into a single network write.
+  useEffect(() => {
+    if (!autoSave) return;
     if (renderedPages.length === 0) return;
     const host =
       renderedPages[0].closest(".docx-preview-host") ||
       renderedPages[0].closest(".docx-wrapper")?.parentElement;
     if (!host) return;
-    let blurTimer: number | null = null;
-    const onBlur = () => {
-      if (blurTimer !== null) window.clearTimeout(blurTimer);
-      blurTimer = window.setTimeout(() => {
+    let saveTimer: number | null = null;
+    const scheduleSave = (delay: number) => {
+      if (saveTimer !== null) window.clearTimeout(saveTimer);
+      saveTimer = window.setTimeout(() => {
         void persistEditedHtmlRef.current();
-      }, 500);
+      }, delay);
     };
+    // Save ~1s after the last keystroke ("as you edit"); ~0.5s after focus
+    // leaves the canvas.
+    const onInput = () => scheduleSave(1000);
+    const onBlur = () => scheduleSave(500);
+    host.addEventListener("input", onInput as EventListener);
     host.addEventListener("focusout", onBlur as EventListener);
-    const interval = window.setInterval(() => {
-      void persistEditedHtmlRef.current();
-    }, 30_000);
     return () => {
+      host.removeEventListener("input", onInput as EventListener);
       host.removeEventListener("focusout", onBlur as EventListener);
-      window.clearInterval(interval);
-      if (blurTimer !== null) window.clearTimeout(blurTimer);
+      if (saveTimer !== null) window.clearTimeout(saveTimer);
     };
-  }, [renderedPages]);
+  }, [renderedPages, autoSave]);
 
   // Pending requests — used both to surface the toolbar badge count
   // and to lock per-page surfaces (sidebar send icon + signature
@@ -871,6 +893,8 @@ export default function CaseDocumentEditor() {
                 onSaveDraft={handleSaveDraft}
                 onDownload={handleDownload}
                 onAddAttachment={handleAddAttachment}
+                autoSave={autoSave}
+                onToggleAutoSave={() => setAutoSave((v) => !v)}
               />
               <div className="flex-1 overflow-hidden">
                 <DocxPreviewSurface
