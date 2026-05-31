@@ -1,18 +1,18 @@
 export type CaseCategory = "civil" | "family";
 
 export type CivilCaseType =
-  | "recovery_of_money"
-  | "permanent_injunction"
-  | "declaration"
-  | "specific_performance"
-  | "possession_of_property";
+  | "civil_recovery_of_money"
+  | "civil_permanent_injunction"
+  | "civil_declaration"
+  | "civil_specific_performance"
+  | "civil_possession_of_property";
 
 export type FamilyCaseType =
-  | "khula"
-  | "maintenance"
-  | "dowry_recovery"
-  | "custody_of_minors"
-  | "restitution_of_rights";
+  | "family_khula"
+  | "family_maintenance"
+  | "family_dowry_recovery"
+  | "family_minor_custody"
+  | "family_conjugal_rights";
 
 export type CaseType = CivilCaseType | FamilyCaseType;
 
