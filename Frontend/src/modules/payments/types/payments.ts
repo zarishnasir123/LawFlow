@@ -62,6 +62,10 @@ export interface Receipt {
   provider?: PaymentProvider;
   paymentIntentId?: string;
   checkoutSessionId?: string;
+  transactionId?: string;
+  clientName?: string;
+  lawyerName?: string;
+  paymentStatus?: string;
 }
 
 export interface PaymentTransaction {

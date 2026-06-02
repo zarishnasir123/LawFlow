@@ -1,100 +1,183 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "@tanstack/react-router";
-import { CalendarDays, CreditCard, WalletCards } from "lucide-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { CreditCard, WalletCards } from "lucide-react";
 import ClientLayout from "../../client/components/ClientLayout";
-import { lawyerDashboardCases } from "../../lawyer/data/dashboard.mock";
 import ClientInstallmentsTable from "../components/ClientInstallmentsTable";
-import NextDueInstallmentCard from "../components/NextDueInstallmentCard";
-import PayInstallmentModal from "../components/PayInstallmentModal";
-import PaymentStatusBadge from "../components/PaymentStatusBadge";
 import PaymentSummaryCard from "../components/PaymentSummaryCard";
 import ReceiptsList from "../components/ReceiptsList";
 import TransactionHistoryList from "../components/TransactionHistoryList";
-import { usePaymentsStore } from "../store/payments.store";
-import { getNextDueInstallment, getPlanTotals } from "../utils/paymentCalculations";
-import type { Installment, PaymentMethod } from "../types/payments";
-
-function getCaseLabel(caseId: string): string {
-  const found = lawyerDashboardCases.find((item) => String(item.id) === caseId);
-  if (!found) return "Case";
-  return found.title;
-}
+import {
+  confirmCheckoutSession,
+  getAgreementsByCase,
+  getClientAgreements,
+  getPaymentReceipts,
+  getPaymentTransactions,
+  type AgreementSnapshotData,
+} from "../api";
+import { formatCaseSelectLabel, formatCaseTitle } from "../utils/caseDisplay";
+import { mapApiInstallments } from "../utils/mapInstallments";
 
 export default function ClientCasePaymentsPage() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const params = useParams({ strict: false }) as { caseId?: string };
 
-  const { plans, receipts, transactions, payInstallment } = usePaymentsStore();
-  const visiblePlans = useMemo(
-    () => plans.filter((plan) => plan.status === "active"),
-    [plans]
-  );
+  const selectedCaseId = params.caseId;
 
-  const hasAnyPlans = plans.length > 0;
-  const fallbackCaseId = visiblePlans[0]?.caseId || "1";
-  const selectedCaseId =
-    params.caseId && visiblePlans.some((item) => item.caseId === params.caseId)
-      ? params.caseId
-      : fallbackCaseId;
-  const plan = visiblePlans.find((item) => item.caseId === selectedCaseId) || null;
-
-  const totals = plan ? getPlanTotals(plan) : { total: 0, paid: 0, remaining: 0 };
-  const nextDue = plan ? getNextDueInstallment(plan) : null;
-  const caseReceipts = useMemo(
-    () =>
-      receipts.filter(
-        (item) => item.caseId === selectedCaseId && (!plan || item.planId === plan.id)
-      ),
-    [plan, receipts, selectedCaseId]
-  );
-  const caseTransactions = useMemo(
-    () =>
-      transactions.filter(
-        (item) => item.caseId === selectedCaseId && (!plan || item.planId === plan.id)
-      ),
-    [plan, selectedCaseId, transactions]
-  );
-  const installmentLabelById = useMemo(() => {
-    if (!plan) return {};
-    return plan.installments.reduce<Record<string, string>>((acc, installment) => {
-      acc[installment.id] = installment.label;
-      return acc;
-    }, {});
-  }, [plan]);
-
-  const [payingInstallment, setPayingInstallment] = useState<Installment | null>(null);
-  const [feedback, setFeedback] = useState<string | null>(null);
-
-  const handleSubmitPayment = (payload: { amount: number; method: PaymentMethod }) => {
-    if (!plan || !payingInstallment) {
-      return { ok: false, error: "No installment selected." };
-    }
-
-    const result = payInstallment({
-      caseId: selectedCaseId,
-      planId: plan.id,
-      installmentId: payingInstallment.id,
-      amount: payload.amount,
-      method: payload.method,
-      provider: payload.method === "stripe" ? "stripe" : "manual",
-      paymentIntentId:
-        payload.method === "stripe" ? `pi_mock_${Date.now()}` : undefined,
-      checkoutSessionId:
-        payload.method === "stripe" ? `cs_mock_${Date.now()}` : undefined,
-    });
-
-    setFeedback(
-      result.ok
-        ? `Payment recorded. Receipt ${result.receipt?.receiptNo || ""} generated.`
-        : result.error || "Payment failed."
+  const isValidCaseId = (value?: string) =>
+    Boolean(
+      value &&
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+          value
+        )
     );
 
-    if (result.ok) {
-      setPayingInstallment(null);
-    }
+  const { data: allAgreements = [], isLoading: allLoading } = useQuery({
+    queryKey: ["client-all-agreements"],
+    queryFn: getClientAgreements,
+    staleTime: 0,
+    refetchOnWindowFocus: true,
+  });
 
-    return { ok: result.ok, error: result.error };
-  };
+  const { data: caseAgreements = [], isLoading: caseLoading } = useQuery({
+    queryKey: ["client-case-agreements", selectedCaseId],
+    queryFn: () => getAgreementsByCase(selectedCaseId!),
+    enabled: isValidCaseId(selectedCaseId),
+    staleTime: 0,
+    retry: 1,
+    refetchOnWindowFocus: true,
+  });
+
+  const snapshot = useMemo((): AgreementSnapshotData | null => {
+    if (isValidCaseId(selectedCaseId)) {
+      if (caseAgreements[0]) return caseAgreements[0];
+      return (
+        allAgreements.find((a) => a.agreement.caseId === selectedCaseId) ?? null
+      );
+    }
+    if (!selectedCaseId) return allAgreements[0] || null;
+    return null;
+  }, [allAgreements, caseAgreements, selectedCaseId]);
+
+  const caseDisplayTitle = useMemo(() => {
+    if (!snapshot) return "";
+    return formatCaseTitle({
+      caseTitle: snapshot.caseTitle,
+      caseTypeName: snapshot.caseTypeName,
+      clientName: snapshot.clientName,
+    });
+  }, [snapshot]);
+
+  const activeCaseId =
+    snapshot?.agreement.caseId ||
+    (isValidCaseId(selectedCaseId) ? selectedCaseId : undefined);
+
+  const clientInstallments = useMemo(
+    () => (snapshot ? mapApiInstallments(snapshot) : []),
+    [snapshot]
+  );
+
+  const { data: transactions = [] } = useQuery({
+    queryKey: ["client-transactions", activeCaseId],
+    queryFn: () => getPaymentTransactions(activeCaseId!),
+    enabled: Boolean(activeCaseId),
+    staleTime: 0,
+    refetchInterval: 8000,
+    refetchOnWindowFocus: true,
+  });
+
+  const { data: receipts = [] } = useQuery({
+    queryKey: ["client-receipts", activeCaseId],
+    queryFn: () => getPaymentReceipts(activeCaseId!),
+    enabled: Boolean(activeCaseId),
+    staleTime: 0,
+    refetchInterval: 8000,
+    refetchOnWindowFocus: true,
+  });
+
+  const installmentLabelById = useMemo(() => {
+    if (!snapshot) return {};
+    return snapshot.installments.reduce<Record<string, string>>((acc, item) => {
+      if (item.installmentNumber === 0) {
+        acc[item.id] = "Service Charge";
+      } else if (item.installmentNumber > 0) {
+        acc[item.id] = `Installment #${item.installmentNumber}`;
+      }
+      return acc;
+    }, {});
+  }, [snapshot]);
+
+  const [feedback, setFeedback] = useState<string | null>(null);
+  const [confirmingPayment, setConfirmingPayment] = useState(false);
+
+  useEffect(() => {
+    const search = new URLSearchParams(window.location.search);
+    if (search.get("payment") !== "success") return;
+
+    const sessionId = search.get("session_id");
+    let cancelled = false;
+
+    const refreshPaymentData = async (caseId?: string) => {
+      await queryClient.refetchQueries({ queryKey: ["client-all-agreements"] });
+      if (caseId) {
+        await queryClient.refetchQueries({
+          queryKey: ["client-case-agreements", caseId],
+        });
+        await queryClient.refetchQueries({
+          queryKey: ["client-transactions", caseId],
+        });
+        await queryClient.refetchQueries({
+          queryKey: ["client-receipts", caseId],
+        });
+      }
+    };
+
+    (async () => {
+      setConfirmingPayment(true);
+      try {
+        if (sessionId) {
+          const result = await confirmCheckoutSession(sessionId);
+          if (!cancelled) {
+            setFeedback(
+              result.duplicate
+                ? "Payment was already recorded. Your receipt is below."
+                : "Payment successful. Your receipt is available below."
+            );
+          }
+          await refreshPaymentData(result.caseId || activeCaseId || selectedCaseId);
+        } else if (!cancelled) {
+          setFeedback("Payment successful. Refreshing your records…");
+          await refreshPaymentData(activeCaseId || selectedCaseId);
+        }
+      } catch {
+        if (!cancelled) {
+          setFeedback("Payment may have completed. Refreshing records…");
+        }
+        await refreshPaymentData(activeCaseId || selectedCaseId);
+      } finally {
+        if (!cancelled) setConfirmingPayment(false);
+        const url = new URL(window.location.href);
+        url.searchParams.delete("payment");
+        url.searchParams.delete("session_id");
+        window.history.replaceState({}, "", `${url.pathname}${url.search}`);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeCaseId, queryClient, selectedCaseId]);
+
+  const isLoading = allLoading || (Boolean(selectedCaseId) && caseLoading);
+
+  if (isLoading) {
+    return (
+      <ClientLayout brandSubtitle="Case Payments">
+        <div className="py-8 text-center text-gray-600">Loading payment information…</div>
+      </ClientLayout>
+    );
+  }
 
   return (
     <ClientLayout brandSubtitle="Case Payments">
@@ -104,28 +187,28 @@ export default function ClientCasePaymentsPage() {
             <div>
               <div className="inline-flex items-center gap-2 rounded-full border border-sky-200 bg-white px-2.5 py-1 text-xs font-semibold text-sky-700">
                 <WalletCards className="h-3.5 w-3.5" />
-                Charges & Payments
+                Charges &amp; Payments
               </div>
               <h1 className="mt-2 text-2xl font-semibold text-gray-900">Payments</h1>
               <p className="mt-1 text-sm text-gray-600">
-                View installment plan, pay dues, and access receipts.
+                View your payment plan, pay installments, and access receipts.
               </p>
             </div>
-            {visiblePlans.length === 0 ? (
-              <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800">
-                No active plans
-              </div>
-            ) : (
+            {allAgreements.length >= 1 && (
               <select
-                value={selectedCaseId}
+                value={activeCaseId || ""}
                 onChange={(event) =>
                   navigate({ to: `/client-payments/${event.target.value}` })
                 }
                 className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-100"
               >
-                {visiblePlans.map((item) => (
-                  <option key={item.id} value={item.caseId}>
-                    {getCaseLabel(item.caseId)}
+                {allAgreements.map((item) => (
+                  <option key={item.agreement.caseId} value={item.agreement.caseId}>
+                    {formatCaseSelectLabel({
+                      caseTitle: item.caseTitle,
+                      caseTypeName: item.caseTypeName,
+                      clientName: item.clientName,
+                    })}
                   </option>
                 ))}
               </select>
@@ -133,76 +216,118 @@ export default function ClientCasePaymentsPage() {
           </div>
         </div>
 
-        {!plan ? (
-          <div className="rounded-xl border border-dashed border-gray-200 bg-white p-8 text-center text-sm text-gray-500">
-            {hasAnyPlans
-              ? "No active payment plan is available right now. Please wait for the lawyer to activate a plan."
-              : "No payment plan is available for this case yet."}
+        {confirmingPayment && (
+          <div className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800">
+            Recording your payment…
           </div>
-        ) : (
-          <>
-            <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <p className="text-sm text-gray-600">Plan for {getCaseLabel(plan.caseId)}</p>
-                  <p className="mt-1 inline-flex items-center gap-1 text-xs text-gray-500">
-                    <CalendarDays className="h-3.5 w-3.5" />
-                    Agreed on {new Date(plan.agreement.agreedAt).toLocaleString()}
-                  </p>
-                </div>
-                <PaymentStatusBadge status={plan.status} />
-              </div>
-            </div>
-
-            <PaymentSummaryCard
-              total={totals.total}
-              paid={totals.paid}
-              remaining={totals.remaining}
-            />
-            <NextDueInstallmentCard installment={nextDue} />
-
-            <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-              <h2 className="text-lg font-semibold text-gray-900">Installments</h2>
-              <p className="mt-1 text-sm text-gray-600">
-                Pay pending dues with the secure Stripe-style flow.
-              </p>
-              <div className="mt-4">
-                <ClientInstallmentsTable
-                  installments={plan.installments}
-                  onPayNow={(installment) => setPayingInstallment(installment)}
-                />
-              </div>
-            </div>
-
-            <TransactionHistoryList
-              transactions={caseTransactions}
-              installmentLabelById={installmentLabelById}
-            />
-            <ReceiptsList
-              receipts={caseReceipts}
-              installmentLabelById={installmentLabelById}
-              caseDisplayTitle={getCaseLabel(selectedCaseId)}
-            />
-          </>
         )}
 
-        {feedback && (
+        {feedback && !confirmingPayment && (
           <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
             <div className="flex items-start gap-2">
-              <CreditCard className="mt-0.5 h-4 w-4" />
+              <CreditCard className="mt-0.5 h-4 w-4 shrink-0" />
               <span>{feedback}</span>
             </div>
           </div>
         )}
-      </div>
 
-      {payingInstallment && (
-        <PayInstallmentModal
-          installment={payingInstallment}
-          onClose={() => setPayingInstallment(null)}
-          onSubmit={handleSubmitPayment}
-        />
-      )}
+        {!snapshot ? (
+          <div className="rounded-xl border border-dashed border-gray-300 bg-white p-10 text-center">
+            <p className="text-base font-medium text-gray-800">
+              {allAgreements.length === 0
+                ? "No payment plans are available yet."
+                : "No payment plan is available for this case yet."}
+            </p>
+            <p className="mt-2 text-sm text-gray-600">
+              Your lawyer will create an installment schedule. Check back once it is ready.
+            </p>
+          </div>
+        ) : (
+          <>
+            <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+              <h2 className="text-sm font-semibold text-gray-900">Case Information</h2>
+              <dl className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
+                <div>
+                  <dt className="text-gray-500">Case Title</dt>
+                  <dd className="font-medium text-gray-900">{caseDisplayTitle}</dd>
+                </div>
+                <div>
+                  <dt className="text-gray-500">Case Type</dt>
+                  <dd className="font-medium text-gray-900">
+                    {snapshot.caseTypeName || "—"}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-gray-500">Lawyer</dt>
+                  <dd className="font-medium text-gray-900">{snapshot.lawyerName}</dd>
+                </div>
+                <div>
+                  <dt className="text-gray-500">Service Charge</dt>
+                  <dd className="font-semibold text-[#01411C]">
+                    PKR {snapshot.agreement.lawyerBaseFee.toLocaleString()}
+                  </dd>
+                </div>
+              </dl>
+            </div>
+
+            <PaymentSummaryCard
+              total={snapshot.agreement.agreedTotalAmount}
+              paid={snapshot.totalAmountPaid}
+              remaining={snapshot.remainingBalance}
+            />
+
+            <div>
+              <h2 className="mb-3 text-sm font-semibold text-gray-900">Installments</h2>
+              <ClientInstallmentsTable
+                installments={clientInstallments}
+                caseName={caseDisplayTitle}
+              />
+            </div>
+
+            <TransactionHistoryList
+              transactions={transactions.map((txn: {
+                id: string;
+                installmentId: string;
+                amount: number;
+                status: string;
+                createdAt: string;
+              }) => ({
+                id: txn.id,
+                installmentId: txn.installmentId,
+                amount: txn.amount,
+                status: txn.status === "success" ? "success" : "failed",
+                createdAt: txn.createdAt,
+                method: "card",
+                provider: "stripe",
+                caseId: activeCaseId || "",
+                planId: snapshot.agreement.id,
+              }))}
+              installmentLabelById={installmentLabelById}
+            />
+
+            <ReceiptsList
+              receipts={receipts.map((r: {
+                id: string;
+                receiptNumber: string;
+                installmentId: string;
+                amount: number;
+                issuedAt: string;
+              }) => ({
+                id: r.id,
+                receiptNo: r.receiptNumber,
+                installmentId: r.installmentId,
+                amount: r.amount,
+                issuedAt: r.issuedAt,
+                method: "stripe",
+                caseId: activeCaseId || "",
+                planId: snapshot.agreement.id,
+              }))}
+              installmentLabelById={installmentLabelById}
+              caseDisplayTitle={caseDisplayTitle}
+            />
+          </>
+        )}
+      </div>
     </ClientLayout>
   );
 }

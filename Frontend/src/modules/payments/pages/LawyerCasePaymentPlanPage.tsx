@@ -1,224 +1,144 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo } from "react";
 import { useNavigate, useParams } from "@tanstack/react-router";
-import { BadgeCheck, FileSpreadsheet, HandCoins, Scale } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { Briefcase, HandCoins } from "lucide-react";
 import LawyerLayout from "../../lawyer/components/LawyerLayout";
-import { lawyerDashboardCases } from "../../lawyer/data/dashboard.mock";
-import LawyerInstallmentEditorTable from "../components/LawyerInstallmentEditorTable";
-import PaymentStatusBadge from "../components/PaymentStatusBadge";
-import PaymentSummaryCard from "../components/PaymentSummaryCard";
 import ReceiptsList from "../components/ReceiptsList";
 import TransactionHistoryList from "../components/TransactionHistoryList";
-import { usePaymentsStore } from "../store/payments.store";
+import PaymentPlanSetup from "../components/PaymentPlanSetup";
+import LawyerInstallmentsTable from "../components/LawyerInstallmentsTable";
+import PaymentSummaryCard from "../components/PaymentSummaryCard";
 import {
-  formatCurrency,
-  getInstallmentsTotal,
-  getPlanTotals,
-  isInstallmentsTotalValid,
-} from "../utils/paymentCalculations";
+  getAgreementsByCase,
+  getLawyerCasePaymentContext,
+  getPaymentReceipts,
+  getPaymentTransactions,
+} from "../api";
+import { casesApi, type ApiCase } from "../../lawyer/api/cases.api";
+import { formatCaseTitle } from "../utils/caseDisplay";
 
-type AgreementForm = {
-  lawyerBaseFee: number;
-  agreedTotal: number;
-  agreedAt: string;
-  notes: string;
-};
+const UUID_REGEX =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-function getCaseLabel(caseId: string): string {
-  const found = lawyerDashboardCases.find((item) => String(item.id) === caseId);
-  if (!found) return "Case";
-  return found.title;
+function isValidCaseId(value?: string): value is string {
+  return Boolean(value && UUID_REGEX.test(value));
 }
 
 export default function LawyerCasePaymentPlanPage() {
   const navigate = useNavigate();
   const params = useParams({ strict: false }) as { caseId?: string };
 
-  const {
-    agreements,
-    plans,
-    receipts,
-    transactions,
-    upsertAgreement,
-    createDraftPlan,
-    updatePlanTotal,
-    addInstallment,
-    updateInstallment,
-    deleteInstallment,
-    activatePlan,
-    cancelPlan,
-  } = usePaymentsStore();
-
-  const selectedCaseId = params.caseId || "1";
-  const [agreementDrafts, setAgreementDrafts] = useState<
-    Record<string, AgreementForm>
-  >({});
-  const [newInstallment, setNewInstallment] = useState({
-    label: "",
-    dueDate: "",
-    amount: 0,
+  const { data: cases = [], isLoading: casesLoading } = useQuery({
+    queryKey: ["lawyer-cases"],
+    queryFn: () => casesApi.listMyCases(),
+    staleTime: 1000 * 60 * 5,
   });
-  const [feedback, setFeedback] = useState<string | null>(null);
-  const [agreementFeedback, setAgreementFeedback] = useState<string | null>(null);
 
-  const casePlans = useMemo(
-    () =>
-      plans
-        .filter((item) => item.caseId === selectedCaseId)
-        .sort((a, b) =>
-          new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
-        ),
-    [plans, selectedCaseId]
-  );
-
-  const plan = casePlans[0] || null;
-
-  const agreement = useMemo(
-    () => agreements.find((item) => item.caseId === selectedCaseId) || null,
-    [agreements, selectedCaseId]
-  );
-
-  const caseReceipts = useMemo(
-    () => receipts.filter((item) => item.caseId === selectedCaseId),
-    [receipts, selectedCaseId]
-  );
-
-  const caseTransactions = useMemo(
-    () => transactions.filter((item) => item.caseId === selectedCaseId),
-    [transactions, selectedCaseId]
-  );
-  const fallbackAgreedAt = useMemo(
-    () => new Date().toISOString().slice(0, 16),
-    []
-  );
-  const installmentLabelById = useMemo(
-    () =>
-      casePlans.reduce<Record<string, string>>((acc, currentPlan) => {
-        currentPlan.installments.forEach((installment) => {
-          acc[installment.id] = installment.label;
-        });
-        return acc;
-      }, {}),
-    [casePlans]
-  );
-
-  const defaultAgreementForm: AgreementForm = useMemo(
-    () =>
-      agreement
-        ? {
-            lawyerBaseFee: agreement.lawyerBaseFee || 0,
-            agreedTotal: agreement.agreedTotal,
-            agreedAt: agreement.agreedAt
-              ? new Date(agreement.agreedAt).toISOString().slice(0, 16)
-              : fallbackAgreedAt,
-            notes: agreement.notes || "",
-          }
-        : {
-            lawyerBaseFee: 0,
-            agreedTotal: 0,
-            agreedAt: fallbackAgreedAt,
-            notes: "",
-          },
-    [agreement, fallbackAgreedAt]
-  );
-
-  const agreementForm = agreementDrafts[selectedCaseId] || defaultAgreementForm;
-
-  const setAgreementForm = (updater: (prev: AgreementForm) => AgreementForm) => {
-    setAgreementFeedback(null);
-    setAgreementDrafts((prev) => ({
-      ...prev,
-      [selectedCaseId]: updater(prev[selectedCaseId] || defaultAgreementForm),
-    }));
-  };
-
-  const resetAgreementDraftForCase = () => {
-    setAgreementDrafts((prev) => {
-      const next = { ...prev };
-      delete next[selectedCaseId];
-      return next;
-    });
-  };
-
-  const currentAgreementSnapshot: AgreementForm = agreement
-    ? {
-      lawyerBaseFee: agreement.lawyerBaseFee || 0,
-      agreedTotal: agreement.agreedTotal,
-      agreedAt: agreement.agreedAt
-        ? new Date(agreement.agreedAt).toISOString().slice(0, 16)
-        : fallbackAgreedAt,
-      notes: agreement.notes || "",
+  const selectedCaseId = useMemo(() => {
+    if (isValidCaseId(params.caseId) && cases.some((c) => c.id === params.caseId)) {
+      return params.caseId;
     }
-    : {
-      lawyerBaseFee: 0,
-      agreedTotal: 0,
-      agreedAt: fallbackAgreedAt,
-      notes: "",
-    };
+    return cases[0]?.id;
+  }, [cases, params.caseId]);
 
-  const installmentTotal = plan ? getInstallmentsTotal(plan.installments) : 0;
-  const totals = plan ? getPlanTotals(plan) : { total: 0, paid: 0, remaining: 0 };
-  const isDraft = plan?.status === "draft";
-  const isValidTotal = plan
-    ? isInstallmentsTotalValid(plan.installments, plan.totalAmount)
-    : false;
-
-  const handleSaveAgreement = () => {
-    const parsedAgreedAt = agreementForm.agreedAt
-      ? new Date(agreementForm.agreedAt)
-      : null;
-    if (parsedAgreedAt && Number.isNaN(parsedAgreedAt.getTime())) {
-      setAgreementFeedback("Please select a valid agreement date/time.");
-      return;
+  useEffect(() => {
+    if (casesLoading || cases.length === 0) return;
+    const routeCaseInvalid =
+      params.caseId && !cases.some((c) => c.id === params.caseId);
+    if (routeCaseInvalid || !params.caseId) {
+      navigate({
+        to: "/lawyer-case-payments/$caseId",
+        params: { caseId: cases[0].id },
+        replace: true,
+      });
     }
+  }, [cases, casesLoading, navigate, params.caseId]);
 
-    upsertAgreement(selectedCaseId, {
-      lawyerBaseFee: agreementForm.lawyerBaseFee,
-      agreedTotal: agreementForm.agreedTotal,
-      agreedAt: parsedAgreedAt
-        ? parsedAgreedAt.toISOString()
-        : agreement?.agreedAt,
-      notes: agreementForm.notes,
-    });
+  const selectedCase: ApiCase | undefined = cases.find((c) => c.id === selectedCaseId);
 
-    if (plan?.status === "draft") {
-      updatePlanTotal(plan.id, agreementForm.agreedTotal);
+  const { data: paymentContext, isLoading: contextLoading } = useQuery({
+    queryKey: ["lawyer-payment-context", selectedCaseId],
+    queryFn: () => getLawyerCasePaymentContext(selectedCaseId!),
+    enabled: isValidCaseId(selectedCaseId),
+    staleTime: 0,
+    refetchOnWindowFocus: true,
+  });
+
+  const { data: agreementsData = [], isLoading: agreementsLoading } = useQuery({
+    queryKey: ["agreements", selectedCaseId],
+    queryFn: () => getAgreementsByCase(selectedCaseId!),
+    enabled: isValidCaseId(selectedCaseId),
+    staleTime: 0,
+    refetchOnWindowFocus: true,
+    refetchInterval: 8000,
+  });
+
+  const snapshot = agreementsData[0] ?? null;
+
+  const { data: apiTransactions = [] } = useQuery({
+    queryKey: ["lawyer-transactions", selectedCaseId],
+    queryFn: () => getPaymentTransactions(selectedCaseId!),
+    enabled: isValidCaseId(selectedCaseId) && Boolean(snapshot),
+    staleTime: 0,
+    refetchInterval: 8000,
+    refetchOnWindowFocus: true,
+  });
+
+  const { data: apiReceipts = [] } = useQuery({
+    queryKey: ["lawyer-receipts", selectedCaseId],
+    queryFn: () => getPaymentReceipts(selectedCaseId!),
+    enabled: isValidCaseId(selectedCaseId) && Boolean(snapshot),
+    staleTime: 0,
+    refetchInterval: 8000,
+    refetchOnWindowFocus: true,
+  });
+
+  const installmentLabelById = useMemo(() => {
+    if (!snapshot) return {};
+    return snapshot.installments.reduce<Record<string, string>>((acc, item) => {
+      if (item.installmentNumber === 0) {
+        acc[item.id] = "Service Charge";
+      } else if (item.installmentNumber > 0) {
+        acc[item.id] = `Installment #${item.installmentNumber}`;
+      }
+      return acc;
+    }, {});
+  }, [snapshot]);
+
+  const caseDisplayTitle = useMemo(() => {
+    if (snapshot) {
+      return formatCaseTitle({
+        caseTitle: snapshot.caseTitle,
+        caseTypeName: snapshot.caseTypeName,
+        clientName: snapshot.clientName,
+      });
     }
+    return selectedCase?.title || "";
+  }, [snapshot, selectedCase?.title]);
 
-    resetAgreementDraftForCase();
-    setAgreementFeedback("Agreement snapshot saved.");
-    setFeedback("Agreement snapshot saved.");
-  };
+  if (casesLoading) {
+    return (
+      <LawyerLayout brandTitle="LawFlow" brandSubtitle="Case Payment Plans">
+        <div className="py-8 text-center text-gray-600">Loading…</div>
+      </LawyerLayout>
+    );
+  }
 
-  const handleCreateDraftPlan = () => {
-    const planId = createDraftPlan(selectedCaseId);
-    if (agreementForm.agreedTotal > 0) {
-      updatePlanTotal(planId, agreementForm.agreedTotal);
-    }
-    setFeedback("Draft payment plan created.");
-  };
-
-  const handleActivatePlan = () => {
-    if (!plan) return;
-    const result = activatePlan(plan.id);
-    setFeedback(result.ok ? "Plan activated for client view." : result.error || "Failed.");
-  };
-
-  const handleAddInstallment = () => {
-    if (!plan || !isDraft) return;
-    if (!newInstallment.label.trim() || !newInstallment.dueDate || newInstallment.amount <= 0) {
-      setFeedback("Fill installment label, due date, and valid amount.");
-      return;
-    }
-
-    addInstallment(plan.id, newInstallment);
-    setNewInstallment({ label: "", dueDate: "", amount: 0 });
-    setFeedback("Installment added.");
-  };
+  if (cases.length === 0) {
+    return (
+      <LawyerLayout brandTitle="LawFlow" brandSubtitle="Case Payment Plans">
+        <div className="rounded-xl border border-dashed border-gray-300 bg-white p-10 text-center">
+          <Briefcase className="mx-auto mb-3 h-10 w-10 text-gray-400" />
+          <p className="text-base font-medium text-gray-800">No cases available.</p>
+        </div>
+      </LawyerLayout>
+    );
+  }
 
   return (
     <LawyerLayout brandTitle="LawFlow" brandSubtitle="Case Payment Plans">
       <div className="space-y-6">
-        <div className="rounded-2xl border border-emerald-100 bg-gradient-to-br from-white via-emerald-50/30 to-white p-6 shadow-[0_18px_50px_-34px_rgba(16,185,129,0.45)]">
+        <div className="rounded-2xl border border-emerald-100 bg-gradient-to-br from-white via-emerald-50/30 to-white p-6">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
               <div className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-white px-2.5 py-1 text-xs font-semibold text-emerald-700">
@@ -226,279 +146,108 @@ export default function LawyerCasePaymentPlanPage() {
                 Payment Planning
               </div>
               <h1 className="mt-2 text-2xl font-semibold text-gray-900">Case Payment Plan</h1>
-              <p className="mt-1 text-sm text-gray-600">
-                Manage agreement snapshots, installments, and activation.
-              </p>
             </div>
-
             <select
-              value={selectedCaseId}
-              onChange={(event) => {
-                const caseId = event.target.value;
-                navigate({ to: `/lawyer-case-payments/${caseId}` });
-              }}
-              className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-emerald-300 focus:outline-none focus:ring-2 focus:ring-emerald-100"
+              value={selectedCaseId || ""}
+              onChange={(e) =>
+                navigate({
+                  to: "/lawyer-case-payments/$caseId",
+                  params: { caseId: e.target.value },
+                })
+              }
+              className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm shadow-sm"
             >
-              {lawyerDashboardCases.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.title}
+              {cases.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.title} — {c.clientName}
                 </option>
               ))}
             </select>
           </div>
         </div>
 
-        <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <div className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-700">
-                <Scale className="h-3.5 w-3.5" />
-                Negotiated Agreement
-              </div>
-              <h2 className="mt-2 text-lg font-semibold text-gray-900">Agreement Snapshot</h2>
-              <p className="text-sm text-gray-600">
-                Final negotiated amount for {getCaseLabel(selectedCaseId)}.
+        {contextLoading || agreementsLoading ? (
+          <p className="text-center text-sm text-gray-600">Loading payment plan…</p>
+        ) : paymentContext && !snapshot ? (
+          <PaymentPlanSetup caseId={selectedCaseId!} context={paymentContext} />
+        ) : snapshot ? (
+          <>
+            <div className="rounded-xl border border-gray-200 bg-white p-4 text-sm">
+              <p>
+                <span className="text-gray-500">Client:</span>{" "}
+                <span className="font-medium">{snapshot.clientName}</span>
+              </p>
+              <p className="mt-1">
+                <span className="text-gray-500">Case:</span>{" "}
+                <span className="font-medium">{caseDisplayTitle}</span>
+              </p>
+              <p className="mt-1">
+                <span className="text-gray-500">Service Charge:</span>{" "}
+                <span className="font-semibold text-[#01411C]">
+                  PKR {snapshot.agreement.lawyerBaseFee.toLocaleString()}
+                </span>
               </p>
             </div>
-            {plan && <PaymentStatusBadge status={plan.status} />}
-          </div>
 
-          <div className="mt-4 grid gap-3 md:grid-cols-3">
-            <div>
-              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-600">
-                Lawyer Base Fee
-              </label>
-              <input
-                type="number"
-                min={0}
-                value={agreementForm.lawyerBaseFee}
-                onChange={(event) =>
-                  setAgreementForm((prev) => ({
-                    ...prev,
-                    lawyerBaseFee: Number(event.target.value || 0),
-                  }))
-                }
-                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm shadow-sm focus:border-emerald-300 focus:outline-none focus:ring-2 focus:ring-emerald-100"
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-600">
-                Agreed Total
-              </label>
-              <input
-                type="number"
-                min={0}
-                value={agreementForm.agreedTotal}
-                onChange={(event) =>
-                  setAgreementForm((prev) => ({
-                    ...prev,
-                    agreedTotal: Number(event.target.value || 0),
-                  }))
-                }
-                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm shadow-sm focus:border-emerald-300 focus:outline-none focus:ring-2 focus:ring-emerald-100"
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-600">
-                Agreed At
-              </label>
-              <input
-                type="datetime-local"
-                value={agreementForm.agreedAt}
-                onChange={(event) =>
-                  setAgreementForm((prev) => ({
-                    ...prev,
-                    agreedAt: event.target.value,
-                  }))
-                }
-                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm shadow-sm focus:border-emerald-300 focus:outline-none focus:ring-2 focus:ring-emerald-100"
-              />
-            </div>
-          </div>
-
-          <div className="mt-3">
-            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-600">
-              Notes
-            </label>
-            <textarea
-              value={agreementForm.notes}
-              onChange={(event) =>
-                setAgreementForm((prev) => ({ ...prev, notes: event.target.value }))
-              }
-              rows={3}
-              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm shadow-sm focus:border-emerald-300 focus:outline-none focus:ring-2 focus:ring-emerald-100"
-            />
-          </div>
-
-          <div className="mt-4 flex flex-wrap gap-2">
-            <button
-              onClick={handleSaveAgreement}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-[#01411C] px-4 py-2 text-sm font-semibold text-white hover:bg-[#024a23]"
-            >
-              <BadgeCheck className="h-4 w-4" />
-              Save Agreement
-            </button>
-            <button
-              onClick={resetAgreementDraftForCase}
-              disabled={
-                agreementForm.lawyerBaseFee === currentAgreementSnapshot.lawyerBaseFee &&
-                agreementForm.agreedTotal === currentAgreementSnapshot.agreedTotal &&
-                agreementForm.notes === currentAgreementSnapshot.notes
-              }
-              className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              Reset
-            </button>
-            {!plan && (
-              <button
-                onClick={handleCreateDraftPlan}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
-              >
-                <FileSpreadsheet className="h-4 w-4" />
-                Create Draft Plan
-              </button>
-            )}
-            {plan && plan.status !== "draft" && (
-              <button
-                onClick={handleCreateDraftPlan}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-blue-300 px-4 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-50"
-              >
-                <FileSpreadsheet className="h-4 w-4" />
-                Create Draft Revision
-              </button>
-            )}
-          </div>
-
-          {agreementFeedback && (
-            <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
-              {agreementFeedback}
-            </div>
-          )}
-        </div>
-
-        {plan && (
-          <>
             <PaymentSummaryCard
-              total={totals.total}
-              paid={totals.paid}
-              remaining={totals.remaining}
+              total={snapshot.agreement.agreedTotalAmount}
+              paid={snapshot.totalAmountPaid}
+              remaining={snapshot.remainingBalance}
             />
 
-            <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <h2 className="text-lg font-semibold text-gray-900">Installments</h2>
-                  <p className="text-sm text-gray-600">
-                    Installment sum must match {formatCurrency(plan.totalAmount)} before activation.
-                  </p>
-                </div>
-                <div className="rounded-xl border border-gray-200 bg-slate-50 px-3 py-2 text-sm">
-                  <p className="font-semibold text-gray-800">
-                    Total: {formatCurrency(installmentTotal)}
-                  </p>
-                  <p className={isValidTotal ? "text-emerald-700" : "text-rose-700"}>
-                    {isValidTotal
-                      ? "Installment total is valid."
-                      : `Difference: ${formatCurrency(plan.totalAmount - installmentTotal)}`}
-                  </p>
-                </div>
-              </div>
-
-              <div className="mt-4">
-                <LawyerInstallmentEditorTable
-                  installments={plan.installments}
-                  canEdit={isDraft}
-                  onUpdate={(installmentId, updates) =>
-                    updateInstallment(plan.id, installmentId, updates)
-                  }
-                  onDelete={(installmentId) => deleteInstallment(plan.id, installmentId)}
-                />
-              </div>
-
-              {isDraft && (
-                <div className="mt-4 grid gap-2 rounded-xl border border-gray-200 bg-gray-50 p-3 md:grid-cols-4">
-                  <input
-                    value={newInstallment.label}
-                    onChange={(event) =>
-                      setNewInstallment((prev) => ({
-                        ...prev,
-                        label: event.target.value,
-                      }))
-                    }
-                    placeholder="Installment label"
-                    className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:border-emerald-300 focus:outline-none focus:ring-2 focus:ring-emerald-100"
-                  />
-                  <input
-                    type="date"
-                    value={newInstallment.dueDate}
-                    onChange={(event) =>
-                      setNewInstallment((prev) => ({
-                        ...prev,
-                        dueDate: event.target.value,
-                      }))
-                    }
-                    className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:border-emerald-300 focus:outline-none focus:ring-2 focus:ring-emerald-100"
-                  />
-                  <input
-                    type="number"
-                    min={0}
-                    value={newInstallment.amount}
-                    onChange={(event) =>
-                      setNewInstallment((prev) => ({
-                        ...prev,
-                        amount: Number(event.target.value || 0),
-                      }))
-                    }
-                    placeholder="Amount"
-                    className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:border-emerald-300 focus:outline-none focus:ring-2 focus:ring-emerald-100"
-                  />
-                  <button
-                    onClick={handleAddInstallment}
-                    className="rounded-lg bg-[#01411C] px-4 py-2 text-sm font-semibold text-white hover:bg-[#024a23]"
-                  >
-                    Add Installment
-                  </button>
-                </div>
+            <LawyerInstallmentsTable
+              installments={snapshot.installments.filter(
+                (i) => i.installmentNumber >= 0
               )}
+            />
 
-              <div className="mt-4 flex flex-wrap gap-2">
-                {plan.status === "draft" && (
-                  <button
-                    onClick={handleActivatePlan}
-                    disabled={!isValidTotal || plan.installments.length === 0}
-                    className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-300"
-                  >
-                    Activate Plan
-                  </button>
-                )}
-                {plan.status !== "cancelled" && plan.status !== "completed" && (
-                  <button
-                    onClick={() => cancelPlan(plan.id)}
-                    className="rounded-lg border border-rose-300 px-4 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-50"
-                  >
-                    Cancel Plan
-                  </button>
-                )}
-              </div>
-            </div>
+            <TransactionHistoryList
+              transactions={apiTransactions.map(
+                (txn: {
+                  id: string;
+                  installmentId: string;
+                  amount: number;
+                  status: string;
+                  createdAt: string;
+                }) => ({
+                  id: txn.id,
+                  installmentId: txn.installmentId,
+                  amount: txn.amount,
+                  status: txn.status === "success" ? "success" : "failed",
+                  createdAt: txn.createdAt,
+                  method: "card" as const,
+                  provider: "stripe" as const,
+                  caseId: selectedCaseId!,
+                  planId: snapshot.agreement.id,
+                })
+              )}
+              installmentLabelById={installmentLabelById}
+            />
+
+            <ReceiptsList
+              receipts={apiReceipts.map(
+                (r: {
+                  id: string;
+                  receiptNumber: string;
+                  installmentId: string;
+                  amount: number;
+                  issuedAt: string;
+                }) => ({
+                  id: r.id,
+                  receiptNo: r.receiptNumber,
+                  installmentId: r.installmentId,
+                  amount: r.amount,
+                  issuedAt: r.issuedAt,
+                  method: "stripe" as const,
+                  caseId: selectedCaseId!,
+                  planId: snapshot.agreement.id,
+                })
+              )}
+              installmentLabelById={installmentLabelById}
+              caseDisplayTitle={caseDisplayTitle}
+            />
           </>
-        )}
-
-        <TransactionHistoryList
-          transactions={caseTransactions}
-          installmentLabelById={installmentLabelById}
-        />
-        <ReceiptsList
-          receipts={caseReceipts}
-          installmentLabelById={installmentLabelById}
-          caseDisplayTitle={getCaseLabel(selectedCaseId)}
-        />
-
-        {feedback && (
-          <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-            {feedback}
-          </div>
-        )}
+        ) : null}
       </div>
     </LawyerLayout>
   );

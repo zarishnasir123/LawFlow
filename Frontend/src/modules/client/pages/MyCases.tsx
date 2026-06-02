@@ -6,6 +6,7 @@ import {
   Mail,
   Phone,
   Search,
+  CreditCard,
 } from "lucide-react";
 
 import ClientLayout from "../components/ClientLayout";
@@ -170,6 +171,16 @@ export default function ClientMyCases() {
                   <CalendarDays className="h-4 w-4 text-emerald-700" />
                   Next hearing: {item.nextHearing}
                 </p>
+              </div>
+
+              <div className="mt-4 flex flex-wrap gap-2">
+                <button
+                  onClick={() => navigate({ to: `/client-payments/${item.id}` })}
+                  className="inline-flex items-center gap-2 rounded-lg border border-sky-300 bg-sky-50 px-4 py-2 text-sm font-semibold text-sky-700 hover:bg-sky-100"
+                >
+                  <CreditCard className="h-4 w-4" />
+                  View Payments
+                </button>
               </div>
             </article>
           ))}

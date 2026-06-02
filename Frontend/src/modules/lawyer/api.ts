@@ -156,3 +156,14 @@ export async function sendThreadMessage(
 
   return Promise.resolve(msg);
 }
+
+// Cases
+export async function getMyLawyerCases() {
+  const { data } = await apiClient.get<{ cases: unknown[] }>("/cases");
+  return data.cases ?? [];
+}
+
+export async function getMyCase(caseId: string) {
+  const { data } = await apiClient.get<{ case: unknown }>(`/cases/${caseId}`);
+  return data.case;
+}

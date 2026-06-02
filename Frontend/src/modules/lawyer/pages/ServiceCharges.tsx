@@ -1,439 +1,235 @@
 import { useState, useEffect } from "react";
-import { Plus, Edit2, Trash2 } from "lucide-react";
+import { Link } from "@tanstack/react-router";
+import { AlertCircle, CheckCircle, HandCoins, Loader } from "lucide-react";
 import LawyerLayout from "../components/LawyerLayout";
-import { useServiceChargesStore } from "../store";
 import {
-  CIVIL_CASE_TYPES,
-  FAMILY_CASE_TYPES,
-  getInitialServiceCharges,
-  getCaseTypeLabel,
-} from "../data/charges.mock";
-import type { ServiceCharge, CaseType } from "../types/charges";
+  getServiceCharges,
+  updateServiceCharges as updateServiceChargesAPI,
+} from "../../payments/api";
 
 export default function ServiceCharges() {
-  const { charges, setCharges, updateCharge, deleteCharge } =
-    useServiceChargesStore();
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editData, setEditData] = useState<Partial<ServiceCharge>>({});
-  const [showForm, setShowForm] = useState(false);
-  const [newCharge, setNewCharge] = useState<Partial<ServiceCharge>>({
-    category: "civil",
-    caseType: "recovery_of_money",
-    consultationFee: 0,
-    documentPreparationFee: 0,
-  });
+  const [familyFee, setFamilyFee] = useState<number | "">("");
+  const [civilFee, setCivilFee] = useState<number | "">("");
+  const [isEditing, setIsEditing] = useState(false);
+  const [editFamily, setEditFamily] = useState<number | "">("");
+  const [editCivil, setEditCivil] = useState<number | "">("");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState(false);
 
-  // Initialize charges from mock data
+  const loadServiceCharges = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const charges = await getServiceCharges();
+      setFamilyFee(charges?.familyCaseFee ?? "");
+      setCivilFee(charges?.civilCaseFee ?? "");
+      setEditFamily(charges?.familyCaseFee ?? "");
+      setEditCivil(charges?.civilCaseFee ?? "");
+    } catch {
+      setError("Failed to load service charges. Please refresh the page.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    if (charges.length === 0) {
-      setCharges(getInitialServiceCharges());
-    }
-  }, [charges.length, setCharges]);
+    loadServiceCharges();
+  }, []);
 
-  const handleEditStart = (charge: ServiceCharge) => {
-    setEditingId(charge.id);
-    setEditData({ ...charge });
+  const isConfigured =
+    (typeof familyFee === "number" && familyFee > 0) ||
+    (typeof civilFee === "number" && civilFee > 0);
+
+  const handleEditStart = () => {
+    setIsEditing(true);
+    setEditFamily(familyFee);
+    setEditCivil(civilFee);
+    setSuccess(false);
   };
 
-  const handleEditSave = (id: string) => {
-    if (editData.consultationFee !== undefined && editData.documentPreparationFee !== undefined) {
-      const total = editData.consultationFee + editData.documentPreparationFee;
-      updateCharge(id, {
-        ...editData,
-        totalFee: total,
+  const handleEditCancel = () => {
+    setIsEditing(false);
+    setEditFamily(familyFee);
+    setEditCivil(civilFee);
+    setError(null);
+  };
+
+  const handleEditSave = async () => {
+    const family = typeof editFamily === "number" ? editFamily : parseFloat(String(editFamily));
+    const civil = typeof editCivil === "number" ? editCivil : parseFloat(String(editCivil));
+
+    if ((!family || family <= 0) && (!civil || civil <= 0)) {
+      setError("Enter at least one category fee greater than zero.");
+      return;
+    }
+
+    try {
+      setSaving(true);
+      setError(null);
+      await updateServiceChargesAPI({
+        ...(family > 0 ? { familyCaseFee: family } : {}),
+        ...(civil > 0 ? { civilCaseFee: civil } : {}),
       });
-      setEditingId(null);
+      setFamilyFee(family > 0 ? family : "");
+      setCivilFee(civil > 0 ? civil : "");
+      setIsEditing(false);
+      setSuccess(true);
+      setTimeout(() => setSuccess(false), 3000);
+    } catch {
+      setError("Failed to save service charges. Please try again.");
+    } finally {
+      setSaving(false);
     }
   };
 
-  const handleAddCharge = () => {
-    if (
-      newCharge.caseType &&
-      newCharge.category &&
-      newCharge.consultationFee &&
-      newCharge.documentPreparationFee
-    ) {
-      const charge: ServiceCharge = {
-        id: `sc-${Date.now()}`,
-        caseType: newCharge.caseType as CaseType,
-        category: newCharge.category as "civil" | "family",
-        caseName: getCaseTypeLabel(newCharge.caseType as CaseType),
-        consultationFee: newCharge.consultationFee,
-        documentPreparationFee: newCharge.documentPreparationFee,
-        totalFee: newCharge.consultationFee + newCharge.documentPreparationFee,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-      useServiceChargesStore.getState().addCharge(charge);
-      setNewCharge({
-        category: "civil",
-        caseType: "recovery_of_money",
-        consultationFee: 0,
-        documentPreparationFee: 0,
-      });
-      setShowForm(false);
-    }
-  };
-
-  const civilCharges = charges.filter((c) => c.category === "civil");
-  const familyCharges = charges.filter((c) => c.category === "family");
+  if (loading) {
+    return (
+      <LawyerLayout brandTitle="LawFlow" brandSubtitle="Service Charges">
+        <div className="flex items-center justify-center gap-2 p-12">
+          <Loader className="h-6 w-6 animate-spin text-[#01411C]" />
+          <p className="text-gray-600">Loading service charges…</p>
+        </div>
+      </LawyerLayout>
+    );
+  }
 
   return (
-    <LawyerLayout
-      brandTitle="LawFlow"
-      brandSubtitle="Lawyer Portal"
-    >
-      <div className="space-y-6">
-        {/* Header */}
-        <div className="flex justify-between items-start">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Service Charges</h1>
-            <p className="text-sm text-gray-600 mt-1">
-              Define your consultation and document preparation fees for different case types
-            </p>
+    <LawyerLayout brandTitle="LawFlow" brandSubtitle="Service Charges">
+      <div className="mx-auto max-w-2xl space-y-6">
+        <div>
+          <div className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-800">
+            <HandCoins className="h-3.5 w-3.5" />
+            Case Charges
           </div>
-          <button
-            onClick={() => setShowForm(!showForm)}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-green-700 text-white rounded-lg hover:bg-green-800 transition"
-          >
-            <Plus className="w-4 h-4" />
-            Add New Charge
-          </button>
+          <h1 className="mt-2 text-2xl font-bold text-gray-900">Service Charges</h1>
+          <p className="mt-1 text-sm text-gray-600">
+            Set your fees per case category. These auto-load when you create a payment plan for a
+            case.
+          </p>
         </div>
 
-        {/* Add New Charge Form */}
-        {showForm && (
-          <div className="bg-white border border-gray-200 rounded-lg p-6">
-            <h3 className="text-lg font-semibold mb-4">Add Service Charge</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Category
-                </label>
-                <select
-                  value={newCharge.category}
-                  onChange={(e) =>
-                    setNewCharge({
-                      ...newCharge,
-                      category: e.target.value as "civil" | "family",
-                      caseType:
-                        e.target.value === "civil"
-                          ? "recovery_of_money"
-                          : "khula",
-                    })
-                  }
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 outline-none"
-                >
-                  <option value="civil">Civil Cases</option>
-                  <option value="family">Family Cases</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Case Type
-                </label>
-                <select
-                  value={newCharge.caseType}
-                  onChange={(e) =>
-                    setNewCharge({ ...newCharge, caseType: e.target.value as CaseType })
-                  }
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 outline-none"
-                >
-                  {(newCharge.category === "civil"
-                    ? CIVIL_CASE_TYPES
-                    : FAMILY_CASE_TYPES
-                  ).map((ct) => (
-                    <option key={ct.id} value={ct.id}>
-                      {ct.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Consultation Fee (PKR)
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  value={newCharge.consultationFee || 0}
-                  onChange={(e) =>
-                    setNewCharge({
-                      ...newCharge,
-                      consultationFee: parseFloat(e.target.value) || 0,
-                    })
-                  }
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Document Preparation Fee (PKR)
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  value={newCharge.documentPreparationFee || 0}
-                  onChange={(e) =>
-                    setNewCharge({
-                      ...newCharge,
-                      documentPreparationFee: parseFloat(e.target.value) || 0,
-                    })
-                  }
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 outline-none"
-                />
-              </div>
-            </div>
-
-            <div className="flex gap-3 mt-4">
-              <button
-                onClick={handleAddCharge}
-                className="px-4 py-2 bg-green-700 text-white rounded-lg hover:bg-green-800 transition"
-              >
-                Save
-              </button>
-              <button
-                onClick={() => setShowForm(false)}
-                className="px-4 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 transition"
-              >
-                Cancel
-              </button>
-            </div>
+        {error && (
+          <div className="flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 p-4">
+            <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-red-600" />
+            <p className="text-sm text-red-800">{error}</p>
           </div>
         )}
 
-        {/* Civil Cases */}
-        <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-          <div className="bg-gradient-to-r from-green-50 to-green-100 px-6 py-4 border-b border-gray-200">
-            <h2 className="text-lg font-semibold text-gray-900">Civil Cases</h2>
-            <p className="text-sm text-gray-600">
-              {civilCharges.length} of {CIVIL_CASE_TYPES.length} case types defined
-            </p>
+        {success && (
+          <div className="flex items-start gap-3 rounded-lg border border-green-200 bg-green-50 p-4">
+            <CheckCircle className="mt-0.5 h-5 w-5 shrink-0 text-green-600" />
+            <p className="text-sm text-green-800">Service charges saved successfully.</p>
+          </div>
+        )}
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+            <div className="border-b border-gray-100 bg-gradient-to-r from-[#01411C]/5 to-emerald-50/80 px-5 py-3">
+              <h2 className="font-semibold text-gray-900">Family Case Charges</h2>
+            </div>
+            <div className="p-5">
+              {!isEditing ? (
+                <p className="text-3xl font-bold text-[#01411C]">
+                  {typeof familyFee === "number" && familyFee > 0
+                    ? `PKR ${familyFee.toLocaleString()}`
+                    : "—"}
+                </p>
+              ) : (
+                <div className="relative">
+                  <span className="absolute left-3 top-3 text-gray-500 text-sm">PKR</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={editFamily}
+                    onChange={(e) =>
+                      setEditFamily(e.target.value ? parseFloat(e.target.value) : "")
+                    }
+                    className="w-full rounded-lg border border-gray-300 py-2.5 pl-12 pr-3 focus:border-[#01411C] focus:outline-none focus:ring-2 focus:ring-emerald-100"
+                    placeholder="e.g. 500"
+                  />
+                </div>
+              )}
+            </div>
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-gray-200 bg-gray-50">
-                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">
-                    Case Type
-                  </th>
-                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">
-                    Consultation Fee
-                  </th>
-                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">
-                    Document Prep Fee
-                  </th>
-                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">
-                    Total Fee
-                  </th>
-                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {civilCharges.map((charge) => (
-                  <tr key={charge.id} className="border-b border-gray-200 hover:bg-gray-50">
-                    <td className="px-6 py-4 text-sm text-gray-900">{charge.caseName}</td>
-                    <td className="px-6 py-4 text-sm text-gray-900">
-                      {editingId === charge.id ? (
-                        <input
-                          type="number"
-                          min="0"
-                          value={editData.consultationFee || 0}
-                          onChange={(e) =>
-                            setEditData({
-                              ...editData,
-                              consultationFee: parseFloat(e.target.value) || 0,
-                            })
-                          }
-                          className="w-20 px-2 py-1 border border-gray-300 rounded"
-                        />
-                      ) : (
-                        `Rs. ${charge.consultationFee.toLocaleString()}`
-                      )}
-                    </td>
-                    <td className="px-6 py-4 text-sm text-gray-900">
-                      {editingId === charge.id ? (
-                        <input
-                          type="number"
-                          min="0"
-                          value={editData.documentPreparationFee || 0}
-                          onChange={(e) =>
-                            setEditData({
-                              ...editData,
-                              documentPreparationFee: parseFloat(e.target.value) || 0,
-                            })
-                          }
-                          className="w-20 px-2 py-1 border border-gray-300 rounded"
-                        />
-                      ) : (
-                        `Rs. ${charge.documentPreparationFee.toLocaleString()}`
-                      )}
-                    </td>
-                    <td className="px-6 py-4 text-sm font-semibold text-green-700">
-                      Rs. {charge.totalFee.toLocaleString()}
-                    </td>
-                    <td className="px-6 py-4 text-sm">
-                      {editingId === charge.id ? (
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => handleEditSave(charge.id)}
-                            className="px-3 py-1 bg-green-600 text-white rounded text-xs hover:bg-green-700"
-                          >
-                            Save
-                          </button>
-                          <button
-                            onClick={() => setEditingId(null)}
-                            className="px-3 py-1 bg-gray-300 text-gray-700 rounded text-xs hover:bg-gray-400"
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                      ) : (
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => handleEditStart(charge)}
-                            className="p-1 text-blue-600 hover:bg-blue-50 rounded transition"
-                            title="Edit"
-                          >
-                            <Edit2 className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => deleteCharge(charge.id)}
-                            className="p-1 text-red-600 hover:bg-red-50 rounded transition"
-                            title="Delete"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+            <div className="border-b border-gray-100 bg-gradient-to-r from-[#01411C]/5 to-emerald-50/80 px-5 py-3">
+              <h2 className="font-semibold text-gray-900">Civil Case Charges</h2>
+            </div>
+            <div className="p-5">
+              {!isEditing ? (
+                <p className="text-3xl font-bold text-[#01411C]">
+                  {typeof civilFee === "number" && civilFee > 0
+                    ? `PKR ${civilFee.toLocaleString()}`
+                    : "—"}
+                </p>
+              ) : (
+                <div className="relative">
+                  <span className="absolute left-3 top-3 text-gray-500 text-sm">PKR</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={editCivil}
+                    onChange={(e) =>
+                      setEditCivil(e.target.value ? parseFloat(e.target.value) : "")
+                    }
+                    className="w-full rounded-lg border border-gray-300 py-2.5 pl-12 pr-3 focus:border-[#01411C] focus:outline-none focus:ring-2 focus:ring-emerald-100"
+                    placeholder="e.g. 700"
+                  />
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
-        {/* Family Cases */}
-        <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-          <div className="bg-gradient-to-r from-purple-50 to-purple-100 px-6 py-4 border-b border-gray-200">
-            <h2 className="text-lg font-semibold text-gray-900">Family Cases</h2>
-            <p className="text-sm text-gray-600">
-              {familyCharges.length} of {FAMILY_CASE_TYPES.length} case types defined
-            </p>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-gray-200 bg-gray-50">
-                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">
-                    Case Type
-                  </th>
-                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">
-                    Consultation Fee
-                  </th>
-                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">
-                    Document Prep Fee
-                  </th>
-                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">
-                    Total Fee
-                  </th>
-                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {familyCharges.map((charge) => (
-                  <tr key={charge.id} className="border-b border-gray-200 hover:bg-gray-50">
-                    <td className="px-6 py-4 text-sm text-gray-900">{charge.caseName}</td>
-                    <td className="px-6 py-4 text-sm text-gray-900">
-                      {editingId === charge.id ? (
-                        <input
-                          type="number"
-                          min="0"
-                          value={editData.consultationFee || 0}
-                          onChange={(e) =>
-                            setEditData({
-                              ...editData,
-                              consultationFee: parseFloat(e.target.value) || 0,
-                            })
-                          }
-                          className="w-20 px-2 py-1 border border-gray-300 rounded"
-                        />
-                      ) : (
-                        `Rs. ${charge.consultationFee.toLocaleString()}`
-                      )}
-                    </td>
-                    <td className="px-6 py-4 text-sm text-gray-900">
-                      {editingId === charge.id ? (
-                        <input
-                          type="number"
-                          min="0"
-                          value={editData.documentPreparationFee || 0}
-                          onChange={(e) =>
-                            setEditData({
-                              ...editData,
-                              documentPreparationFee: parseFloat(e.target.value) || 0,
-                            })
-                          }
-                          className="w-20 px-2 py-1 border border-gray-300 rounded"
-                        />
-                      ) : (
-                        `Rs. ${charge.documentPreparationFee.toLocaleString()}`
-                      )}
-                    </td>
-                    <td className="px-6 py-4 text-sm font-semibold text-purple-700">
-                      Rs. {charge.totalFee.toLocaleString()}
-                    </td>
-                    <td className="px-6 py-4 text-sm">
-                      {editingId === charge.id ? (
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => handleEditSave(charge.id)}
-                            className="px-3 py-1 bg-green-600 text-white rounded text-xs hover:bg-green-700"
-                          >
-                            Save
-                          </button>
-                          <button
-                            onClick={() => setEditingId(null)}
-                            className="px-3 py-1 bg-gray-300 text-gray-700 rounded text-xs hover:bg-gray-400"
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                      ) : (
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => handleEditStart(charge)}
-                            className="p-1 text-blue-600 hover:bg-blue-50 rounded transition"
-                            title="Edit"
-                          >
-                            <Edit2 className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => deleteCharge(charge.id)}
-                            className="p-1 text-red-600 hover:bg-red-50 rounded transition"
-                            title="Delete"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+        <div className="flex flex-wrap gap-3">
+          {!isEditing ? (
+            <button
+              type="button"
+              onClick={handleEditStart}
+              className="rounded-lg bg-[#01411C] px-6 py-3 text-sm font-semibold text-white hover:bg-[#024a23]"
+            >
+              {isConfigured ? "Edit Charges" : "Set Charges"}
+            </button>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={handleEditSave}
+                disabled={saving}
+                className="rounded-lg bg-[#01411C] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#024a23] disabled:bg-gray-400"
+              >
+                {saving ? "Saving…" : "Save Changes"}
+              </button>
+              <button
+                type="button"
+                onClick={handleEditCancel}
+                disabled={saving}
+                className="rounded-lg border border-gray-300 px-5 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+            </>
+          )}
         </div>
+
+        {isConfigured && (
+          <div className="rounded-xl border border-emerald-200 bg-emerald-50/80 p-4">
+            <p className="text-sm text-emerald-900">
+              Charges are active. Open a case payment plan to set installments for your client.
+            </p>
+            <Link
+              to="/lawyer-case-payments"
+              className="mt-3 inline-block text-sm font-semibold text-[#01411C] underline hover:text-[#024a23]"
+            >
+              Go to Case Payment Plans →
+            </Link>
+          </div>
+        )}
       </div>
     </LawyerLayout>
   );
