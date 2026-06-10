@@ -1,12 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import {
-  paymentAgreementsMock,
-  paymentPlansMock,
-  paymentReceiptsMock,
-  paymentTransactionsMock,
-} from "../data/paymentPlans.mock";
-import {
   derivePlanStatus,
   getInstallmentRemainingAmount,
   isInstallmentsTotalValid,
@@ -90,10 +84,10 @@ function createReceiptNo(existingCount: number): string {
 export const usePaymentsStore = create<PaymentsState>()(
   persist(
     (set, get) => ({
-      agreements: paymentAgreementsMock,
-      plans: paymentPlansMock,
-      receipts: paymentReceiptsMock,
-      transactions: paymentTransactionsMock,
+      agreements: [],
+      plans: [],
+      receipts: [],
+      transactions: [],
 
       upsertAgreement: (caseId, agreementInput) => {
         const timestamp = nowIso();
@@ -403,7 +397,7 @@ export const usePaymentsStore = create<PaymentsState>()(
       },
     }),
     {
-      name: "lawflow_payments_store",
+      name: "lawflow_payments_store_v2",
     }
   )
 );

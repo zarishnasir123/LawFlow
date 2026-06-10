@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { BadgeCheck, Mail, Star, Gavel, MapPin } from "lucide-react";
+import { BadgeCheck, Mail, Star, Gavel, MapPin, HandCoins } from "lucide-react";
 import ClientLayout from "../components/ClientLayout";
 import ImageLightbox from "../../../shared/components/ImageLightbox";
 import { fetchLawyer, type DirectoryLawyer } from "../api/lawyers";
+import { getLawyerPublicCaseCharges } from "../../payments/api";
 
 // Stats backed by tables we haven't shipped yet (rating, cases
 // handled, success rate). Render an em-dash so the slot stays
@@ -36,10 +37,13 @@ export default function LawyerProfileView() {
     queryKey: ["lawyer", lawyerId],
     queryFn: () => fetchLawyer(lawyerId as string),
     enabled: Boolean(lawyerId),
-    // The detail page is short-lived (user comes from the list,
-    // clicks View Profile, then either Messages or Back). Stale
-    // window of 5 min mirrors useCurrentUser so refetch noise stays
-    // low while the data is reasonably fresh.
+    staleTime: 1000 * 60 * 5,
+  });
+
+  const { data: caseCharges } = useQuery({
+    queryKey: ["lawyer-case-charges", lawyerId],
+    queryFn: () => getLawyerPublicCaseCharges(lawyerId as string),
+    enabled: Boolean(lawyerId),
     staleTime: 1000 * 60 * 5,
   });
 
@@ -242,6 +246,28 @@ export default function LawyerProfileView() {
                   Fee may vary based on case complexity.
                 </p>
               </div>
+
+              {caseCharges?.charges && caseCharges.charges.length > 0 && (
+                <div className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+                  <div className="flex items-center gap-2">
+                    <HandCoins className="h-4 w-4 text-[#01411C]" />
+                    <h2 className="text-sm font-semibold text-gray-900">Case Charges</h2>
+                  </div>
+                  <ul className="mt-4 space-y-2">
+                    {caseCharges.charges.map((row) => (
+                      <li
+                        key={row.category}
+                        className="flex items-center justify-between rounded-xl border border-gray-100 bg-gray-50/70 px-4 py-3 text-sm"
+                      >
+                        <span className="text-gray-600">{row.category} Case</span>
+                        <span className="font-semibold text-gray-900">
+                          Rs {row.amount.toLocaleString()}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
 
               <div className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
                 <h2 className="text-sm font-semibold text-gray-900">Quick Stats</h2>

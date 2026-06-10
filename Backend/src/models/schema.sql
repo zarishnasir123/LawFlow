@@ -14,12 +14,22 @@ CREATE EXTENSION IF NOT EXISTS "citext";
 -- =====================================================================
 -- Drop in reverse dependency order. CASCADE removes dependent objects.
 -- =====================================================================
+DROP TABLE IF EXISTS payment_receipts               CASCADE;
+DROP TABLE IF EXISTS payment_transactions           CASCADE;
+DROP TABLE IF EXISTS installments                   CASCADE;
+DROP TABLE IF EXISTS payment_plans                  CASCADE;
+DROP TABLE IF EXISTS agreements                     CASCADE;
+DROP TABLE IF EXISTS lawyer_service_charges         CASCADE;
+DROP TABLE IF EXISTS signature_requests             CASCADE;
+DROP TABLE IF EXISTS case_attachments               CASCADE;
+DROP TABLE IF EXISTS cases                          CASCADE;
+DROP TABLE IF EXISTS case_types                     CASCADE;
+DROP TABLE IF EXISTS lawyer_rejection_history       CASCADE;
 DROP TABLE IF EXISTS auth_identities                CASCADE;
 DROP TABLE IF EXISTS auth_sessions                  CASCADE;
 DROP TABLE IF EXISTS password_reset_tokens          CASCADE;
 DROP TABLE IF EXISTS email_verification_otps        CASCADE;
 DROP TABLE IF EXISTS lawyer_verification_documents  CASCADE;
-DROP TABLE IF EXISTS case_attachments               CASCADE;
 DROP TABLE IF EXISTS lawyer_profiles                CASCADE;
 DROP TABLE IF EXISTS registrar_profiles             CASCADE;
 DROP TABLE IF EXISTS client_profiles                CASCADE;
@@ -384,6 +394,7 @@ CREATE TABLE cases (
   client_name     VARCHAR(200) NOT NULL,
   client_email    VARCHAR(200),
   client_phone    VARCHAR(30),
+  client_user_id  UUID REFERENCES users(id) ON DELETE SET NULL,
 
   opposite_party_name VARCHAR(200) NOT NULL,
 
@@ -526,6 +537,114 @@ CREATE TABLE signature_requests (
 );
 
 -- =====================================================================
+-- Payment Module: Service Charges, Agreements, Payment Plans, Installments
+-- =====================================================================
+CREATE TABLE lawyer_service_charges (
+  id      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  lawyer_profile_id UUID UNIQUE NOT NULL REFERENCES lawyer_profiles(id) ON DELETE CASCADE,
+
+  base_fee NUMERIC(12, 2) NOT NULL DEFAULT 0,
+  family_case_fee NUMERIC(12, 2),
+  civil_case_fee NUMERIC(12, 2),
+
+  created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE agreements (
+  id      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  case_id UUID NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
+  lawyer_user_id UUID NOT NULL REFERENCES users(id),
+  client_user_id UUID NOT NULL REFERENCES users(id),
+
+  lawyer_base_fee NUMERIC(12, 2) NOT NULL,
+  agreed_total_amount NUMERIC(12, 2) NOT NULL,
+  currency VARCHAR(3) NOT NULL DEFAULT 'PKR',
+
+  status VARCHAR(30) NOT NULL DEFAULT 'draft'
+    CHECK (status IN ('draft', 'active', 'completed', 'cancelled')),
+
+  created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+
+  CONSTRAINT uq_agreements_one_per_case UNIQUE (case_id)
+);
+
+CREATE TABLE payment_plans (
+  id      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  agreement_id UUID NOT NULL REFERENCES agreements(id) ON DELETE CASCADE,
+
+  total_amount NUMERIC(12, 2) NOT NULL,
+  frequency VARCHAR(30) NOT NULL DEFAULT 'monthly'
+    CHECK (frequency IN ('lump_sum', 'monthly', 'quarterly', 'semi_annual')),
+  installment_count INTEGER DEFAULT 1,
+
+  created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE installments (
+  id      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  payment_plan_id UUID NOT NULL REFERENCES payment_plans(id) ON DELETE CASCADE,
+  agreement_id UUID NOT NULL REFERENCES agreements(id) ON DELETE CASCADE,
+
+  installment_number INTEGER NOT NULL,
+  amount NUMERIC(12, 2) NOT NULL,
+  due_date DATE,
+
+  status VARCHAR(30) NOT NULL DEFAULT 'pending'
+    CHECK (status IN ('pending', 'paid', 'overdue', 'cancelled')),
+  paid_at TIMESTAMP,
+  stripe_checkout_session_id VARCHAR(255),
+
+  created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE payment_transactions (
+  id      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  installment_id UUID NOT NULL REFERENCES installments(id) ON DELETE CASCADE,
+  agreement_id UUID NOT NULL REFERENCES agreements(id) ON DELETE CASCADE,
+  case_id UUID NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
+  client_user_id UUID NOT NULL REFERENCES users(id),
+  lawyer_user_id UUID NOT NULL REFERENCES users(id),
+
+  amount NUMERIC(12, 2) NOT NULL,
+  currency VARCHAR(3) NOT NULL DEFAULT 'PKR',
+  status VARCHAR(30) NOT NULL DEFAULT 'pending'
+    CHECK (status IN ('pending', 'success', 'failed', 'cancelled')),
+
+  stripe_checkout_session_id VARCHAR(255),
+  stripe_payment_intent_id VARCHAR(255),
+
+  created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+
+  CONSTRAINT uq_payment_txn_checkout_session
+    UNIQUE (stripe_checkout_session_id),
+  CONSTRAINT uq_payment_txn_payment_intent
+    UNIQUE (stripe_payment_intent_id)
+);
+
+CREATE TABLE payment_receipts (
+  id      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  transaction_id UUID NOT NULL UNIQUE REFERENCES payment_transactions(id) ON DELETE CASCADE,
+  receipt_number VARCHAR(50) NOT NULL UNIQUE,
+  installment_id UUID NOT NULL REFERENCES installments(id) ON DELETE CASCADE,
+  agreement_id UUID NOT NULL REFERENCES agreements(id) ON DELETE CASCADE,
+  case_id UUID NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
+  client_user_id UUID NOT NULL REFERENCES users(id),
+  lawyer_user_id UUID NOT NULL REFERENCES users(id),
+
+  amount NUMERIC(12, 2) NOT NULL,
+  currency VARCHAR(3) NOT NULL DEFAULT 'PKR',
+  payment_status VARCHAR(30) NOT NULL,
+
+  issued_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  created_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+-- =====================================================================
 -- Indexes (only for real query patterns; PRIMARY KEY / UNIQUE already
 -- get implicit indexes, so do not duplicate them here.)
 -- =====================================================================
@@ -566,6 +685,7 @@ CREATE INDEX idx_lawyer_rejection_history_rejected_at
 CREATE INDEX idx_case_types_category ON case_types(category, sort_order);
 
 CREATE INDEX idx_cases_lawyer_user_id ON cases(lawyer_user_id);
+CREATE INDEX idx_cases_client_user_id ON cases(client_user_id);
 CREATE INDEX idx_cases_status         ON cases(status);
 
 -- Lawyer's editor lists per-case + groups by batch.
@@ -585,6 +705,34 @@ CREATE INDEX idx_signature_requests_recipient_status
 CREATE INDEX idx_signature_requests_expires_at
   ON signature_requests(expires_at)
   WHERE status = 'pending';
+
+-- Payment indexes
+CREATE INDEX idx_lawyer_service_charges_lawyer_profile_id
+  ON lawyer_service_charges(lawyer_profile_id);
+
+CREATE INDEX idx_agreements_case_id ON agreements(case_id);
+CREATE INDEX idx_agreements_lawyer_user_id ON agreements(lawyer_user_id);
+CREATE INDEX idx_agreements_client_user_id ON agreements(client_user_id);
+
+CREATE INDEX idx_payment_plans_agreement_id ON payment_plans(agreement_id);
+
+CREATE INDEX idx_installments_payment_plan_id ON installments(payment_plan_id);
+CREATE INDEX idx_installments_agreement_id ON installments(agreement_id);
+CREATE INDEX idx_installments_status ON installments(status);
+CREATE INDEX idx_installments_due_date ON installments(due_date);
+
+CREATE INDEX idx_payment_transactions_case_id
+  ON payment_transactions(case_id, created_at DESC);
+CREATE INDEX idx_payment_transactions_client_user_id
+  ON payment_transactions(client_user_id, created_at DESC);
+CREATE INDEX idx_payment_transactions_lawyer_user_id
+  ON payment_transactions(lawyer_user_id, created_at DESC);
+CREATE INDEX idx_payment_transactions_installment_id
+  ON payment_transactions(installment_id);
+
+CREATE INDEX idx_payment_receipts_case_id ON payment_receipts(case_id);
+CREATE INDEX idx_payment_receipts_client_user_id ON payment_receipts(client_user_id);
+CREATE INDEX idx_payment_receipts_lawyer_user_id ON payment_receipts(lawyer_user_id);
 
 -- =====================================================================
 -- Row Level Security: deny by default on every table.
@@ -609,6 +757,12 @@ ALTER TABLE lawyer_rejection_history       ENABLE ROW LEVEL SECURITY;
 ALTER TABLE case_types                     ENABLE ROW LEVEL SECURITY;
 ALTER TABLE cases                          ENABLE ROW LEVEL SECURITY;
 ALTER TABLE signature_requests             ENABLE ROW LEVEL SECURITY;
+ALTER TABLE lawyer_service_charges         ENABLE ROW LEVEL SECURITY;
+ALTER TABLE agreements                     ENABLE ROW LEVEL SECURITY;
+ALTER TABLE payment_plans                  ENABLE ROW LEVEL SECURITY;
+ALTER TABLE installments                   ENABLE ROW LEVEL SECURITY;
+ALTER TABLE payment_transactions           ENABLE ROW LEVEL SECURITY;
+ALTER TABLE payment_receipts               ENABLE ROW LEVEL SECURITY;
 
 -- =====================================================================
 -- Seed data: supported case types (5 civil + 5 family at tehsil level).

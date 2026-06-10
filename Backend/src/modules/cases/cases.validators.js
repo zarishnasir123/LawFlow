@@ -64,7 +64,24 @@ export const createCaseValidator = [
   requireStringField(["clientName"], "Client name", { max: 200 }),
   optionalStringField(["clientEmail"], "Client email", { max: 200 }),
   optionalStringField(["clientPhone"], "Client phone", { max: 30 }),
-  requireStringField(["oppositePartyName"], "Opposite party name", { max: 200 })
+  requireStringField(["oppositePartyName"], "Opposite party name", { max: 200 }),
+  // Optional payment fields
+  body("clientUserId")
+    .optional()
+    .isUUID()
+    .withMessage("clientUserId must be a valid UUID"),
+  body("agreedTotalAmount")
+    .optional()
+    .isFloat({ min: 0 })
+    .withMessage("agreedTotalAmount must be a positive number"),
+  body("frequency")
+    .optional()
+    .isIn(["lump_sum", "monthly", "quarterly", "semi_annual"])
+    .withMessage("frequency must be one of: lump_sum, monthly, quarterly, semi_annual"),
+  body("installmentCount")
+    .optional()
+    .isInt({ min: 1 })
+    .withMessage("installmentCount must be a positive integer")
 ];
 
 export const caseIdParamValidator = [uuidParam("caseId")];
