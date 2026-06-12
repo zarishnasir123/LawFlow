@@ -184,18 +184,6 @@ export const createCheckoutSession = async (installmentData: {
   return data.data as { sessionId: string; sessionUrl: string };
 };
 
-export const confirmCheckoutSession = async (sessionId: string) => {
-  const { data } = await apiClient.post("/payments/confirm-checkout-session", {
-    sessionId,
-  });
-  return data.data as {
-    duplicate: boolean;
-    transactionId?: string;
-    receiptNumber?: string;
-    caseId?: string;
-  };
-};
-
 export const getPaymentTransactions = async (caseId?: string) => {
   const { data } = await apiClient.get("/payments/transactions", {
     params: caseId ? { caseId } : undefined,
@@ -213,4 +201,34 @@ export const getPaymentReceipts = async (caseId?: string) => {
 export const getPaymentReceipt = async (receiptId: string) => {
   const { data } = await apiClient.get(`/payments/receipts/${receiptId}`);
   return data.data;
+};
+
+export type LawyerEarnings = {
+  totalReceived: number;
+  paymentsCount: number;
+  byCase: Array<{
+    caseId: string;
+    caseTitle: string;
+    clientName: string;
+    totalReceived: number;
+    paymentsCount: number;
+    lastPaymentAt: string;
+  }>;
+  recent: Array<{
+    id: string;
+    installmentId: string;
+    amount: number;
+    status: string;
+    createdAt: string;
+    caseTitle?: string;
+    clientName?: string;
+    installmentNumber?: number;
+  }>;
+};
+
+// Lawyer "Payments Received" view — the money clients have actually paid this
+// lawyer, with a per-case breakdown and overall total.
+export const getLawyerEarnings = async (): Promise<LawyerEarnings> => {
+  const { data } = await apiClient.get("/payments/lawyer/earnings");
+  return data.data as LawyerEarnings;
 };

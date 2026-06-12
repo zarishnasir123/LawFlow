@@ -17,7 +17,7 @@ export default function ClientInstallmentsTable({
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const handleStripeCheckout = async (installment: Installment) => {
+  const handleSafepayCheckout = async (installment: Installment) => {
     try {
       setLoadingId(installment.id);
       setError(null);
@@ -105,7 +105,7 @@ export default function ClientInstallmentsTable({
                     {canPay ? (
                       <button
                         type="button"
-                        onClick={() => handleStripeCheckout(item)}
+                        onClick={() => handleSafepayCheckout(item)}
                         disabled={loadingId === item.id}
                         className="inline-flex items-center gap-1.5 rounded-lg bg-[#01411C] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#024a23] disabled:opacity-60"
                       >

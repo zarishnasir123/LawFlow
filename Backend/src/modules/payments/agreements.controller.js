@@ -14,6 +14,7 @@ import {
   listReceiptsForUser,
   listTransactionsForUser,
   getReceiptById,
+  listLawyerEarnings,
 } from "./transactions.service.js";
 import {
   getCategoryFeeForCase,
@@ -261,6 +262,16 @@ export async function listReceiptsHandler(req, res) {
   } catch (error) {
     console.error("Error listing receipts:", error);
     return res.status(500).json({ message: "Failed to fetch receipts" });
+  }
+}
+
+export async function listLawyerEarningsHandler(req, res) {
+  try {
+    const earnings = await listLawyerEarnings(req.user.sub);
+    return res.status(200).json({ data: earnings });
+  } catch (error) {
+    console.error("Error listing lawyer earnings:", error);
+    return res.status(500).json({ message: "Failed to fetch earnings" });
   }
 }
 

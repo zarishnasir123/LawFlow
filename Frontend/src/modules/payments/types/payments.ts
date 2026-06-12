@@ -12,9 +12,10 @@ export type PaymentMethod =
   | "card"
   | "easypaisa"
   | "jazzcash"
-  | "stripe";
+  | "stripe"
+  | "safepay";
 
-export type PaymentProvider = "manual" | "stripe";
+export type PaymentProvider = "manual" | "stripe" | "safepay";
 
 export interface Agreement {
   caseId: string;

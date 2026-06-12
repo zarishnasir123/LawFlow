@@ -57,6 +57,7 @@ import Signatures from "../modules/lawyer/pages/Signatures";
 import LawyerSignatureViewer from "../modules/lawyer/pages/LawyerSignatureViewer";
 import CasePaymentPlan from "../modules/lawyer/pages/CasePaymentPlan";
 import LawyerAgreementsPage from "../modules/payments/pages/LawyerAgreementsPage";
+import LawyerEarningsPage from "../modules/payments/pages/LawyerEarningsPage";
 import SubmitCase from "../modules/lawyer/pages/SubmitCase";
 
 /* =====================================================
@@ -379,6 +380,13 @@ const lawyerAgreementsRoute = createRoute({
   component: LawyerAgreementsPage,
 });
 
+const lawyerEarningsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "lawyer-earnings",
+  beforeLoad: lawyerBeforeLoad,
+  component: LawyerEarningsPage,
+});
+
 const lawyerCasePaymentsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "lawyer-case-payments",
@@ -512,6 +520,7 @@ const routeTree = rootRoute.addChildren([
   caseDocumentEditorRoute,
   caseDocumentEditorDetailRoute,
   lawyerAgreementsRoute,
+  lawyerEarningsRoute,
   lawyerCasePaymentsRoute,
   lawyerCasePaymentsDetailRoute,
   lawyerSubmitCaseRoute,

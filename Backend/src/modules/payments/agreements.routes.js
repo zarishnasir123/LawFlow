@@ -12,6 +12,7 @@ import {
   getReceiptHandler,
   listClientAgreementsHandler,
   listLawyerAgreementCasesHandler,
+  listLawyerEarningsHandler,
   listReceiptsHandler,
   listTransactionsHandler,
   updateAgreementStatusHandler,
@@ -50,6 +51,13 @@ router.get(
   authenticate,
   authorizeRoles("lawyer"),
   asyncHandler(listLawyerAgreementCasesHandler)
+);
+
+router.get(
+  "/lawyer/earnings",
+  authenticate,
+  authorizeRoles("lawyer"),
+  asyncHandler(listLawyerEarningsHandler)
 );
 
 router.get(

@@ -2,7 +2,6 @@ import { useState } from "react";
 import {
   AlertCircle,
   CheckCircle2,
-  CreditCard,
   Loader2,
   LockKeyhole,
   ArrowUpRight,
@@ -31,7 +30,7 @@ export default function PayInstallmentModal({
 }: PayInstallmentModalProps) {
   const remaining = getInstallmentRemainingAmount(installment);
   const [amount, setAmount] = useState(remaining);
-  const method: PaymentMethod = "stripe";
+  const method: PaymentMethod = "safepay";
   const [processing, setProcessing] = useState(false);
   const [paymentState, setPaymentState] = useState<{
     type: "idle" | "success" | "failed";
@@ -79,9 +78,9 @@ export default function PayInstallmentModal({
         return;
       }
 
-      setPaymentState({ type: "success", message: "Redirecting to Stripe..." });
+      setPaymentState({ type: "success", message: "Redirecting to Safepay…" });
       setTimeout(() => {
-        window.location.href = session.checkoutUrl;
+        window.location.href = session.sessionUrl;
       }, 500);
     } catch (error) {
       console.error("Payment error:", error);
@@ -104,7 +103,7 @@ export default function PayInstallmentModal({
             </div>
             <div className="flex items-center gap-2 rounded-full border border-indigo-200 bg-white px-3 py-1 text-xs font-semibold text-indigo-700">
               <LockKeyhole className="h-3.5 w-3.5" />
-              Stripe Secure
+              Safepay Secure
             </div>
           </div>
         </div>
@@ -161,9 +160,9 @@ export default function PayInstallmentModal({
           )}
 
           <div className="rounded-xl border border-sky-100 bg-sky-50/50 p-3 text-xs text-sky-700">
-            <p className="font-semibold">Stripe Secure Checkout</p>
+            <p className="font-semibold">Safepay Secure Checkout</p>
             <p className="mt-1">
-              You will be redirected to Stripe's secure payment page. Your card details are never shared with us.
+              You will be redirected to Safepay's secure payment page. Your card details are never shared with us.
             </p>
           </div>
         </div>
@@ -189,7 +188,7 @@ export default function PayInstallmentModal({
             ) : (
               <>
                 <ArrowUpRight className="h-4 w-4" />
-                Pay {formatCurrency(amount)} with Stripe
+                Pay {formatCurrency(amount)} with Safepay
               </>
             )}
           </button>

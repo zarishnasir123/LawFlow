@@ -8,7 +8,6 @@ import PaymentSummaryCard from "../components/PaymentSummaryCard";
 import ReceiptsList from "../components/ReceiptsList";
 import TransactionHistoryList from "../components/TransactionHistoryList";
 import {
-  confirmCheckoutSession,
   getAgreementsByCase,
   getClientAgreements,
   getPaymentReceipts,
@@ -108,14 +107,16 @@ export default function ClientCasePaymentsPage() {
     }, {});
   }, [snapshot]);
 
-  const [feedback, setFeedback] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<
+    { text: string; tone: "success" | "info" } | null
+  >(null);
   const [confirmingPayment, setConfirmingPayment] = useState(false);
 
   useEffect(() => {
     const search = new URLSearchParams(window.location.search);
-    if (search.get("payment") !== "success") return;
+    const outcome = search.get("payment");
+    if (!outcome) return;
 
-    const sessionId = search.get("session_id");
     let cancelled = false;
 
     const refreshPaymentData = async (caseId?: string) => {
@@ -134,34 +135,32 @@ export default function ClientCasePaymentsPage() {
     };
 
     (async () => {
-      setConfirmingPayment(true);
-      try {
-        if (sessionId) {
-          const result = await confirmCheckoutSession(sessionId);
-          if (!cancelled) {
-            setFeedback(
-              result.duplicate
-                ? "Payment was already recorded. Your receipt is below."
-                : "Payment successful. Your receipt is available below."
-            );
-          }
-          await refreshPaymentData(result.caseId || activeCaseId || selectedCaseId);
-        } else if (!cancelled) {
-          setFeedback("Payment successful. Refreshing your records…");
-          await refreshPaymentData(activeCaseId || selectedCaseId);
-        }
-      } catch {
-        if (!cancelled) {
-          setFeedback("Payment may have completed. Refreshing records…");
-        }
+      if (outcome === "success") {
+        // Safepay's signed return was already verified by the backend, which
+        // recorded the payment + receipt before redirecting here. Just refresh.
+        setConfirmingPayment(true);
+        setFeedback({
+          text: "Payment successful. Your receipt is available below.",
+          tone: "success",
+        });
         await refreshPaymentData(activeCaseId || selectedCaseId);
-      } finally {
         if (!cancelled) setConfirmingPayment(false);
-        const url = new URL(window.location.href);
-        url.searchParams.delete("payment");
-        url.searchParams.delete("session_id");
-        window.history.replaceState({}, "", `${url.pathname}${url.search}`);
+      } else if (outcome === "cancel") {
+        setFeedback({
+          text: "Payment was cancelled. You can try again whenever you're ready.",
+          tone: "info",
+        });
+      } else if (outcome === "failed") {
+        setFeedback({
+          text: "We couldn't confirm your payment. If any amount was deducted, it will reflect shortly.",
+          tone: "info",
+        });
       }
+      const url = new URL(window.location.href);
+      ["payment", "session_id", "tracker", "sig", "reference"].forEach((key) =>
+        url.searchParams.delete(key)
+      );
+      window.history.replaceState({}, "", `${url.pathname}${url.search}`);
     })();
 
     return () => {
@@ -223,10 +222,16 @@ export default function ClientCasePaymentsPage() {
         )}
 
         {feedback && !confirmingPayment && (
-          <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+          <div
+            className={`rounded-xl border px-4 py-3 text-sm ${
+              feedback.tone === "success"
+                ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                : "border-sky-200 bg-sky-50 text-sky-800"
+            }`}
+          >
             <div className="flex items-start gap-2">
               <CreditCard className="mt-0.5 h-4 w-4 shrink-0" />
-              <span>{feedback}</span>
+              <span>{feedback.text}</span>
             </div>
           </div>
         )}
@@ -298,7 +303,7 @@ export default function ClientCasePaymentsPage() {
                 status: txn.status === "success" ? "success" : "failed",
                 createdAt: txn.createdAt,
                 method: "card",
-                provider: "stripe",
+                provider: "safepay",
                 caseId: activeCaseId || "",
                 planId: snapshot.agreement.id,
               }))}
@@ -318,7 +323,7 @@ export default function ClientCasePaymentsPage() {
                 installmentId: r.installmentId,
                 amount: r.amount,
                 issuedAt: r.issuedAt,
-                method: "stripe",
+                method: "safepay",
                 caseId: activeCaseId || "",
                 planId: snapshot.agreement.id,
               }))}
