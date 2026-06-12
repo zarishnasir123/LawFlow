@@ -216,7 +216,7 @@ export default function LawyerCasePaymentPlanPage() {
                   status: txn.status === "success" ? "success" : "failed",
                   createdAt: txn.createdAt,
                   method: "card" as const,
-                  provider: "stripe" as const,
+                  provider: "safepay" as const,
                   caseId: selectedCaseId!,
                   planId: snapshot.agreement.id,
                 })
@@ -238,7 +238,7 @@ export default function LawyerCasePaymentPlanPage() {
                   installmentId: r.installmentId,
                   amount: r.amount,
                   issuedAt: r.issuedAt,
-                  method: "stripe" as const,
+                  method: "safepay" as const,
                   caseId: selectedCaseId!,
                   planId: snapshot.agreement.id,
                 })

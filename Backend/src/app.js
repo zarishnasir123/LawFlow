@@ -10,9 +10,7 @@ import lawyersRoutes from "./modules/lawyers/lawyer.routes.js";
 import registrarRoutes from "./modules/registrar/registrar.routes.js";
 import paymentRoutes from "./modules/payments/serviceCharges.routes.js";
 import agreementRoutes from "./modules/payments/agreements.routes.js";
-import stripeRoutes from "./modules/payments/stripe.routes.js";
-import { handleStripeWebhook } from "./modules/payments/stripe.controller.js";
-import { asyncHandler } from "./middleware/asyncHandler.js";
+import paymentGatewayRoutes from "./modules/payments/payments.routes.js";
 import {
   caseSignatureRoutes,
   mySignatureRoutes,
@@ -46,18 +44,13 @@ app.use(cors({
   },
   credentials: true,
   methods: ["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization", "X-Webhook-Secret", "stripe-signature"]
+  allowedHeaders: ["Content-Type", "Authorization", "X-Webhook-Secret", "x-sfpy-signature"]
 }));
-
-// Stripe webhook must be processed with raw body before json parser
-app.post(
-  "/api/payments/webhook",
-  express.raw({ type: "application/json" }),
-  asyncHandler(handleStripeWebhook)
-);
 
 // 50 MB cap for large file uploads (signatures, etc.)
 app.use(express.json({ limit: "50mb" }));
+// Parse form posts too — Safepay's signed redirect returns as urlencoded.
+app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 app.use(cookieParser());
 app.use(hpp());
 
@@ -70,8 +63,8 @@ app.use("/api/cases", casesRoutes);
 app.use("/api/lawyers", lawyersRoutes);
 app.use("/api/payments", paymentRoutes);
 app.use("/api/payments", agreementRoutes);
-// Handle checkout session (not webhook)
-app.use("/api/payments", stripeRoutes);
+// Safepay payment gateway: checkout creation, signed return/cancel, webhook.
+app.use("/api/payments", paymentGatewayRoutes);
 
 app.use("/api/cases/:caseId", caseSignatureRoutes);
 app.use("/api/me", mySignatureRoutes);

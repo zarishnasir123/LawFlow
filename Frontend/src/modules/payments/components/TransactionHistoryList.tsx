@@ -19,6 +19,7 @@ export default function TransactionHistoryList({
       .join(" ");
 
   const formatProvider = (provider?: PaymentTransaction["provider"]): string => {
+    if (provider === "safepay") return "Safepay";
     if (provider === "stripe") return "Stripe";
     return "Manual";
   };

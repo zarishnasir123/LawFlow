@@ -595,7 +595,9 @@ CREATE TABLE installments (
   status VARCHAR(30) NOT NULL DEFAULT 'pending'
     CHECK (status IN ('pending', 'paid', 'overdue', 'cancelled')),
   paid_at TIMESTAMP,
-  stripe_checkout_session_id VARCHAR(255),
+  -- Safepay checkout tracker/beacon for the in-flight payment attempt on this
+  -- installment. Provider-neutral name so the column survives a gateway change.
+  gateway_checkout_token VARCHAR(255),
 
   created_at TIMESTAMP NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMP NOT NULL DEFAULT NOW()
@@ -614,16 +616,18 @@ CREATE TABLE payment_transactions (
   status VARCHAR(30) NOT NULL DEFAULT 'pending'
     CHECK (status IN ('pending', 'success', 'failed', 'cancelled')),
 
-  stripe_checkout_session_id VARCHAR(255),
-  stripe_payment_intent_id VARCHAR(255),
+  -- Payment-gateway identifiers (provider-neutral). gateway_checkout_token is
+  -- the Safepay tracker/beacon, used as the idempotency key (UNIQUE). gateway
+  -- names the provider; gateway_reference holds any secondary provider ref.
+  gateway VARCHAR(20) NOT NULL DEFAULT 'safepay',
+  gateway_checkout_token VARCHAR(255),
+  gateway_reference VARCHAR(255),
 
   created_at TIMESTAMP NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
 
-  CONSTRAINT uq_payment_txn_checkout_session
-    UNIQUE (stripe_checkout_session_id),
-  CONSTRAINT uq_payment_txn_payment_intent
-    UNIQUE (stripe_payment_intent_id)
+  CONSTRAINT uq_payment_txn_gateway_token
+    UNIQUE (gateway_checkout_token)
 );
 
 CREATE TABLE payment_receipts (

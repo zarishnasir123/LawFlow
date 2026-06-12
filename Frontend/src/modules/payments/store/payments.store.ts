@@ -325,7 +325,10 @@ export const usePaymentsStore = create<PaymentsState>()(
         const timestamp = nowIso();
         const normalizedAmount = normalizeMoney(input.amount);
         const provider: PaymentProvider =
-          input.provider || (input.method === "stripe" ? "stripe" : "manual");
+          input.provider ||
+          (input.method === "safepay" || input.method === "stripe"
+            ? "safepay"
+            : "manual");
         const installmentPaidAmount = normalizeMoney(
           installment.paidAmount + normalizedAmount
         );

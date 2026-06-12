@@ -7,6 +7,7 @@ import {
   Sparkles,
   CreditCard,
   Briefcase,
+  Wallet,
 } from "lucide-react";
 import type {
   ActivityItem,
@@ -92,6 +93,12 @@ export const lawyerDashboardQuickActions: QuickActionItem[] = [
     icon: DollarSign,
     className: "bg-[#01411C] hover:bg-[#024a23]",
     to: "/lawyer-case-payments",
+  },
+  {
+    label: "Payments Received",
+    icon: Wallet,
+    className: "bg-[#01411C] hover:bg-[#024a23]",
+    to: "/lawyer-earnings",
   },
 ];
 

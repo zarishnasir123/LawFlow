@@ -11,8 +11,9 @@ function mapTransaction(row) {
     amount: parseFloat(row.amount),
     currency: row.currency,
     status: row.status,
-    stripeCheckoutSessionId: row.stripe_checkout_session_id,
-    stripePaymentIntentId: row.stripe_payment_intent_id,
+    gateway: row.gateway,
+    gatewayCheckoutToken: row.gateway_checkout_token,
+    gatewayReference: row.gateway_reference,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     caseTitle: row.case_title,
@@ -145,4 +146,66 @@ export async function generateReceiptNumber(client) {
   const seq = result.rows[0].count + 1;
   const year = new Date().getFullYear();
   return `LF-RCP-${year}-${String(seq).padStart(6, "0")}`;
+}
+
+// Lawyer "Payments Received" view: the money clients have actually paid this
+// lawyer, built from successful transactions. This is how "the money goes to
+// the lawyer" is represented in-system (real bank settlement is out of scope).
+export async function listLawyerEarnings(lawyerUserId) {
+  const totals = await pool.query(
+    `SELECT COALESCE(SUM(amount), 0)::float AS total_received,
+            COUNT(*)::int AS payments_count
+     FROM payment_transactions
+     WHERE lawyer_user_id = $1 AND status = 'success'`,
+    [lawyerUserId]
+  );
+
+  const byCase = await pool.query(
+    `SELECT
+       pt.case_id,
+       c.title AS case_title,
+       CONCAT(cu.first_name, ' ', cu.last_name) AS client_name,
+       SUM(pt.amount)::float AS total_received,
+       COUNT(*)::int AS payments_count,
+       MAX(pt.created_at) AS last_payment_at
+     FROM payment_transactions pt
+     INNER JOIN cases c ON c.id = pt.case_id
+     INNER JOIN users cu ON cu.id = pt.client_user_id
+     WHERE pt.lawyer_user_id = $1 AND pt.status = 'success'
+     GROUP BY pt.case_id, c.title, cu.first_name, cu.last_name
+     ORDER BY last_payment_at DESC`,
+    [lawyerUserId]
+  );
+
+  const recent = await pool.query(
+    `SELECT
+       pt.*,
+       c.title AS case_title,
+       CONCAT(cu.first_name, ' ', cu.last_name) AS client_name,
+       CONCAT(lu.first_name, ' ', lu.last_name) AS lawyer_name,
+       i.installment_number
+     FROM payment_transactions pt
+     INNER JOIN cases c ON c.id = pt.case_id
+     INNER JOIN users cu ON cu.id = pt.client_user_id
+     INNER JOIN users lu ON lu.id = pt.lawyer_user_id
+     INNER JOIN installments i ON i.id = pt.installment_id
+     WHERE pt.lawyer_user_id = $1 AND pt.status = 'success'
+     ORDER BY pt.created_at DESC
+     LIMIT 10`,
+    [lawyerUserId]
+  );
+
+  return {
+    totalReceived: totals.rows[0].total_received,
+    paymentsCount: totals.rows[0].payments_count,
+    byCase: byCase.rows.map((r) => ({
+      caseId: r.case_id,
+      caseTitle: r.case_title,
+      clientName: r.client_name,
+      totalReceived: parseFloat(r.total_received),
+      paymentsCount: r.payments_count,
+      lastPaymentAt: r.last_payment_at,
+    })),
+    recent: recent.rows.map(mapTransaction),
+  };
 }
