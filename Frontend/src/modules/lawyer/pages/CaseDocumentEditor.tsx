@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { type JSONContent } from "@tiptap/react";
-import { useParams } from "@tanstack/react-router";
+import { useParams, useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Document, Page, pdfjs } from "react-pdf";
 import LawyerLayout from "../components/LawyerLayout";
@@ -54,6 +54,7 @@ function readPersistedAutoSave(): boolean {
 export default function CaseDocumentEditor() {
   const { caseId } = useParams({ strict: false }) as { caseId?: string }; // Retrieve generic params
   const effectiveCaseId = caseId || "default-case";
+  const navigate = useNavigate();
 
   const {
     currentDocId,
@@ -794,6 +795,24 @@ export default function CaseDocumentEditor() {
     setPdfReady(false);
   }, [selectedAttachmentId]);
 
+  // Submit/resubmit straight from the editor: save the latest edits, then go to
+  // the submission page. Only a real, still-editable case (draft or returned)
+  // can be submitted; submitted/accepted cases are locked, so the button hides.
+  const canSubmitFromEditor =
+    effectiveCaseId !== "default-case" &&
+    (caseRecord?.status === "draft" || caseRecord?.status === "returned");
+
+  const handleSubmitToRegistrar = async () => {
+    if (!canSubmitFromEditor) return;
+    try {
+      await handleSaveDraft();
+    } catch {
+      // A save hiccup shouldn't trap the lawyer in the editor — the submission
+      // page re-validates (tehsil + signed PDF) before it lets them submit.
+    }
+    navigate({ to: `/lawyer-submit-case/${effectiveCaseId}` });
+  };
+
   return (
     <LawyerLayout
       brandTitle="LawFlow"
@@ -814,6 +833,8 @@ export default function CaseDocumentEditor() {
           onRequestSignatures={() => setIsSignaturePanelOpen(true)}
           signaturePendingCount={signaturePendingCount}
           onAddAttachment={handleAddAttachment}
+          onSubmitCase={canSubmitFromEditor ? handleSubmitToRegistrar : undefined}
+          submitLabel={caseRecord?.status === "returned" ? "Resubmit" : "Submit"}
         />
 
         <div className="flex flex-1 overflow-hidden">

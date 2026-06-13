@@ -322,6 +322,25 @@ export async function getUserAvatarSignedUrl(storagePath, expiresInSeconds = 360
   return data.signedUrl;
 }
 
+// Delete a compiled signed-PDF object from the case-signed-pdfs bucket.
+// Best-effort + idempotent — a missing object is reported by Supabase as
+// data-only (not an error), and we swallow real errors too. Used by the
+// lawyer hard-delete-case flow to sweep the case's final artifact after
+// the DB row (and its cascades) are gone. Leaving an orphan object behind
+// is a far better failure mode than blocking / failing the delete.
+export async function deleteSignedCasePdf(storagePath) {
+  if (!storagePath) return;
+
+  const supabase = getSupabaseClient();
+  if (!supabase) return; // best-effort: skip when Supabase isn't wired up
+
+  const config = getSupabaseStorageConfig();
+  await supabase.storage
+    .from(config.casePdfBucket)
+    .remove([storagePath])
+    .catch(() => {});
+}
+
 export async function getSignedCasePdfDownloadUrl({
   storagePath,
   expiresInSeconds

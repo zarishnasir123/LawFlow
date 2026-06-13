@@ -26,6 +26,9 @@ interface TopActionBarProps {
     onDownload: () => void;
     onAddAttachment: () => void;
     onSubmitCase?: () => void;
+    // Label for the submit button — "Submit" for a draft, "Resubmit" for a
+    // returned case being sent back after corrections.
+    submitLabel?: string;
     onRequestSignatures?: () => void;
     signaturePendingCount?: number;
     onToggleSidebar?: () => void;
@@ -42,6 +45,7 @@ interface TopActionBarProps {
 
 export default function TopActionBar({
     onSubmitCase,
+    submitLabel = "Submit",
     onRequestSignatures,
     signaturePendingCount,
     onToggleSidebar,
@@ -151,10 +155,12 @@ export default function TopActionBar({
                         <button
                             onClick={onSubmitCase}
                             className="inline-flex items-center gap-1.5 h-9 px-4 bg-[var(--primary)] text-white rounded-full hover:bg-[#024a23] transition-colors text-[13px] font-semibold"
-                            title="Submit case to registrar"
+                            title={submitLabel === "Resubmit"
+                                ? "Resubmit the corrected case to the registrar"
+                                : "Submit case to registrar"}
                         >
                             <UploadCloud className="w-4 h-4" />
-                            <span>Submit</span>
+                            <span>{submitLabel}</span>
                         </button>
                     )}
                 </div>

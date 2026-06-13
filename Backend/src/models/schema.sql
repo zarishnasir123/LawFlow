@@ -14,6 +14,7 @@ CREATE EXTENSION IF NOT EXISTS "citext";
 -- =====================================================================
 -- Drop in reverse dependency order. CASCADE removes dependent objects.
 -- =====================================================================
+DROP TABLE IF EXISTS notifications                  CASCADE;
 DROP TABLE IF EXISTS payment_receipts               CASCADE;
 DROP TABLE IF EXISTS payment_transactions           CASCADE;
 DROP TABLE IF EXISTS installments                   CASCADE;
@@ -425,6 +426,19 @@ CREATE TABLE cases (
   signed_pdf_storage_path  TEXT,
   signed_pdf_generated_at  TIMESTAMP,
 
+  -- Jurisdiction the lawyer picks at case creation. Routes the case to the
+  -- registrar whose registrar_profiles.assigned_tehsil matches (case-insensitive
+  -- equality). Must be populated before the case can be submitted for review.
+  assigned_tehsil VARCHAR(100),
+
+  -- Registrar review trail. review_remarks holds the registrar's reason when a
+  -- case is bounced back (status='returned'); reviewed_at / reviewed_by_registrar_id
+  -- stamp who actioned the most recent approve/return. reviewed_by_registrar_id
+  -- nulls out if the registrar account is later deleted.
+  review_remarks  TEXT,
+  reviewed_at     TIMESTAMP,
+  reviewed_by_registrar_id UUID REFERENCES users(id) ON DELETE SET NULL,
+
   -- draft = lawyer is still drafting / editing
   -- submitted = sent to registrar, awaiting review
   -- returned = registrar bounced it back with remarks
@@ -469,6 +483,35 @@ CREATE TABLE case_attachments (
 
 -- Index on case_id since every listing call filters by it.
 CREATE INDEX idx_case_attachments_case_id ON case_attachments(case_id);
+
+-- =====================================================================
+-- In-app notifications: one row per delivered notification to a single
+-- recipient (user_id). Created best-effort by other modules — e.g. the
+-- registrar review flow inserts a row for the case lawyer when a case is
+-- accepted or returned. Every read/write is scoped to the recipient's
+-- user_id so a user only ever sees / marks their OWN rows. case_id is a
+-- nullable back-reference to the related case (NULL for non-case-bound
+-- notifications); it cascades so deleting a case clears its notifications.
+-- =====================================================================
+CREATE TABLE notifications (
+  id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id    UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+
+  type       VARCHAR(50)  NOT NULL,
+  title      VARCHAR(200) NOT NULL,
+  message    TEXT         NOT NULL,
+
+  case_id    UUID REFERENCES cases(id) ON DELETE CASCADE,
+
+  is_read    BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+-- The bell/list query is "my notifications, newest first" with the unread
+-- count derived from the same rows; this composite covers both the scope
+-- (user_id), the unread filter (is_read), and the ordering (created_at DESC).
+CREATE INDEX idx_notifications_user_unread
+  ON notifications (user_id, is_read, created_at DESC);
 
 -- =====================================================================
 -- Signature requests: ONE row PER SIGNER per "Send for signature" action.
@@ -700,6 +743,8 @@ CREATE INDEX idx_case_types_category ON case_types(category, sort_order);
 CREATE INDEX idx_cases_lawyer_user_id ON cases(lawyer_user_id);
 CREATE INDEX idx_cases_client_user_id ON cases(client_user_id);
 CREATE INDEX idx_cases_status         ON cases(status);
+-- Registrar review queue: cases for a given tehsil filtered by status.
+CREATE INDEX idx_cases_status_tehsil  ON cases(status, assigned_tehsil);
 
 -- Lawyer's editor lists per-case + groups by batch.
 CREATE INDEX idx_signature_requests_case_id ON signature_requests(case_id);
@@ -776,6 +821,7 @@ ALTER TABLE payment_plans                  ENABLE ROW LEVEL SECURITY;
 ALTER TABLE installments                   ENABLE ROW LEVEL SECURITY;
 ALTER TABLE payment_transactions           ENABLE ROW LEVEL SECURITY;
 ALTER TABLE payment_receipts               ENABLE ROW LEVEL SECURITY;
+ALTER TABLE notifications                  ENABLE ROW LEVEL SECURITY;
 
 -- =====================================================================
 -- Seed data: supported case types (5 civil + 5 family at tehsil level).

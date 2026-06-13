@@ -1,5 +1,7 @@
 import { body, param } from "express-validator";
 
+import { isSupportedTehsil } from "../../utils/location.js";
+
 function getField(payload, ...names) {
   for (const name of names) {
     if (payload[name] !== undefined) {
@@ -65,6 +67,17 @@ export const createCaseValidator = [
   optionalStringField(["clientEmail"], "Client email", { max: 200 }),
   optionalStringField(["clientPhone"], "Client phone", { max: 30 }),
   requireStringField(["oppositePartyName"], "Opposite party name", { max: 200 }),
+  // Jurisdiction the case is routed to. Optional at creation, but if present it
+  // must be one of the deployment's supported tehsils. isSupportedTehsil()
+  // treats empty/absent as valid, so an unset value passes and is stored as NULL.
+  body("assignedTehsil")
+    .optional({ nullable: true })
+    .custom((value) => {
+      if (!isSupportedTehsil(value)) {
+        throw new Error("Selected court/tehsil is not supported");
+      }
+      return true;
+    }),
   // Optional payment fields
   body("clientUserId")
     .optional()
@@ -104,7 +117,18 @@ export const updateCaseValidator = [
   optionalStringField(["clientName"], "Client name", { max: 200 }),
   optionalStringField(["clientEmail"], "Client email", { max: 200 }),
   optionalStringField(["clientPhone"], "Client phone", { max: 30 }),
-  optionalStringField(["oppositePartyName"], "Opposite party name", { max: 200 })
+  optionalStringField(["oppositePartyName"], "Opposite party name", { max: 200 }),
+  // Jurisdiction may be set/changed on an editable case (e.g. to assign a
+  // tehsil to an older case before submitting). Optional, but if present must
+  // be a supported tehsil. isSupportedTehsil() treats empty/absent as valid.
+  body("assignedTehsil")
+    .optional({ nullable: true })
+    .custom((value) => {
+      if (!isSupportedTehsil(value)) {
+        throw new Error("Selected court/tehsil is not supported");
+      }
+      return true;
+    })
 ];
 
 // Attachment endpoints — caseId comes from the URL on all three;

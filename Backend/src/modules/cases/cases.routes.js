@@ -8,6 +8,7 @@ import { validateRequest } from "../../middleware/validateRequest.js";
 
 import {
   createMyCase,
+  deleteMyCase,
   downloadCaseTemplate,
   getCaseAttachments,
   getCaseTypes,
@@ -16,7 +17,8 @@ import {
   listMySignedCases,
   patchMyCase,
   postCaseAttachment,
-  removeCaseAttachment
+  removeCaseAttachment,
+  submitMyCase
 } from "./cases.controller.js";
 import {
   attachmentIdParamValidator,
@@ -88,6 +90,32 @@ router.patch(
   updateCaseValidator,
   validateRequest,
   asyncHandler(patchMyCase)
+);
+
+// Hard-delete a case the lawyer owns. Lawyer-only + ownership enforced in SQL
+// (404 if not found / not owned). Permanent removal: FK cascades clear
+// dependents (attachments, signature requests, notifications, agreements,
+// payments), a RESTRICT FK surfaces as a clean 409, and the case's storage
+// objects are swept best-effort. Allowed at any status. No body.
+router.delete(
+  "/:caseId",
+  authenticate,
+  authorizeRoles("lawyer"),
+  caseIdParamValidator,
+  validateRequest,
+  asyncHandler(deleteMyCase)
+);
+
+// Submit a case to the registrar for review. Ownership + the status guard
+// ('draft'/'returned') and the tehsil/signed-PDF prerequisites are enforced
+// in the service. No body — the case id in the URL is all we need.
+router.post(
+  "/:caseId/submit",
+  authenticate,
+  authorizeRoles("lawyer"),
+  caseIdParamValidator,
+  validateRequest,
+  asyncHandler(submitMyCase)
 );
 
 // =====================================================================

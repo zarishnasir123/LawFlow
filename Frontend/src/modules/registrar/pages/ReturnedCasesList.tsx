@@ -1,30 +1,31 @@
-import { CheckCircle2 } from "lucide-react";
+import { Undo2 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import RegistrarLayout from "../components/RegistrarLayout";
 import Card from "../../../shared/components/dashboard/Card";
 import { getCaseDisplayTitle } from "../../../shared/utils/caseDisplay";
 import { listCases } from "../api";
 
-export default function ApprovedCases() {
+export default function ReturnedCasesList() {
   const {
-    data: acceptedCases = [],
+    data: returnedCases = [],
     isLoading,
     isError,
   } = useQuery({
-    queryKey: ["registrar", "cases", "accepted"],
-    queryFn: () => listCases("accepted"),
+    queryKey: ["registrar", "cases", "returned"],
+    queryFn: () => listCases("returned"),
   });
 
   return (
-    <RegistrarLayout pageSubtitle="Approved Cases">
+    <RegistrarLayout pageSubtitle="Returned Cases">
       <Card className="overflow-hidden p-0">
-        <div className="border-b border-emerald-100 bg-emerald-50 px-5 py-4">
-          <h3 className="inline-flex items-center gap-2 text-base font-semibold text-emerald-900">
-            <CheckCircle2 className="h-5 w-5 text-emerald-700" />
-            Approved Cases
+        <div className="border-b border-rose-100 bg-rose-50 px-5 py-4">
+          <h3 className="inline-flex items-center gap-2 text-base font-semibold text-rose-900">
+            <Undo2 className="h-5 w-5 text-rose-700" />
+            Returned Cases
           </h3>
-          <p className="mt-1 text-sm text-emerald-700">
-            Cases you have accepted, most recent decision first.
+          <p className="mt-1 text-sm text-rose-700">
+            Cases you have returned to the lawyer for corrections, most recent
+            decision first.
           </p>
         </div>
 
@@ -42,7 +43,7 @@ export default function ApprovedCases() {
                   Lawyer
                 </th>
                 <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
-                  Accepted
+                  Returned
                 </th>
                 <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
                   Status
@@ -50,8 +51,8 @@ export default function ApprovedCases() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {acceptedCases.map((caseItem) => (
-                <tr key={caseItem.id} className="hover:bg-emerald-50/40">
+              {returnedCases.map((caseItem) => (
+                <tr key={caseItem.id} className="hover:bg-rose-50/40">
                   <td className="px-5 py-4">
                     <p className="font-semibold text-gray-900">
                       {getCaseDisplayTitle(caseItem.title, caseItem.id)}
@@ -72,8 +73,8 @@ export default function ApprovedCases() {
                       : "—"}
                   </td>
                   <td className="px-5 py-4">
-                    <span className="inline-flex rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-700">
-                      Accepted
+                    <span className="inline-flex rounded-full bg-rose-100 px-2.5 py-1 text-xs font-semibold text-rose-700">
+                      Returned
                     </span>
                   </td>
                 </tr>
@@ -83,19 +84,19 @@ export default function ApprovedCases() {
 
           {isLoading && (
             <p className="py-8 text-center text-sm text-gray-500">
-              Loading approved cases…
+              Loading returned cases…
             </p>
           )}
 
           {isError && (
             <p className="py-8 text-center text-sm text-rose-600">
-              Could not load approved cases. Please try again.
+              Could not load returned cases. Please try again.
             </p>
           )}
 
-          {!isLoading && !isError && acceptedCases.length === 0 && (
+          {!isLoading && !isError && returnedCases.length === 0 && (
             <p className="py-8 text-center text-sm text-gray-500">
-              No approved cases yet.
+              No returned cases yet.
             </p>
           )}
         </div>

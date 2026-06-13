@@ -12,10 +12,13 @@ import {
   Loader2,
   Plus,
   Pencil,
+  Trash2,
 } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import LawyerLayout from "../components/LawyerLayout";
+import DeleteCaseModal from "../components/modals/DeleteCaseModal";
 import {
   casesApi,
   getCasesErrorMessage,
@@ -86,31 +89,64 @@ function formatDate(iso: string | null | undefined) {
 
 export default function LawyerCases() {
   const navigate = useNavigate();
-  const [cases, setCases] = useState<ApiCase[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState("");
   const [filterStatus, setFilterStatus] = useState<StatusFilter>("all");
 
+  // The case currently targeted by the delete-confirmation modal. null means
+  // the modal is closed. Holding the whole case (not just its id) lets the
+  // modal show the title in its warning copy.
+  const [caseToDelete, setCaseToDelete] = useState<ApiCase | null>(null);
+  // Inline success toast after a delete, mirroring the toast pattern used in
+  // the document editor (no global toaster exists in this app).
+  const [toast, setToast] = useState<string | null>(null);
+
+  // Server state lives in TanStack Query (per Frontend-AGENTS.md) so the submit
+  // mutation on the submission page can invalidate ["lawyer", "cases"] and this
+  // list refreshes — a resubmitted case flips returned -> submitted here without
+  // a manual reload.
+  const {
+    data: cases = [],
+    isLoading: loading,
+    error: queryError,
+  } = useQuery({
+    queryKey: ["lawyer", "cases"],
+    queryFn: casesApi.listMyCases,
+  });
+  const error = queryError ? getCasesErrorMessage(queryError) : null;
+
+  // Hard-delete mutation. On success we invalidate the list (so the deleted
+  // card disappears), close the modal, and raise a success toast. On error we
+  // keep the modal open and surface the backend message (incl. the 409 for
+  // cases with linked records) via deleteMutation.error below.
+  const deleteMutation = useMutation({
+    mutationFn: (caseId: string) => casesApi.deleteCase(caseId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["lawyer", "cases"] });
+      setCaseToDelete(null);
+      setToast("Case deleted permanently.");
+    },
+  });
+
+  // Auto-dismiss the success toast after 4s so it doesn't loiter.
   useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
-    casesApi
-      .listMyCases()
-      .then((rows) => {
-        if (!cancelled) setCases(rows);
-      })
-      .catch((err) => {
-        if (!cancelled) setError(getCasesErrorMessage(err));
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    if (!toast) return;
+    const t = window.setTimeout(() => setToast(null), 4000);
+    return () => window.clearTimeout(t);
+  }, [toast]);
+
+  // Clear any stale mutation error whenever the modal target changes, so a
+  // previous failure doesn't flash when the lawyer opens the modal for a
+  // different case.
+  const openDeleteModal = (target: ApiCase) => {
+    deleteMutation.reset();
+    setCaseToDelete(target);
+  };
+  const closeDeleteModal = () => {
+    if (deleteMutation.isPending) return;
+    deleteMutation.reset();
+    setCaseToDelete(null);
+  };
 
   const filteredCases = useMemo(() => {
     const q = searchTerm.trim().toLowerCase();
@@ -301,6 +337,30 @@ export default function LawyerCases() {
                         </p>
                       ) : null}
 
+                      {/* Registrar return reason — the lawyer must read this and
+                          fix the case before resubmitting via the Submit button. */}
+                      {c.status === "returned" && (
+                        <div className="mt-3 rounded-lg border-l-4 border-red-500 bg-red-50 px-3 py-2">
+                          <div className="flex items-start gap-2">
+                            <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0 text-red-600" />
+                            <div>
+                              <p className="text-xs font-semibold text-red-900">
+                                Returned by registrar — reason for return
+                              </p>
+                              <p className="mt-0.5 text-sm text-red-800">
+                                {c.reviewRemarks?.trim() ||
+                                  "No written reason was provided. Contact the registrar for details."}
+                              </p>
+                              {c.reviewedAt ? (
+                                <p className="mt-1 text-[11px] text-red-700">
+                                  Returned {formatDate(c.reviewedAt)}
+                                </p>
+                              ) : null}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
                       <div className="mt-3 grid gap-2 text-xs text-gray-600 sm:grid-cols-2 lg:grid-cols-3">
                         <span className="inline-flex items-center gap-1.5">
                           <Users className="h-3.5 w-3.5 text-gray-400" />
@@ -343,17 +403,30 @@ export default function LawyerCases() {
                         className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-semibold text-white hover:bg-[#024a23]"
                       >
                         <FileText className="h-4 w-4" />
-                        Open Editor
+                        {c.status === "returned" ? "Fix & Resubmit" : "Open Editor"}
                       </button>
-                      <button
-                        type="button"
-                        onClick={() =>
+
+                      {/* Submit affordance gated by status:
+                          - draft -> active "Submit" (to the submission page)
+                          - returned -> nothing here; the "Fix & Resubmit"
+                            button above opens the editor, where the lawyer
+                            corrects the document and resubmits from the
+                            editor's own Submit button
+                          - submitted/accepted -> muted status indicator. */}
+                      <SubmitAffordance
+                        status={c.status}
+                        onSubmit={() =>
                           navigate({ to: `/lawyer-submit-case/${c.id}` })
                         }
-                        className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700"
+                      />
+
+                      <button
+                        type="button"
+                        onClick={() => openDeleteModal(c)}
+                        className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-red-200 px-4 py-2 text-sm font-medium text-red-600 hover:border-red-300 hover:bg-red-50"
                       >
-                        <UploadCloud className="h-4 w-4" />
-                        Submit
+                        <Trash2 className="h-4 w-4" />
+                        Delete
                       </button>
                     </div>
                   </div>
@@ -363,7 +436,88 @@ export default function LawyerCases() {
           </ul>
         )}
       </div>
+
+      {/* Hard-delete confirmation. Typed-DELETE gate lives in the modal; the
+          page owns the mutation, the open/closed state, and the error surface
+          (deleteMutation.error covers the backend 409 for linked records).
+          Mounted only while a case is targeted so the confirm input resets
+          on every open. */}
+      {caseToDelete && (
+        <DeleteCaseModal
+          caseTitle={caseToDelete.title}
+          isLoading={deleteMutation.isPending}
+          errorMessage={
+            deleteMutation.error
+              ? getCasesErrorMessage(deleteMutation.error)
+              : null
+          }
+          onClose={closeDeleteModal}
+          onConfirm={() => deleteMutation.mutate(caseToDelete.id)}
+        />
+      )}
+
+      {/* Inline success toast (no global toaster in this app). */}
+      {toast && (
+        <button
+          type="button"
+          onClick={() => setToast(null)}
+          className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 inline-flex items-center gap-2 rounded-lg bg-gray-900 px-4 py-2.5 text-sm font-medium text-white shadow-lg"
+        >
+          <CheckCircle className="h-4 w-4 text-emerald-400" />
+          {toast}
+        </button>
+      )}
     </LawyerLayout>
+  );
+}
+
+// Submit affordance gated by case status. A draft gets an active "Submit"
+// button to the submission page. A returned case renders nothing here — its
+// "Fix & Resubmit" button (next to it) opens the editor, and resubmission
+// happens from the editor's own Submit button. Submitted/accepted cases get a
+// muted, non-interactive chip — there is no active submit for a case already
+// with (or cleared by) the registrar.
+function SubmitAffordance({
+  status,
+  onSubmit,
+}: {
+  status: CaseStatus;
+  onSubmit: () => void;
+}) {
+  if (status === "draft") {
+    return (
+      <button
+        type="button"
+        onClick={onSubmit}
+        className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700"
+      >
+        <UploadCloud className="h-4 w-4" />
+        Submit
+      </button>
+    );
+  }
+
+  // returned -> no separate affordance; "Fix & Resubmit" (the editor button
+  // above) is the single entry point, and the editor's own Submit handles
+  // resubmission.
+  if (status === "returned") {
+    return null;
+  }
+
+  // submitted | accepted -> muted indicator, no active submit.
+  const isAccepted = status === "accepted";
+  return (
+    <span
+      aria-disabled="true"
+      className="inline-flex w-full cursor-default items-center justify-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-4 py-2 text-sm font-medium text-gray-400"
+    >
+      {isAccepted ? (
+        <CheckCircle className="h-4 w-4" />
+      ) : (
+        <Clock className="h-4 w-4" />
+      )}
+      {isAccepted ? "Accepted" : "Submitted"}
+    </span>
   );
 }
 

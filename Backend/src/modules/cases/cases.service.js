@@ -4,8 +4,10 @@ import { promises as fs } from "node:fs";
 
 import { pool } from "../../config/db.js";
 import { ApiError } from "../../utils/apiError.js";
+import { isSupportedTehsil } from "../../utils/location.js";
 import {
   deleteCaseAttachment as deleteCaseAttachmentObject,
+  deleteSignedCasePdf,
   getCaseAttachmentSignedUrl,
   uploadCaseAttachment as uploadCaseAttachmentObject,
 } from "../../services/storage.service.js";
@@ -55,6 +57,11 @@ function mapCase(row) {
     // signed URL minted on demand.
     signedPdfStoragePath: row.signed_pdf_storage_path,
     signedPdfGeneratedAt: row.signed_pdf_generated_at,
+    // Jurisdiction the case is routed to + the registrar review trail.
+    assignedTehsil: row.assigned_tehsil,
+    reviewRemarks: row.review_remarks,
+    reviewedAt: row.reviewed_at,
+    reviewedByRegistrarId: row.reviewed_by_registrar_id,
     status: row.status,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -79,6 +86,60 @@ async function findCaseTypeById(caseTypeId) {
   );
 
   return result.rows[0] || null;
+}
+
+// Resolve which registered CLIENT account (if any) this case should be linked
+// to, so the client can later see it on their read-only "My Cases" view.
+//
+// Resolution order (per the client-linking contract):
+//   1. If the caller already supplied a clientUserId, trust it — but only after
+//      confirming the id belongs to a user whose role is 'client'. This stops a
+//      lawyer from accidentally (or maliciously) linking a case to a lawyer /
+//      registrar / admin account.
+//   2. Otherwise, look the client up by email: a registered user with role
+//      'client' whose email matches case-insensitively. users.email is CITEXT
+//      so equality is already case-insensitive, but we LOWER() both sides
+//      explicitly to keep the intent obvious and robust to a column-type change.
+//   3. If neither yields a match, return null. The case still captures the
+//      client by free-text name/email/phone — it simply isn't linked to a
+//      LawFlow account.
+//
+// Never throws: an unresolved client is a normal, supported outcome, not an
+// error. Parameterised SQL throughout.
+async function resolveClientUserId({ clientUserId, clientEmail }) {
+  if (clientUserId) {
+    const byId = await pool.query(
+      `SELECT users.id
+       FROM users
+       JOIN roles ON roles.id = users.role_id
+       WHERE users.id = $1 AND roles.name = 'client'
+       LIMIT 1`,
+      [clientUserId]
+    );
+
+    if (byId.rowCount > 0) {
+      return byId.rows[0].id;
+    }
+    // Provided id was not a valid client — fall through and try the email so a
+    // bad/foreign id doesn't silently block an otherwise-resolvable link.
+  }
+
+  if (clientEmail) {
+    const byEmail = await pool.query(
+      `SELECT users.id
+       FROM users
+       JOIN roles ON roles.id = users.role_id
+       WHERE LOWER(users.email::text) = LOWER($1) AND roles.name = 'client'
+       LIMIT 1`,
+      [clientEmail]
+    );
+
+    if (byEmail.rowCount > 0) {
+      return byEmail.rows[0].id;
+    }
+  }
+
+  return null;
 }
 
 // Resolve a case-template .docx for a given case_types.code.
@@ -152,6 +213,10 @@ function selectCaseWithType() {
     cases.edited_html,
     cases.signed_pdf_storage_path,
     cases.signed_pdf_generated_at,
+    cases.assigned_tehsil,
+    cases.review_remarks,
+    cases.reviewed_at,
+    cases.reviewed_by_registrar_id,
     cases.status,
     cases.created_at,
     cases.updated_at,
@@ -168,12 +233,31 @@ export async function createCase({
   clientName,
   clientEmail,
   clientPhone,
-  oppositePartyName
+  clientUserId,
+  oppositePartyName,
+  assignedTehsil
 }) {
   const caseType = await findCaseTypeById(caseTypeId);
   if (!caseType) {
     throw new ApiError(400, "Selected case type does not exist");
   }
+
+  // Defence in depth: the validator already rejected an unsupported tehsil,
+  // but re-check here so a future caller that bypasses the validator can't
+  // route a case to a jurisdiction with no registrar. Absent/empty is fine —
+  // the lawyer can pick it later, before submitting.
+  if (assignedTehsil && !isSupportedTehsil(assignedTehsil)) {
+    throw new ApiError(400, "Selected court/tehsil is not supported");
+  }
+
+  // Link the case to a registered client account when we can: prefer an
+  // explicitly-provided clientUserId, else resolve the client by email. NULL
+  // when neither matches — the free-text client_* columns below still capture
+  // an unregistered client, so linking is purely additive.
+  const resolvedClientUserId = await resolveClientUserId({
+    clientUserId,
+    clientEmail
+  });
 
   const insertResult = await pool.query(
     `INSERT INTO cases (
@@ -184,9 +268,11 @@ export async function createCase({
       client_name,
       client_email,
       client_phone,
-      opposite_party_name
+      client_user_id,
+      opposite_party_name,
+      assigned_tehsil
     )
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
     RETURNING id`,
     [
       lawyerUserId,
@@ -196,7 +282,9 @@ export async function createCase({
       clientName,
       clientEmail || null,
       clientPhone || null,
-      oppositePartyName
+      resolvedClientUserId,
+      oppositePartyName,
+      assignedTehsil || null
     ]
   );
 
@@ -291,10 +379,55 @@ export async function getCaseForLawyer({ caseId, lawyerUserId }) {
   return mapCase(result.rows[0]);
 }
 
-// Patch a subset of fields on a draft case. Only fields present in `updates`
-// are written — undefined keys are skipped so callers can PATCH partial
-// payloads. Locked to draft status to keep the registrar review immutable
-// once submitted.
+// Submit a case to the registrar for review. Allowed only from 'draft' or
+// 'returned' (a returned case can be fixed and resubmitted). Both prerequisites
+// — a chosen tehsil and a compiled signed PDF — must be present, otherwise we
+// surface a specific 400 telling the lawyer which step is missing. On success
+// the case moves to 'submitted' and is stamped with submitted_at so the
+// registrar queue can order by oldest-first.
+export async function submitCase({ caseId, lawyerUserId }) {
+  const result = await pool.query(
+    `SELECT status, assigned_tehsil, signed_pdf_storage_path
+     FROM cases
+     WHERE id = $1 AND lawyer_user_id = $2`,
+    [caseId, lawyerUserId]
+  );
+
+  if (result.rowCount === 0) {
+    throw new ApiError(404, "Case not found");
+  }
+
+  const { status, assigned_tehsil, signed_pdf_storage_path } = result.rows[0];
+
+  if (status !== "draft" && status !== "returned") {
+    throw new ApiError(409, "Only draft or returned cases can be submitted");
+  }
+
+  if (!assigned_tehsil) {
+    throw new ApiError(400, "Select a court/tehsil before submitting");
+  }
+
+  if (!signed_pdf_storage_path) {
+    throw new ApiError(400, "Sign the case file before submitting");
+  }
+
+  await pool.query(
+    `UPDATE cases
+     SET status = 'submitted',
+         submitted_at = NOW(),
+         updated_at = NOW()
+     WHERE id = $1 AND lawyer_user_id = $2`,
+    [caseId, lawyerUserId]
+  );
+
+  return getCaseForLawyer({ caseId, lawyerUserId });
+}
+
+// Patch a subset of fields on an editable case. Only fields present in
+// `updates` are written — undefined keys are skipped so callers can PATCH
+// partial payloads. Editing is allowed while the case is 'draft' OR 'returned'
+// (a returned case must be fixable before resubmission); once 'submitted' or
+// 'accepted' the case is locked so the registrar review stays immutable.
 export async function updateCase({ caseId, lawyerUserId, updates }) {
   const allowed = {
     title: "title",
@@ -302,8 +435,19 @@ export async function updateCase({ caseId, lawyerUserId, updates }) {
     clientName: "client_name",
     clientEmail: "client_email",
     clientPhone: "client_phone",
-    oppositePartyName: "opposite_party_name"
+    oppositePartyName: "opposite_party_name",
+    assignedTehsil: "assigned_tehsil"
   };
+
+  // Guard the tehsil the same way createCase does — an edited case must not be
+  // routed to a jurisdiction with no registrar. isSupportedTehsil() treats
+  // empty/undefined as valid, so clearing the field (→ NULL) stays allowed.
+  if (
+    updates.assignedTehsil !== undefined &&
+    !isSupportedTehsil(updates.assignedTehsil)
+  ) {
+    throw new ApiError(400, "Selected court/tehsil is not supported");
+  }
 
   const setExpressions = [];
   const values = [];
@@ -329,7 +473,7 @@ export async function updateCase({ caseId, lawyerUserId, updates }) {
      SET ${setExpressions.join(", ")}
      WHERE id = $${paramIndex++}
        AND lawyer_user_id = $${paramIndex++}
-       AND status = 'draft'
+       AND status IN ('draft', 'returned')
      RETURNING id`,
     values
   );
@@ -341,6 +485,101 @@ export async function updateCase({ caseId, lawyerUserId, updates }) {
   }
 
   return getCaseForLawyer({ caseId, lawyerUserId });
+}
+
+// Hard-delete a case the lawyer owns. This is a permanent, irreversible
+// removal of the row — there is no soft-delete column to flip. Allowed at
+// ANY status (the lawyer explicitly asked for a full hard delete), so no
+// status guard here.
+//
+// Ownership is enforced IN the DELETE's WHERE clause (id + lawyer_user_id),
+// so a lawyer can only ever delete their own case and we never need a
+// separate ownership SELECT. rowCount 0 means the case either doesn't exist
+// or belongs to another lawyer — both collapse to a 404 so we don't leak
+// existence-vs-access.
+//
+// Dependents are removed by ON DELETE CASCADE FKs to cases(id):
+// case_attachments, signature_requests, notifications, agreements (→
+// payment_plans → installments), payment_transactions, payment_receipts.
+// In the current schema EVERY FK to cases(id) cascades, so the delete
+// succeeds cleanly. Defence in depth: if a deployment has (or later adds)
+// an FK with ON DELETE RESTRICT/NO ACTION, the DELETE raises a
+// foreign_key_violation (SQLSTATE 23503); we catch that and surface a clean
+// 409 instead of a 500.
+//
+// Storage cleanup is best-effort and happens AFTER the row is gone: we read
+// the signed-PDF path + every attachment storage path BEFORE the delete (the
+// rows vanish with the cascade), then sweep the objects. A storage failure
+// never fails the delete — the swallowing lives in the storage helpers, and
+// we additionally guard the whole sweep so an unexpected throw can't bubble.
+export async function deleteCaseForLawyer({ caseId, lawyerUserId }) {
+  // Capture the storage paths we'll want to sweep, scoped to the owning
+  // lawyer so a non-owner learns nothing. If the case isn't theirs we get
+  // zero rows and fall through to the 404 below after the DELETE no-ops.
+  const pdfPathResult = await pool.query(
+    `SELECT signed_pdf_storage_path
+     FROM cases
+     WHERE id = $1 AND lawyer_user_id = $2`,
+    [caseId, lawyerUserId]
+  );
+
+  const attachmentPathsResult = await pool.query(
+    `SELECT ca.storage_path
+     FROM case_attachments ca
+     JOIN cases ON cases.id = ca.case_id
+     WHERE ca.case_id = $1 AND cases.lawyer_user_id = $2`,
+    [caseId, lawyerUserId]
+  );
+
+  let deleteResult;
+  try {
+    deleteResult = await pool.query(
+      `DELETE FROM cases
+       WHERE id = $1 AND lawyer_user_id = $2`,
+      [caseId, lawyerUserId]
+    );
+  } catch (err) {
+    // 23503 = foreign_key_violation. Reached only if some FK to cases(id) is
+    // ON DELETE RESTRICT/NO ACTION (e.g. a payments/agreements constraint a
+    // deployment changed). Turn the raw PG error into a clean 409 so the UI
+    // can explain it, rather than a generic 500.
+    if (err && err.code === "23503") {
+      throw new ApiError(
+        409,
+        "This case has linked records (e.g. payments) and cannot be deleted"
+      );
+    }
+    throw err;
+  }
+
+  if (deleteResult.rowCount === 0) {
+    // Not found, or owned by a different lawyer — don't distinguish.
+    throw new ApiError(404, "Case not found");
+  }
+
+  // Best-effort storage sweep AFTER the row (and its cascaded rows) are gone.
+  // Never let a storage hiccup undo / fail a completed delete: each helper
+  // already swallows its own errors, and the try/catch is a final backstop.
+  try {
+    const signedPdfPath = pdfPathResult.rows[0]?.signed_pdf_storage_path;
+    if (signedPdfPath) {
+      await deleteSignedCasePdf(signedPdfPath);
+    }
+
+    await Promise.all(
+      attachmentPathsResult.rows
+        .map((row) => row.storage_path)
+        .filter(Boolean)
+        .map((storagePath) => deleteCaseAttachmentObject(storagePath))
+    );
+  } catch (storageErr) {
+    // Orphaned objects are reconciled out-of-band; the delete itself stands.
+    console.error("[STORAGE CLEANUP FAILED]", {
+      task: "delete-case-storage",
+      caseId,
+      message: storageErr?.message
+    });
+  }
 }
 
 // =====================================================================

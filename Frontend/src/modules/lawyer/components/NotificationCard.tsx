@@ -11,7 +11,9 @@ import type { Notification } from "../types/notification";
 interface NotificationCardProps {
   notification: Notification;
   onRead: (id: string) => void;
-  onDelete: (id: string) => void;
+  // Optional: the live lawyer notifications have no delete endpoint yet, so
+  // the dismiss "X" is only rendered when a handler is supplied.
+  onDelete?: (id: string) => void;
   onClick: (notification: Notification) => void;
 }
 
@@ -104,16 +106,18 @@ export default function NotificationCard({
         </div>
       )}
 
-      <button
-        onClick={(e) => {
-          e.stopPropagation();
-          onDelete(notification.id);
-        }}
-        className="mt-1 flex-shrink-0 rounded p-1 text-gray-400 hover:bg-gray-200 hover:text-gray-600 transition-colors"
-        aria-label="Delete notification"
-      >
-        <X className="h-4 w-4" />
-      </button>
+      {onDelete && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onDelete(notification.id);
+          }}
+          className="mt-1 flex-shrink-0 rounded p-1 text-gray-400 hover:bg-gray-200 hover:text-gray-600 transition-colors"
+          aria-label="Delete notification"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      )}
     </div>
   );
 }

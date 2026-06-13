@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
 import {
   CalendarDays,
   CheckCircle2,
@@ -15,24 +16,18 @@ import StatCard from "../../../shared/components/dashboard/StatCard";
 import type { DashboardStat, QuickActionItem } from "../../../shared/types/dashboard";
 import { getCaseDisplayTitle } from "../../../shared/utils/caseDisplay";
 import RegistrarLayout from "../components/RegistrarLayout";
-import { useCaseFilingStore } from "../../lawyer/store/caseFiling.store";
 import { useCurrentUser, displayFullName } from "../../auth/hooks/useCurrentUser";
 import { useEnforcePasswordChange } from "../../auth/hooks/useEnforcePasswordChange";
-import {
-  getFcfsSubmissionQueue,
-  getProcessedCaseIdsForLatestSubmission,
-} from "../utils/submissionQueue";
-import { useRegistrarReviewDecisionStore } from "../store/reviewDecisions.store";
+import { listCases } from "../api";
 
 type QueueCase = {
   caseId: string;
   title: string;
-  caseType: "Civil" | "Family";
+  caseType: string;
   lawyer: string;
   client: string;
   submittedDate: string;
   submittedTime: string;
-  documents: number;
 };
 
 export function RegistrarDashboard() {
@@ -41,43 +36,50 @@ export function RegistrarDashboard() {
   const [filterType, setFilterType] = useState("all");
   useEnforcePasswordChange();
   const { data: currentUser } = useCurrentUser();
-  const liveSubmittedCases = useCaseFilingStore((state) =>
-    state.getSubmittedCasesForRegistrar()
-  );
-  const decisionsByCaseId = useRegistrarReviewDecisionStore(
-    (state) => state.decisionsByCaseId
-  );
-  const returnedCasesCount = useRegistrarReviewDecisionStore(
-    (state) => state.returnedCases.length
-  );
+  const { data: submittedCases = [] } = useQuery({
+    queryKey: ["registrar", "cases", "submitted"],
+    queryFn: () => listCases("submitted"),
+  });
+  const { data: acceptedCases = [] } = useQuery({
+    queryKey: ["registrar", "cases", "accepted"],
+    queryFn: () => listCases("accepted"),
+  });
+  const { data: returnedCases = [] } = useQuery({
+    queryKey: ["registrar", "cases", "returned"],
+    queryFn: () => listCases("returned"),
+  });
   const displayName = displayFullName(currentUser) || "Registrar";
   const greeting = currentUser?.firstLoginCompleted ? "Welcome back" : "Welcome";
 
-  const queue = useMemo(
-    () => getFcfsSubmissionQueue(liveSubmittedCases),
-    [liveSubmittedCases]
-  );
-  const excludedCaseIds = useMemo(
-    () => getProcessedCaseIdsForLatestSubmission(queue, decisionsByCaseId),
-    [queue, decisionsByCaseId]
-  );
-
-  const submittedCases = useMemo(
-    () => queue.filter((item) => !excludedCaseIds.has(item.caseId)),
-    [queue, excludedCaseIds]
-  );
+  // "Processed Today" = accepted + returned decisions whose reviewedAt falls on
+  // the current local calendar day. reviewedAt is set when a case is accepted
+  // or returned, so this counts the registrar's decisions made today.
+  const processedTodayCount = useMemo(() => {
+    const today = new Date().toDateString();
+    const isToday = (iso: string | null) =>
+      Boolean(iso) && new Date(iso as string).toDateString() === today;
+    return (
+      acceptedCases.filter((item) => isToday(item.reviewedAt)).length +
+      returnedCases.filter((item) => isToday(item.reviewedAt)).length
+    );
+  }, [acceptedCases, returnedCases]);
 
   const queueCases: QueueCase[] = useMemo(
     () =>
       submittedCases.map((item) => ({
-        caseId: item.caseId,
-        title: getCaseDisplayTitle(item.title, item.caseId),
-        caseType: item.caseType === "civil" ? "Civil" : "Family",
-        lawyer: item.submittedBy,
+        caseId: item.id,
+        title: getCaseDisplayTitle(item.title, item.id),
+        caseType: item.category
+          ? item.category.charAt(0).toUpperCase() + item.category.slice(1)
+          : item.caseTypeLabel,
+        lawyer: item.lawyerName,
         client: item.clientName,
-        submittedDate: new Date(item.submittedAt).toLocaleDateString(),
-        submittedTime: new Date(item.submittedAt).toLocaleTimeString(),
-        documents: item.bundle.orderedDocuments.length,
+        submittedDate: item.submittedAt
+          ? new Date(item.submittedAt).toLocaleDateString()
+          : "—",
+        submittedTime: item.submittedAt
+          ? new Date(item.submittedAt).toLocaleTimeString()
+          : "",
       })),
     [submittedCases]
   );
@@ -85,19 +87,19 @@ export function RegistrarDashboard() {
   const stats: DashboardStat[] = [
     {
       label: "Pending Review",
-      value: String(queueCases.length),
+      value: String(submittedCases.length),
       icon: Clock3,
       accentClassName: "bg-amber-500",
     },
     {
       label: "Submitted Cases",
-      value: String(queueCases.length),
+      value: String(submittedCases.length),
       icon: FileCheck2,
       accentClassName: "bg-[#01411C]",
     },
     {
       label: "Processed Today",
-      value: String(Object.keys(decisionsByCaseId).length),
+      value: String(processedTodayCount),
       icon: CheckCircle2,
       accentClassName: "bg-emerald-600",
     },
@@ -109,7 +111,7 @@ export function RegistrarDashboard() {
     },
     {
       label: "Returned Cases",
-      value: String(returnedCasesCount),
+      value: String(returnedCases.length),
       icon: FileText,
       accentClassName: "bg-red-600",
     },
@@ -138,7 +140,7 @@ export function RegistrarDashboard() {
       label: "Return Cases",
       icon: FileCheck2,
       className: "bg-emerald-700 hover:bg-emerald-800",
-      to: "/return-case",
+      to: "/returned-cases",
     },
     {
       label: "Schedule Hearing",
@@ -252,9 +254,6 @@ export function RegistrarDashboard() {
                     <td className="px-5 py-4 text-sm">
                       <p className="font-medium text-gray-900">{item.submittedDate}</p>
                       <p className="text-gray-500">{item.submittedTime}</p>
-                      <p className="mt-2 text-xs text-gray-500">
-                        {item.documents} files in bundle
-                      </p>
                     </td>
                     <td className="px-5 py-4">
                       <button

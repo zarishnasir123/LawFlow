@@ -8,6 +8,7 @@ import NotificationModal from "./modals/NotificationModal";
 import { useLogoutHandler } from "../hooks/useLogoutHandler";
 import { useNavbarActions } from "../hooks/useNavbarActions";
 import { useNotificationModal } from "../hooks/useNotificationModal";
+import { useLawyerNotifications } from "../hooks/useLawyerNotifications";
 import { useCurrentUser, displayFullName } from "../../auth/hooks/useCurrentUser";
 
 type LawyerLayoutProps = {
@@ -32,7 +33,11 @@ export default function LawyerLayout({
   const navigate = useNavigate();
   const { logoutModalOpen, handleLogout, openLogoutModal, closeLogoutModal } = useLogoutHandler();
   const { isOpen: notificationModalOpen, openModal: openNotificationModal, closeModal: closeNotificationModal } = useNotificationModal();
-  const navbarActions = useNavbarActions(openLogoutModal, openNotificationModal);
+  // Live unread count drives the bell badge; the hook polls every 30s and is
+  // shared with the notification modal (same query key), so opening the modal
+  // and marking read updates the badge here without a refetch.
+  const { unreadCount } = useLawyerNotifications();
+  const navbarActions = useNavbarActions(openLogoutModal, openNotificationModal, unreadCount);
   const { data: currentUser } = useCurrentUser();
 
   const fullName = displayFullName(currentUser);

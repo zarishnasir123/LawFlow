@@ -7,17 +7,6 @@ import { createRegistrar } from "../api/registrars";
 import StatusToast from "../components/modals/StatusToast";
 import { extractApiErrorMessage } from "../../../shared/api/extractApiErrorMessage";
 
-function splitFullName(fullName: string): { firstName: string; lastName: string } | null {
-  const parts = fullName.trim().split(/\s+/);
-  if (parts.length < 2 || !parts[0] || !parts[parts.length - 1]) {
-    return null;
-  }
-  return {
-    firstName: parts[0],
-    lastName: parts.slice(1).join(" "),
-  };
-}
-
 export default function CreateRegistrar() {
   const navigate = useNavigate();
   const [submitting, setSubmitting] = useState(false);
@@ -33,17 +22,6 @@ export default function CreateRegistrar() {
   });
 
   const handleSubmit = async (values: RegistrarFormValues) => {
-    const nameParts = splitFullName(values.name);
-    if (!nameParts) {
-      setToast({
-        open: true,
-        type: "error",
-        title: "Registrar creation failed",
-        message: "Please enter first name and last name (e.g. \"Muhammad Asif\").",
-      });
-      return;
-    }
-
     setSubmitting(true);
     try {
       // Court / tehsil are optional. Empty string means the admin left
@@ -51,8 +29,8 @@ export default function CreateRegistrar() {
       // stores NULL (the registrar's profile renders "Not assigned")
       // rather than an empty string.
       const { registrar, emailDelivery } = await createRegistrar({
-        firstName: nameParts.firstName,
-        lastName: nameParts.lastName,
+        firstName: values.firstName.trim(),
+        lastName: values.lastName.trim(),
         email: values.email,
         phone: values.phone,
         cnic: values.cnic,

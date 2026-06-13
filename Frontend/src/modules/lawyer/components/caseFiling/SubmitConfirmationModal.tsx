@@ -3,7 +3,10 @@ import { AlertCircle } from "lucide-react";
 type SubmitConfirmationModalProps = {
   open: boolean;
   caseTitle: string;
-  registrarName: string;
+  // Where the case is routed for review. The backend assigns the case to the
+  // registrar serving its court/tehsil, so we describe the destination by that
+  // jurisdiction rather than a named registrar.
+  destination: string;
   submitting: boolean;
   technicalError?: string;
   onCancel: () => void;
@@ -13,7 +16,7 @@ type SubmitConfirmationModalProps = {
 export default function SubmitConfirmationModal({
   open,
   caseTitle,
-  registrarName,
+  destination,
   submitting,
   technicalError,
   onCancel,
@@ -31,7 +34,7 @@ export default function SubmitConfirmationModal({
           You are about to submit the{" "}
           <span className="font-semibold">complete PDF case file</span> for{" "}
           <span className="font-semibold">{caseTitle}</span> to{" "}
-          <span className="font-semibold">{registrarName}</span>. This action
+          <span className="font-semibold">{destination}</span>. This action
           will mark the case as submitted for registrar review.
         </p>
 

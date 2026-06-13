@@ -3,7 +3,11 @@ import { useNavigate } from "@tanstack/react-router";
 import { useMutation } from "@tanstack/react-query";
 import { Briefcase } from "lucide-react";
 import LawyerLayout from "../components/LawyerLayout";
-import { casesApi, getCasesErrorMessage } from "../api/cases.api";
+import {
+  casesApi,
+  getCasesErrorMessage,
+  SUPPORTED_TEHSILS,
+} from "../api/cases.api";
 import { useNewCaseStore } from "../store/newCase.store";
 import { useCaseFilingStore } from "../store/caseFiling.store";
 
@@ -28,11 +32,14 @@ export default function CreateCase() {
     oppositeParty: "",
     caseTitle: "",
     description: "",
+    assignedTehsil: "",
   });
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const handleInputChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
+    e: React.ChangeEvent<
+      HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
+    >
   ) => {
     const { name, value } = e.target;
     setFormData((prev) => ({
@@ -78,6 +85,7 @@ export default function CreateCase() {
       clientEmail: formData.clientEmail.trim() || undefined,
       clientPhone: formData.clientPhone.trim() || undefined,
       oppositePartyName: formData.oppositeParty.trim(),
+      assignedTehsil: formData.assignedTehsil,
     });
   };
 
@@ -168,6 +176,35 @@ export default function CreateCase() {
                   className="w-full px-3.5 py-2.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--primary)]/30 focus:border-[var(--primary)] outline-none transition"
                 />
               </div>
+
+              <div className="sm:col-span-2">
+                <label
+                  htmlFor="assignedTehsil"
+                  className="block text-xs font-semibold uppercase tracking-wide text-gray-700 mb-1.5"
+                >
+                  Court / Tehsil <span className="text-rose-500">*</span>
+                </label>
+                <select
+                  id="assignedTehsil"
+                  name="assignedTehsil"
+                  value={formData.assignedTehsil}
+                  onChange={handleInputChange}
+                  className="w-full px-3.5 py-2.5 text-sm border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-[var(--primary)]/30 focus:border-[var(--primary)] outline-none transition"
+                >
+                  <option value="" disabled>
+                    Select the court / tehsil for this case
+                  </option>
+                  {SUPPORTED_TEHSILS.map((tehsil) => (
+                    <option key={tehsil} value={tehsil}>
+                      {tehsil}
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-1.5 text-xs text-gray-500">
+                  Routes the case to the registrar for this jurisdiction. Required
+                  before the case can be submitted.
+                </p>
+              </div>
             </div>
 
             <div>
@@ -223,6 +260,7 @@ export default function CreateCase() {
                 !formData.clientPhone ||
                 !formData.oppositeParty ||
                 !formData.caseTitle ||
+                !formData.assignedTehsil ||
                 createMutation.isPending
               }
               className="flex-1 px-6 py-2.5 bg-[var(--primary)] text-white rounded-xl text-sm font-semibold hover:bg-[#024A23] transition disabled:bg-gray-300 disabled:cursor-not-allowed shadow-sm shadow-green-100"
