@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { type JSONContent } from "@tiptap/react";
-import { useNavigate, useParams } from "@tanstack/react-router";
+import { useParams } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Document, Page, pdfjs } from "react-pdf";
 import LawyerLayout from "../components/LawyerLayout";
@@ -10,7 +10,6 @@ import PageContextMenu, {
   type PageContextMenuState,
 } from "../components/documentEditor/PageContextMenu";
 import {
-  signaturesApi,
   getSignaturesErrorMessage,
   type SignerRole,
 } from "../signatures/api/signatures.api";
@@ -42,9 +41,18 @@ pdfjs.GlobalWorkerOptions.workerSrc = new URL(
 // transport to use.
 const isApiPath = (url: string) => url.startsWith("/cases/") || url.startsWith("/api/");
 
+// Persisted preference for the Word-style AutoSave toggle. Default on.
+const AUTOSAVE_PREF_KEY = "lawflow_editor_autosave";
+function readPersistedAutoSave(): boolean {
+  try {
+    return window.localStorage.getItem(AUTOSAVE_PREF_KEY) !== "off";
+  } catch {
+    return true;
+  }
+}
+
 export default function CaseDocumentEditor() {
   const { caseId } = useParams({ strict: false }) as { caseId?: string }; // Retrieve generic params
-  const navigate = useNavigate();
   const effectiveCaseId = caseId || "default-case";
 
   const {
@@ -57,6 +65,7 @@ export default function CaseDocumentEditor() {
     setLoading,
     isLoading,
     saveDraft,
+    markSaved,
     loadDraft,
     addAttachment,
     reconcileAttachmentsFromBackend,
@@ -180,40 +189,52 @@ export default function CaseDocumentEditor() {
   // every render.
   const persistEditedHtmlRef = useRef<() => Promise<void>>(async () => {});
 
-  // Two auto-save triggers:
-  //   1. On blur from anywhere in the docx-preview host — catches the
-  //      "lawyer typed something then clicked away" case. 500ms
-  //      debounce so a focus-shuffle inside the canvas (e.g., the
-  //      caret moving between sections via mouse) doesn't fire a
-  //      flurry of saves.
-  //   2. Every 30 seconds — heartbeat for the "lawyer keeps typing
-  //      forever without leaving the canvas" case. The saver itself
-  //      short-circuits when the snapshot hasn't changed, so this is
-  //      cheap when idle.
-  // Manual Save Draft (handleSaveDraft above) calls the same saver.
+  // Word-style AutoSave toggle. Default on; persisted so the lawyer's
+  // preference survives reloads. When on, edits save as you type (see the
+  // auto-save effect below); when off, only the manual Save Draft button
+  // persists.
+  const [autoSave, setAutoSave] = useState<boolean>(() => readPersistedAutoSave());
   useEffect(() => {
+    try {
+      window.localStorage.setItem(AUTOSAVE_PREF_KEY, autoSave ? "on" : "off");
+    } catch {
+      // localStorage unavailable (private mode etc.) — the in-session
+      // toggle still works, it just won't be remembered next time.
+    }
+  }, [autoSave]);
+
+  // AutoSave (Word-style). When enabled, the editor saves shortly after the
+  // lawyer stops typing (debounced on `input`) and a touch quicker on blur
+  // (clicking away from the canvas) — no fixed-interval heartbeat. When
+  // disabled, nothing auto-saves; the lawyer persists via the manual Save
+  // Draft button. The saver short-circuits when the snapshot hasn't changed,
+  // so a burst of keystrokes collapses into a single network write.
+  useEffect(() => {
+    if (!autoSave) return;
     if (renderedPages.length === 0) return;
     const host =
       renderedPages[0].closest(".docx-preview-host") ||
       renderedPages[0].closest(".docx-wrapper")?.parentElement;
     if (!host) return;
-    let blurTimer: number | null = null;
-    const onBlur = () => {
-      if (blurTimer !== null) window.clearTimeout(blurTimer);
-      blurTimer = window.setTimeout(() => {
+    let saveTimer: number | null = null;
+    const scheduleSave = (delay: number) => {
+      if (saveTimer !== null) window.clearTimeout(saveTimer);
+      saveTimer = window.setTimeout(() => {
         void persistEditedHtmlRef.current();
-      }, 500);
+      }, delay);
     };
+    // Save ~1s after the last keystroke ("as you edit"); ~0.5s after focus
+    // leaves the canvas.
+    const onInput = () => scheduleSave(1000);
+    const onBlur = () => scheduleSave(500);
+    host.addEventListener("input", onInput as EventListener);
     host.addEventListener("focusout", onBlur as EventListener);
-    const interval = window.setInterval(() => {
-      void persistEditedHtmlRef.current();
-    }, 30_000);
     return () => {
+      host.removeEventListener("input", onInput as EventListener);
       host.removeEventListener("focusout", onBlur as EventListener);
-      window.clearInterval(interval);
-      if (blurTimer !== null) window.clearTimeout(blurTimer);
+      if (saveTimer !== null) window.clearTimeout(saveTimer);
     };
-  }, [renderedPages]);
+  }, [renderedPages, autoSave]);
 
   // Pending requests — used both to surface the toolbar badge count
   // and to lock per-page surfaces (sidebar send icon + signature
@@ -449,6 +470,10 @@ export default function CaseDocumentEditor() {
   // doesn't re-render on every keystroke.
   const lastSavedHtmlRef = useRef<string>("");
   const autoSaveInFlightRef = useRef<boolean>(false);
+  // Set when a save is requested while another is already in flight (e.g. an
+  // image dropped onto the page mid-autosave). The in-flight save re-runs on
+  // completion so the newest snapshot is never silently dropped.
+  const autoSavePendingRef = useRef<boolean>(false);
 
   // Persist the editor's current HTML state to cases.edited_html on
   // the backend. Skips when:
@@ -460,7 +485,14 @@ export default function CaseDocumentEditor() {
   const persistEditedHtml = useCallback(async () => {
     if (!caseId || caseId === "default-case") return;
     if (renderedPages.length === 0) return;
-    if (autoSaveInFlightRef.current) return;
+    if (autoSaveInFlightRef.current) {
+      // A save is already running. Flag that the document changed again so
+      // the in-flight save re-runs once it finishes — otherwise this newer
+      // snapshot (e.g. a just-dropped image, which doesn't fire the `input`
+      // event the autosave loop listens for) gets silently dropped.
+      autoSavePendingRef.current = true;
+      return;
+    }
     const snapshot = buildEditorSnapshot(renderedPages);
     if (!snapshot || snapshot === lastSavedHtmlRef.current) return;
 
@@ -468,6 +500,11 @@ export default function CaseDocumentEditor() {
     try {
       await casesApi.saveEditedHtml(effectiveCaseId, snapshot);
       lastSavedHtmlRef.current = snapshot;
+      // Reflect this backend save in the header's "Last edited" caption.
+      // The autosave path writes edited_html directly (bypassing the
+      // localStorage-draft saveDraft), so without this the status would
+      // only refresh on a manual Save.
+      markSaved();
     } catch (err) {
       console.error("[AUTO SAVE FAILED]", {
         caseId: effectiveCaseId,
@@ -476,7 +513,15 @@ export default function CaseDocumentEditor() {
     } finally {
       autoSaveInFlightRef.current = false;
     }
-  }, [caseId, effectiveCaseId, renderedPages]);
+
+    // Coalesced re-run: if a save was requested while the one above was in
+    // flight, run again now to capture the latest snapshot. Using the ref
+    // keeps this self-reference out of the useCallback dependency array.
+    if (autoSavePendingRef.current) {
+      autoSavePendingRef.current = false;
+      await persistEditedHtmlRef.current();
+    }
+  }, [caseId, effectiveCaseId, renderedPages, markSaved]);
 
   // Keep the ref pointing at the latest closure so the long-lived
   // blur/interval listeners above always call the fresh function.
@@ -536,14 +581,15 @@ export default function CaseDocumentEditor() {
     };
   }, [effectiveCaseId, renderedPages]);
 
-  const handleSaveDraft = () => {
+  const handleSaveDraft = async () => {
     if (currentDocId && activeEditorRef) {
       saveDocumentJSON(currentDocId, activeEditorRef.getJSON());
     }
     saveDraft(effectiveCaseId);
-    // Manual Save Draft also pushes the latest HTML to the backend so
-    // the lawyer can recover the case on a different device.
-    void persistEditedHtml();
+    // Manual Save Draft also pushes the latest HTML to the backend so the
+    // lawyer can recover the case on a different device. Awaited so the
+    // toolbar's Save button can show a truthful "Saving… → Saved" state.
+    await persistEditedHtml();
   };
 
   const handleDownload = () => {
@@ -611,23 +657,6 @@ export default function CaseDocumentEditor() {
     const t = window.setTimeout(() => setSignatureToast(null), 4000);
     return () => window.clearTimeout(t);
   }, [signatureToast]);
-
-  // Fetch a short-lived signed URL for the compiled signed-case PDF
-  // and open it in a new tab. URLs expire in 5 minutes so we always
-  // ask the server fresh — no client-side caching.
-  const handleDownloadSignedPdf = async () => {
-    try {
-      const { downloadUrl } = await signaturesApi.downloadSignedPdf(
-        signatureCaseId
-      );
-      window.open(downloadUrl, "_blank", "noopener,noreferrer");
-    } catch (err) {
-      // 409 = signing not complete yet (button shouldn't have shown);
-      // anything else = transport or storage misconfig. Surface the
-      // server's message rather than swallowing.
-      alert(getSignaturesErrorMessage(err));
-    }
-  };
 
   const handleAddAttachment = () => {
     attachmentInputRef.current?.click();
@@ -784,15 +813,7 @@ export default function CaseDocumentEditor() {
           onDownload={handleDownload}
           onRequestSignatures={() => setIsSignaturePanelOpen(true)}
           signaturePendingCount={signaturePendingCount}
-          onSubmitCase={() =>
-            navigate({ to: `/lawyer-submit-case/${effectiveCaseId}` })
-          }
           onAddAttachment={handleAddAttachment}
-          // Download signed PDF: only surfaced once every required
-          // signature is in. Backend compiles synchronously on the last
-          // signer's submit, so by the time this is true the PDF is
-          // already in Storage. Click → short-lived signed URL → new tab.
-          onDownloadSignedPdf={caseFullySigned ? handleDownloadSignedPdf : undefined}
         />
 
         <div className="flex flex-1 overflow-hidden">
@@ -897,6 +918,8 @@ export default function CaseDocumentEditor() {
                 onSaveDraft={handleSaveDraft}
                 onDownload={handleDownload}
                 onAddAttachment={handleAddAttachment}
+                autoSave={autoSave}
+                onToggleAutoSave={() => setAutoSave((v) => !v)}
               />
               <div className="flex-1 overflow-hidden">
                 <DocxPreviewSurface

@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { Bell, LogOut, User } from "lucide-react";
+import { Bell, Home, LogOut, User } from "lucide-react";
 import DashboardLayout from "../../../shared/components/dashboard/DashboardLayout";
 import HeaderProfileMenu from "../../../shared/components/dashboard/HeaderProfileMenu";
 import type { HeaderAction } from "../../../shared/types/dashboard";
@@ -31,6 +31,11 @@ export default function RegistrarLayout({
   // profile dropdown so it sits next to "My Profile" — matches the
   // lawyer/client header pattern.
   const actions: HeaderAction[] = [
+    {
+      label: "Dashboard",
+      icon: Home,
+      onClick: () => navigate({ to: "/registrar-dashboard" }),
+    },
     {
       label: "Notifications",
       icon: Bell,

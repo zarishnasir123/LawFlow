@@ -150,13 +150,17 @@ export default function DocxPreviewSurface({
           ".docx-wrapper > section.docx"
         );
 
-        if (editable) {
-          pages.forEach((page) => {
-            page.setAttribute("contenteditable", "true");
-            page.setAttribute("spellcheck", "false");
-            page.style.outline = "none";
-          });
-        }
+        // Honour the editable contract in BOTH directions. The saved
+        // snapshot (cases.edited_html) was captured while the editor had
+        // each section contenteditable, so `contenteditable="true"` is
+        // baked into the restored HTML — a read-only surface (e.g. the
+        // submission preview) must explicitly turn it OFF, or the restored
+        // pages stay editable.
+        pages.forEach((page) => {
+          page.setAttribute("contenteditable", editable ? "true" : "false");
+          page.setAttribute("spellcheck", "false");
+          page.style.outline = "none";
+        });
 
         pages.forEach((page, idx) => {
           page.addEventListener("contextmenu", (e) => {
@@ -167,13 +171,14 @@ export default function DocxPreviewSurface({
           });
         });
 
-        // Re-wire drag / resize on floating images that came back
-        // from the snapshot. The DOM nodes survived serialization
-        // but their imperative mousedown listeners didn't — without
-        // this call the images render in the right place but feel
-        // "stuck" (can't drag, can't resize, Delete doesn't remove
-        // them). Idempotent, so re-renders are safe.
-        rehydrateFloatingImages(container);
+        // Re-wire drag / resize on floating images that came back from the
+        // snapshot. The DOM nodes survived serialization but their
+        // imperative mousedown listeners didn't. Only in editable mode — a
+        // read-only preview must leave attachment images static (no drag /
+        // resize / delete). Idempotent, so re-renders are safe.
+        if (editable) {
+          rehydrateFloatingImages(container);
+        }
 
         onPagesReadyRef.current?.(Array.from(pages));
       } catch (err) {
@@ -212,13 +217,11 @@ export default function DocxPreviewSurface({
           ".docx-wrapper > section.docx"
         );
 
-        if (editable) {
-          pages.forEach((page) => {
-            page.setAttribute("contenteditable", "true");
-            page.setAttribute("spellcheck", "false");
-            page.style.outline = "none";
-          });
-        }
+        pages.forEach((page) => {
+          page.setAttribute("contenteditable", editable ? "true" : "false");
+          page.setAttribute("spellcheck", "false");
+          page.style.outline = "none";
+        });
 
         // Wire each rendered section as a right-click target. The
         // index here matches what the sidebar uses, so the parent

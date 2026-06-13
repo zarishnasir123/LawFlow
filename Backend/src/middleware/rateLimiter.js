@@ -16,8 +16,15 @@ function sweepExpired(now, windowMs) {
   }
 }
 
+// Skip rate limiting outside production so day-to-day local testing isn't
+// blocked by counters that persist across requests for the lifetime of the
+// process. Production keeps the full per-IP caps.
+const rateLimitingDisabled = process.env.NODE_ENV !== "production";
+
 export const rateLimiter = ({ windowMs, max, message }) => {
   return (req, res, next) => {
+    if (rateLimitingDisabled) return next();
+
     const key = req.ip;
     const now = Date.now();
 

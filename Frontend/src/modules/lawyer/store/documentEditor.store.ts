@@ -80,6 +80,11 @@ interface DocumentEditorState {
   loadDraft: (caseId?: string) => void;
   clearDraft: (caseId?: string) => void;
   setDirty: (dirty: boolean) => void;
+  // Marks the document as saved: stamps lastSaved=now and clears isDirty.
+  // Used by the editor's backend autosave (persistEditedHtml), which writes
+  // edited_html outside the localStorage-draft path that saveDraft owns, so
+  // the "Last edited" header still needs a way to reflect those saves.
+  markSaved: () => void;
 
   // New Bundle System Methods
   setEditorRef: (editor: Editor | null) => void;
@@ -489,6 +494,8 @@ export const useDocumentEditorStore = create<DocumentEditorState>((set, get) => 
   },
 
   setDirty: (dirty) => set({ isDirty: dirty }),
+
+  markSaved: () => set({ lastSaved: new Date().toISOString(), isDirty: false }),
 
   // New Bundle System Methods
   setEditorRef: (editor) => set({ activeEditorRef: editor }),
