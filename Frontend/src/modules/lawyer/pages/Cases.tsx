@@ -403,14 +403,16 @@ export default function LawyerCases() {
                         className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-semibold text-white hover:bg-[#024a23]"
                       >
                         <FileText className="h-4 w-4" />
-                        Open Editor
+                        {c.status === "returned" ? "Fix & Resubmit" : "Open Editor"}
                       </button>
 
                       {/* Submit affordance gated by status:
-                          - draft    -> active "Submit"
-                          - returned -> active "Fix & Resubmit"
-                          - submitted/accepted -> muted, non-interactive
-                            status indicator (no active submit). */}
+                          - draft -> active "Submit" (to the submission page)
+                          - returned -> nothing here; the "Fix & Resubmit"
+                            button above opens the editor, where the lawyer
+                            corrects the document and resubmits from the
+                            editor's own Submit button
+                          - submitted/accepted -> muted status indicator. */}
                       <SubmitAffordance
                         status={c.status}
                         onSubmit={() =>
@@ -469,10 +471,12 @@ export default function LawyerCases() {
   );
 }
 
-// Submit affordance gated by case status. Draft and returned cases get an
-// active button that routes to the submission page; submitted and accepted
-// cases get a muted, non-interactive chip — there is no active submit for a
-// case that's already with (or cleared by) the registrar.
+// Submit affordance gated by case status. A draft gets an active "Submit"
+// button to the submission page. A returned case renders nothing here — its
+// "Fix & Resubmit" button (next to it) opens the editor, and resubmission
+// happens from the editor's own Submit button. Submitted/accepted cases get a
+// muted, non-interactive chip — there is no active submit for a case already
+// with (or cleared by) the registrar.
 function SubmitAffordance({
   status,
   onSubmit,
@@ -480,7 +484,7 @@ function SubmitAffordance({
   status: CaseStatus;
   onSubmit: () => void;
 }) {
-  if (status === "draft" || status === "returned") {
+  if (status === "draft") {
     return (
       <button
         type="button"
@@ -488,9 +492,16 @@ function SubmitAffordance({
         className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700"
       >
         <UploadCloud className="h-4 w-4" />
-        {status === "returned" ? "Fix & Resubmit" : "Submit"}
+        Submit
       </button>
     );
+  }
+
+  // returned -> no separate affordance; "Fix & Resubmit" (the editor button
+  // above) is the single entry point, and the editor's own Submit handles
+  // resubmission.
+  if (status === "returned") {
+    return null;
   }
 
   // submitted | accepted -> muted indicator, no active submit.
