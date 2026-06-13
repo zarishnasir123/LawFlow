@@ -11,6 +11,7 @@ import {
   deleteMyCase,
   downloadCaseTemplate,
   getCaseAttachments,
+  getDashboardStats,
   getCaseTypes,
   getMyCase,
   listMyCases,
@@ -72,6 +73,17 @@ router.get(
   authenticate,
   authorizeRoles("lawyer"),
   asyncHandler(listMySignedCases)
+);
+
+// Lawyer dashboard stat tiles (active cases / pending submissions / client
+// signed / total earnings), all scoped to the logged-in lawyer. Placed before
+// the `/:caseId` route — like `/signed` — so "dashboard-stats" isn't captured
+// as a caseId. No params/body: everything derives from req.user.sub.
+router.get(
+  "/dashboard-stats",
+  authenticate,
+  authorizeRoles("lawyer"),
+  asyncHandler(getDashboardStats)
 );
 
 router.get(

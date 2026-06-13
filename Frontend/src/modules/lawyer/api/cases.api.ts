@@ -101,6 +101,17 @@ export type ApiCaseAttachment = {
   url: string | null;
 };
 
+// Lawyer dashboard stat tiles, scoped server-side to the logged-in lawyer.
+// `totalEarnings` is the lawyer's total received money in PKR (summed from
+// successful payment transactions), or null when no clean source exists — the
+// dashboard renders "Rs. —" in that case.
+export type LawyerDashboardStats = {
+  activeCases: number;
+  pendingSubmissions: number;
+  clientSigned: number;
+  totalEarnings: number | null;
+};
+
 // Relative API path that streams the generated .docx for a given
 // case_types.code. Building it here (not inline at call-sites) keeps the
 // path in one place and lets the apiClient interceptor attach auth headers
@@ -133,6 +144,15 @@ export const casesApi = {
   listMyCases: async (): Promise<ApiCase[]> => {
     const { data } = await apiClient.get<{ cases: ApiCase[] }>("/cases");
     return data.cases;
+  },
+
+  // Lawyer dashboard stat tiles. The backend scopes every count to the
+  // authenticated lawyer (cases.lawyer_user_id), so this needs no params.
+  getDashboardStats: async (): Promise<LawyerDashboardStats> => {
+    const { data } = await apiClient.get<LawyerDashboardStats>(
+      "/cases/dashboard-stats"
+    );
+    return data;
   },
 
   // Only cases where the PDF compile has produced a downloadable

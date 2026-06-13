@@ -1,5 +1,6 @@
+import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { FileText } from "lucide-react";
+import { DollarSign, FileText, FolderOpen } from "lucide-react";
 import LawyerLayout from "../components/LawyerLayout";
 import StatCard from "../../../shared/components/dashboard/StatCard";
 import RecentActivity from "../../../shared/components/dashboard/RecentActivity";
@@ -10,6 +11,7 @@ import type { ActivityItem, CaseItem } from "../../../shared/types/dashboard";
 import { useCurrentUser, displayFullName } from "../../auth/hooks/useCurrentUser";
 import { useEnforcePasswordChange } from "../../auth/hooks/useEnforcePasswordChange";
 import { useSignatureRequestsStore } from "../signatures/store/signatureRequests.store";
+import { casesApi } from "../api/cases.api";
 import {
   lawyerDashboardActivity,
   lawyerDashboardCases,
@@ -18,16 +20,51 @@ import {
   lawyerDashboardStats,
 } from "../data/dashboard.mock";
 
+// The "Client Messages" tile stays mock (in-app messaging has no backend), so
+// pull it out of the stat list by label and render the other three from live
+// data. Keeps the card's icon/colour/order exactly as designed.
+const CLIENT_MESSAGES_STAT = lawyerDashboardStats.find(
+  (stat) => stat.label === "Client Messages"
+);
+
+// Compact PKR formatting for the Total Earnings tile: large amounts collapse to
+// "Rs. 450K" / "Rs. 1.2M" so the number fits the card; smaller amounts show
+// with thousands separators. null → "Rs. —" (no clean earnings source).
+function formatEarnings(value: number | null | undefined): string {
+  if (value === null || value === undefined) return "Rs. —";
+  if (value >= 1_000_000) {
+    return `Rs. ${(value / 1_000_000).toFixed(value % 1_000_000 === 0 ? 0 : 1)}M`;
+  }
+  if (value >= 1_000) {
+    return `Rs. ${(value / 1_000).toFixed(value % 1_000 === 0 ? 0 : 1)}K`;
+  }
+  return `Rs. ${value.toLocaleString("en-PK")}`;
+}
+
 export default function LawyerDashboard() {
   const navigate = useNavigate();
   useEnforcePasswordChange();
   const { data: currentUser } = useCurrentUser();
-  // Signature dashboard activity is now backend-sourced per case; the
-  // global "X documents signed by client" tile on the lawyer dashboard
-  // needs a per-user pending fetch that we don't ship in Phase 1. The
-  // tile renders empty until that endpoint lands.
   useSignatureRequestsStore();
-  const signedCount: number = 0;
+
+  // Live lawyer-scoped stat tiles (active cases / pending submissions / client
+  // signed / total earnings). Backend scopes every count to req.user.sub.
+  const {
+    data: stats,
+    isLoading: statsLoading,
+    isError: statsError,
+  } = useQuery({
+    queryKey: ["lawyer", "dashboard-stats"],
+    queryFn: casesApi.getDashboardStats,
+  });
+
+  // While loading we show a subtle dash placeholder; on error we fall back to
+  // 0 / "Rs. —" so the dashboard still renders rather than blanking out.
+  const statsReady = !statsLoading && !statsError && stats !== undefined;
+  const statValue = (value: number | undefined): string =>
+    statsReady && value !== undefined ? String(value) : "—";
+
+  const signedCount: number = statsReady ? stats.clientSigned : 0;
   const signedActivity: ActivityItem[] =
     signedCount > 0
       ? [
@@ -68,12 +105,35 @@ export default function LawyerDashboard() {
 
         {/* STATS */}
         <section className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
-          {lawyerDashboardStats.map((stat) => (
-            <StatCard key={stat.label} {...stat} />
-          ))}
+          {/* Active Cases — all of the lawyer's cases, any status (live). */}
+          <StatCard
+            label="Active Cases"
+            value={statValue(stats?.activeCases)}
+            icon={FileText}
+            accentClassName="bg-blue-500"
+          />
+          {/* Pending Submissions — cases awaiting the registrar's decision. */}
+          <StatCard
+            label="Pending Submissions"
+            value={statValue(stats?.pendingSubmissions)}
+            icon={FolderOpen}
+            accentClassName="bg-yellow-500"
+          />
+          {/* Client Messages — mock; in-app messaging has no backend. Left
+              exactly as designed. */}
+          {CLIENT_MESSAGES_STAT && <StatCard {...CLIENT_MESSAGES_STAT} />}
+          {/* Total Earnings — lawyer's received money from successful payments;
+              "Rs. —" while loading / on error / when null. */}
+          <StatCard
+            label="Total Earnings"
+            value={statsReady ? formatEarnings(stats.totalEarnings) : "Rs. —"}
+            icon={DollarSign}
+            accentClassName="bg-purple-500"
+          />
+          {/* Client Signed — distinct cases where the client has signed (live). */}
           <StatCard
             label="Client Signed"
-            value={String(signedCount)}
+            value={statValue(stats?.clientSigned)}
             icon={FileText}
             accentClassName="bg-emerald-500"
           />

@@ -365,6 +365,64 @@ export async function listSignedCasesForLawyer({ lawyerUserId }) {
   }));
 }
 
+// Lawyer dashboard stat tiles. Four small aggregate queries, every one scoped
+// to the logged-in lawyer (cases.lawyer_user_id = $1) so a lawyer only ever
+// counts their own work. Run in parallel — they touch independent indexes and
+// none depends on another's result.
+//
+//   activeCases        — every case the lawyer owns, any status.
+//   pendingSubmissions — cases sitting with the registrar (status='submitted').
+//   clientSigned       — DISTINCT cases where the CLIENT signer has signed
+//                        (signature_requests.signer_role='client' AND
+//                        status='signed'). DISTINCT because one case can spawn
+//                        several client signature_request rows.
+//   totalEarnings      — money this lawyer has actually received, summed from
+//                        successful payment_transactions (status='success'),
+//                        scoped by payment_transactions.lawyer_user_id. This is
+//                        the same source the "Payments Received" page uses
+//                        (listLawyerEarnings). Always a number (0 when the
+//                        lawyer has no successful payments), never null here —
+//                        the schema gives a clean lawyer-received column.
+export async function getLawyerDashboardStats({ lawyerUserId }) {
+  const [activeCases, pendingSubmissions, clientSigned, totalEarnings] =
+    await Promise.all([
+      pool.query(
+        `SELECT COUNT(*)::int AS count
+         FROM cases
+         WHERE lawyer_user_id = $1`,
+        [lawyerUserId]
+      ),
+      pool.query(
+        `SELECT COUNT(*)::int AS count
+         FROM cases
+         WHERE lawyer_user_id = $1 AND status = 'submitted'`,
+        [lawyerUserId]
+      ),
+      pool.query(
+        `SELECT COUNT(DISTINCT c.id)::int AS count
+         FROM cases c
+         JOIN signature_requests sr ON sr.case_id = c.id
+         WHERE c.lawyer_user_id = $1
+           AND sr.signer_role = 'client'
+           AND sr.status = 'signed'`,
+        [lawyerUserId]
+      ),
+      pool.query(
+        `SELECT COALESCE(SUM(amount), 0)::float AS total
+         FROM payment_transactions
+         WHERE lawyer_user_id = $1 AND status = 'success'`,
+        [lawyerUserId]
+      )
+    ]);
+
+  return {
+    activeCases: activeCases.rows[0].count,
+    pendingSubmissions: pendingSubmissions.rows[0].count,
+    clientSigned: clientSigned.rows[0].count,
+    totalEarnings: totalEarnings.rows[0].total
+  };
+}
+
 export async function getCaseForLawyer({ caseId, lawyerUserId }) {
   const result = await pool.query(
     `${selectCaseWithType()}

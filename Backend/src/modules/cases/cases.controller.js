@@ -3,6 +3,7 @@ import {
   deleteCaseAttachment,
   deleteCaseForLawyer,
   getCaseForLawyer,
+  getLawyerDashboardStats,
   listCaseAttachments,
   listCaseTypes,
   listCasesForLawyer,
@@ -58,6 +59,13 @@ export async function createMyCase(req, res) {
 export async function listMyCases(req, res) {
   const cases = await listCasesForLawyer({ lawyerUserId: req.user.sub });
   return res.status(200).json({ cases });
+}
+
+// Lawyer dashboard stat tiles, scoped to the logged-in lawyer (req.user.sub).
+// Returns { activeCases, pendingSubmissions, clientSigned, totalEarnings }.
+export async function getDashboardStats(req, res) {
+  const stats = await getLawyerDashboardStats({ lawyerUserId: req.user.sub });
+  return res.status(200).json(stats);
 }
 
 export async function listMySignedCases(req, res) {
