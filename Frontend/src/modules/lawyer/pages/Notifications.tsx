@@ -1,91 +1,42 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Check, Trash2, SlidersHorizontal } from "lucide-react";
+import { useNavigate } from "@tanstack/react-router";
 import LawyerLayout from "../components/LawyerLayout";
 import NotificationCard from "../components/NotificationCard";
 import NotificationPreferencesModal from "../components/modals/NotificationPreferencesModal";
 import type { Notification } from "../types/notification";
-import {
-  fetchNotifications,
-  markNotificationAsRead,
-  markAllNotificationsAsRead,
-  deleteNotification,
-} from "../api/notificationApi";
+import { useLawyerNotifications } from "../hooks/useLawyerNotifications";
 
 export default function Notifications() {
-  const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [unreadCount, setUnreadCount] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const navigate = useNavigate();
   const [filter, setFilter] = useState<"all" | "unread">("all");
   const [preferencesOpen, setPreferencesOpen] = useState(false);
 
-  useEffect(() => {
-    loadNotifications();
-  }, []);
+  // Live data + mutations from the shared 30s-polling hook. Same source the
+  // bell badge reads, so the page and the badge stay in lockstep.
+  const {
+    notifications,
+    unreadCount,
+    isLoading,
+    isError,
+    refetch,
+    markRead,
+    markAllRead,
+  } = useLawyerNotifications();
 
-  const loadNotifications = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const response = await fetchNotifications();
-      setNotifications(response.notifications);
-      setUnreadCount(response.unreadCount);
-    } catch (err) {
-      setError("Failed to load notifications");
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
+  const handleMarkAsRead = (notificationId: string) => {
+    markRead(notificationId);
   };
 
-  const handleMarkAsRead = async (notificationId: string) => {
-    try {
-      // Update local state optimistically
-      setNotifications((prev) =>
-        prev.map((notif) =>
-          notif.id === notificationId ? { ...notif, read: true } : notif
-        )
-      );
-      setUnreadCount((prev) => Math.max(0, prev - 1));
-
-      // Call API
-      await markNotificationAsRead(notificationId);
-    } catch (err) {
-      console.error("Error marking notification as read:", err);
-      // Revert on error
-      loadNotifications();
-    }
+  const handleMarkAllAsRead = () => {
+    markAllRead();
   };
 
-  const handleMarkAllAsRead = async () => {
-    try {
-      setNotifications((prev) => prev.map((notif) => ({ ...notif, read: true })));
-      setUnreadCount(0);
-      await markAllNotificationsAsRead();
-    } catch (err) {
-      console.error("Error marking all as read:", err);
-      loadNotifications();
-    }
-  };
-
-  const handleDelete = async (notificationId: string) => {
-    try {
-      const deletedNotif = notifications.find((n) => n.id === notificationId);
-      setNotifications((prev) => prev.filter((notif) => notif.id !== notificationId));
-      if (deletedNotif && !deletedNotif.read) {
-        setUnreadCount((prev) => Math.max(0, prev - 1));
-      }
-      await deleteNotification(notificationId);
-    } catch (err) {
-      console.error("Error deleting notification:", err);
-      loadNotifications();
-    }
-  };
-
+  // Clicking a notification card marks it read (the card calls onRead for
+  // unread rows) and, when it references a case, opens that case.
   const handleNotificationClick = (notification: Notification) => {
-    if (notification.actionUrl) {
-      // Navigate to the action URL if available
-      window.location.href = notification.actionUrl;
+    if (notification.caseId) {
+      navigate({ to: `/lawyer-case-editor/${notification.caseId}` });
     }
   };
 
@@ -155,11 +106,11 @@ export default function Notifications() {
         </div>
 
         {/* Error State */}
-        {error && (
+        {isError && (
           <div className="mb-4 rounded-lg bg-red-50 p-4 text-sm text-red-700">
-            {error}
+            Failed to load notifications
             <button
-              onClick={loadNotifications}
+              onClick={() => refetch()}
               className="ml-2 font-semibold underline hover:no-underline"
             >
               Try again
@@ -168,7 +119,7 @@ export default function Notifications() {
         )}
 
         {/* Loading State */}
-        {loading && (
+        {isLoading && (
           <div className="space-y-3">
             {[1, 2, 3].map((i) => (
               <div
@@ -180,7 +131,7 @@ export default function Notifications() {
         )}
 
         {/* Notifications List */}
-        {!loading && filteredNotifications.length === 0 && (
+        {!isLoading && filteredNotifications.length === 0 && (
           <div className="rounded-lg bg-gray-50 p-8 text-center">
             <Trash2 className="mx-auto h-12 w-12 text-gray-400" />
             <h3 className="mt-2 font-medium text-gray-900">No notifications</h3>
@@ -192,14 +143,13 @@ export default function Notifications() {
           </div>
         )}
 
-        {!loading && filteredNotifications.length > 0 && (
+        {!isLoading && filteredNotifications.length > 0 && (
           <div className="space-y-0">
             {filteredNotifications.map((notification) => (
               <NotificationCard
                 key={notification.id}
                 notification={notification}
                 onRead={handleMarkAsRead}
-                onDelete={handleDelete}
                 onClick={handleNotificationClick}
               />
             ))}

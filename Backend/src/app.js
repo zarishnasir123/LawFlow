@@ -6,9 +6,11 @@ import hpp from "hpp";
 
 import authRoutes from "./modules/auth/auth.routes.js";
 import casesRoutes from "./modules/cases/cases.routes.js";
+import clientsRoutes from "./modules/clients/client.routes.js";
 import lawyersRoutes from "./modules/lawyers/lawyer.routes.js";
 import registrarRoutes from "./modules/registrar/registrar.routes.js";
 import registrarReviewRoutes from "./modules/registrarReview/registrarReview.routes.js";
+import notificationRoutes from "./modules/notifications/notifications.routes.js";
 import paymentRoutes from "./modules/payments/serviceCharges.routes.js";
 import agreementRoutes from "./modules/payments/agreements.routes.js";
 import paymentGatewayRoutes from "./modules/payments/payments.routes.js";
@@ -61,6 +63,9 @@ app.get("/health", (req, res) => {
 
 app.use("/api/auth", authRoutes);
 app.use("/api/cases", casesRoutes);
+// Client-facing read-only endpoints (role 'client'). GET /api/clients/cases
+// returns only the caller client's linked cases.
+app.use("/api/clients", clientsRoutes);
 app.use("/api/lawyers", lawyersRoutes);
 app.use("/api/payments", paymentRoutes);
 app.use("/api/payments", agreementRoutes);
@@ -73,6 +78,9 @@ app.use("/api/registrars", registrarRoutes);
 // Registrar-facing case review (role 'registrar'). Singular path —
 // distinct from the admin-only /api/registrars management API above.
 app.use("/api/registrar", registrarReviewRoutes);
+// In-app notifications. Gated by authenticate inside the router; every query
+// is scoped to req.user so a user only ever sees / marks their own rows.
+app.use("/api/notifications", notificationRoutes);
 
 app.use(notFoundHandler);
 app.use(errorHandler);

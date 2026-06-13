@@ -4,6 +4,7 @@ import {
   getSignedCasePdfDownloadUrl,
   getCaseAttachmentSignedUrl
 } from "../../services/storage.service.js";
+import { createNotification } from "../notifications/notifications.service.js";
 
 // =====================================================================
 // Registrar-facing case review.
@@ -226,12 +227,75 @@ export async function getCaseForRegistrar({ caseId, registrarUserId }) {
   return mapCaseDetail(result.rows[0]);
 }
 
+// Build the lawyer-facing notification payload for a completed transition.
+// Returns null for any status we don't notify on (defensive — only the two
+// real transitions produce a notification). The message embeds the case
+// title; the return variant appends the registrar's remarks so the lawyer
+// sees why it bounced. No PII (lawyer/client names) goes into the text.
+function buildLawyerNotification({ status, caseId, title, lawyerUserId, reviewRemarks }) {
+  const safeTitle = title ?? "your case";
+
+  if (status === "accepted") {
+    return {
+      userId: lawyerUserId,
+      type: "case_accepted",
+      title: "Case accepted",
+      message: `Your case "${safeTitle}" was accepted by the registrar and can proceed.`,
+      caseId
+    };
+  }
+
+  if (status === "returned") {
+    const reason = reviewRemarks?.trim() || "No reason provided.";
+    return {
+      userId: lawyerUserId,
+      type: "case_returned",
+      title: "Case returned for corrections",
+      message: `Your case "${safeTitle}" was returned by the registrar. Reason: ${reason}`,
+      caseId
+    };
+  }
+
+  return null;
+}
+
+// Fire-and-forget notification for the case lawyer after a transition.
+// BEST-EFFORT: a failure here must never break or roll back the approve /
+// return response, so we swallow any error and log a non-PII line. The
+// notification INSERT is intentionally outside the transition's success
+// path's return value — the registrar's action has already committed.
+async function notifyLawyerOfTransition({ status, caseId, title, lawyerUserId, reviewRemarks }) {
+  if (!lawyerUserId) return;
+
+  const payload = buildLawyerNotification({
+    status,
+    caseId,
+    title,
+    lawyerUserId,
+    reviewRemarks
+  });
+  if (!payload) return;
+
+  try {
+    await createNotification(payload);
+  } catch (error) {
+    // Log enough to debug, but never the case title / lawyer identity (PII).
+    console.error(
+      `Failed to create ${status} notification for case ${caseId}:`,
+      error?.message ?? error
+    );
+  }
+}
+
 // Shared write path for approve (R3) / return (R4). The UPDATE itself encodes
 // every guard so the whole transition is one atomic, race-free statement:
 //   - status must currently be 'submitted'
 //   - the case's tehsil must match the registrar's (case-insensitive)
 // rowCount === 0 means one of those failed; we surface 404 either way so a
 // registrar can't probe which (existence vs. wrong-state vs. wrong-tehsil).
+//
+// RETURNING also carries lawyer_user_id + title so we can fire the lawyer's
+// in-app notification without a second SELECT.
 async function transitionCase({
   caseId,
   registrarUserId,
@@ -249,7 +313,7 @@ async function transitionCase({
      WHERE id = $4
        AND status = 'submitted'
        AND LOWER(assigned_tehsil) = LOWER($5)
-     RETURNING id`,
+     RETURNING id, lawyer_user_id, title`,
     [newStatus, reviewRemarks, registrarUserId, caseId, tehsil]
   );
 
@@ -260,9 +324,24 @@ async function transitionCase({
     );
   }
 
+  const updatedRow = result.rows[0];
+
   // Re-fetch through the shared SELECT so the returned shape matches the
   // detail endpoint exactly (signed URL + review trail included).
-  return getCaseForRegistrar({ caseId, registrarUserId });
+  const detail = await getCaseForRegistrar({ caseId, registrarUserId });
+
+  // Best-effort lawyer notification. Awaited (so the helper's own try/catch
+  // runs) but it can never throw out here — a notification failure leaves the
+  // approve/return response untouched.
+  await notifyLawyerOfTransition({
+    status: newStatus,
+    caseId,
+    title: updatedRow.title,
+    lawyerUserId: updatedRow.lawyer_user_id,
+    reviewRemarks
+  });
+
+  return detail;
 }
 
 // R3: approve -> status='accepted'. Clears any prior return remarks since the

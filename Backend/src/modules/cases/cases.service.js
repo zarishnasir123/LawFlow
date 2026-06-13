@@ -87,6 +87,60 @@ async function findCaseTypeById(caseTypeId) {
   return result.rows[0] || null;
 }
 
+// Resolve which registered CLIENT account (if any) this case should be linked
+// to, so the client can later see it on their read-only "My Cases" view.
+//
+// Resolution order (per the client-linking contract):
+//   1. If the caller already supplied a clientUserId, trust it — but only after
+//      confirming the id belongs to a user whose role is 'client'. This stops a
+//      lawyer from accidentally (or maliciously) linking a case to a lawyer /
+//      registrar / admin account.
+//   2. Otherwise, look the client up by email: a registered user with role
+//      'client' whose email matches case-insensitively. users.email is CITEXT
+//      so equality is already case-insensitive, but we LOWER() both sides
+//      explicitly to keep the intent obvious and robust to a column-type change.
+//   3. If neither yields a match, return null. The case still captures the
+//      client by free-text name/email/phone — it simply isn't linked to a
+//      LawFlow account.
+//
+// Never throws: an unresolved client is a normal, supported outcome, not an
+// error. Parameterised SQL throughout.
+async function resolveClientUserId({ clientUserId, clientEmail }) {
+  if (clientUserId) {
+    const byId = await pool.query(
+      `SELECT users.id
+       FROM users
+       JOIN roles ON roles.id = users.role_id
+       WHERE users.id = $1 AND roles.name = 'client'
+       LIMIT 1`,
+      [clientUserId]
+    );
+
+    if (byId.rowCount > 0) {
+      return byId.rows[0].id;
+    }
+    // Provided id was not a valid client — fall through and try the email so a
+    // bad/foreign id doesn't silently block an otherwise-resolvable link.
+  }
+
+  if (clientEmail) {
+    const byEmail = await pool.query(
+      `SELECT users.id
+       FROM users
+       JOIN roles ON roles.id = users.role_id
+       WHERE LOWER(users.email::text) = LOWER($1) AND roles.name = 'client'
+       LIMIT 1`,
+      [clientEmail]
+    );
+
+    if (byEmail.rowCount > 0) {
+      return byEmail.rows[0].id;
+    }
+  }
+
+  return null;
+}
+
 // Resolve a case-template .docx for a given case_types.code.
 //
 // Security model:
@@ -178,6 +232,7 @@ export async function createCase({
   clientName,
   clientEmail,
   clientPhone,
+  clientUserId,
   oppositePartyName,
   assignedTehsil
 }) {
@@ -194,6 +249,15 @@ export async function createCase({
     throw new ApiError(400, "Selected court/tehsil is not supported");
   }
 
+  // Link the case to a registered client account when we can: prefer an
+  // explicitly-provided clientUserId, else resolve the client by email. NULL
+  // when neither matches — the free-text client_* columns below still capture
+  // an unregistered client, so linking is purely additive.
+  const resolvedClientUserId = await resolveClientUserId({
+    clientUserId,
+    clientEmail
+  });
+
   const insertResult = await pool.query(
     `INSERT INTO cases (
       lawyer_user_id,
@@ -203,10 +267,11 @@ export async function createCase({
       client_name,
       client_email,
       client_phone,
+      client_user_id,
       opposite_party_name,
       assigned_tehsil
     )
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
     RETURNING id`,
     [
       lawyerUserId,
@@ -216,6 +281,7 @@ export async function createCase({
       clientName,
       clientEmail || null,
       clientPhone || null,
+      resolvedClientUserId,
       oppositePartyName,
       assignedTehsil || null
     ]

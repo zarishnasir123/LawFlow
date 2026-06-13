@@ -1,78 +1,76 @@
-import type { Notification, NotificationResponse } from "../types/notification";
+import { apiClient } from "../../../shared/api/axios";
+import type {
+  ApiNotification,
+  ApiNotificationResponse,
+  Notification,
+  NotificationResponse,
+} from "../types/notification";
 
-const minutesAgo = (minutes: number) =>
-  new Date(Date.now() - minutes * 60 * 1000).toISOString();
+// Live lawyer notification API. Replaces the previous frontend-only mock.
+// Talks to the real backend (Backend/src/modules/notifications) via the
+// shared apiClient, which attaches the auth header and handles refresh. Every
+// endpoint is scoped server-side to the logged-in user, so the lawyer only
+// ever sees / marks their OWN notifications.
 
-// Frontend-only mock data for notifications.
-let mockNotifications: Notification[] = [
-  {
-    id: "1",
-    title: "Case Status Updated",
-    message: "Your case 'Smith v. Johnson' has been moved to hearing stage",
-    type: "case",
-    read: false,
-    createdAt: minutesAgo(5),
-    caseId: "case-001",
-    actionUrl: "/lawyer-cases",
-  },
-  {
-    id: "2",
-    title: "Hearing Scheduled",
-    message: "Hearing scheduled for Dec 20, 2024 at 10:00 AM",
-    type: "hearing",
-    read: false,
-    createdAt: minutesAgo(30),
-    actionUrl: "/lawyer-hearings",
-  },
-  {
-    id: "3",
-    title: "New Message",
-    message: "Your client John Doe sent you a message",
-    type: "message",
-    read: false,
-    createdAt: minutesAgo(60),
-    senderId: "client-001",
-    actionUrl: "/lawyer-messages",
-  },
-  {
-    id: "4",
-    title: "Document Ready for Review",
-    message: "The contract document for case 'Ahmed v. Khan' is ready for review",
-    type: "document",
-    read: true,
-    createdAt: minutesAgo(120),
-    caseId: "case-002",
-    actionUrl: "/lawyer-case-editor/case-002",
-  },
-  {
-    id: "5",
-    title: "System Maintenance",
-    message: "System will be under maintenance on Dec 18 from 2 AM to 4 AM UTC",
-    type: "system",
-    read: true,
-    createdAt: minutesAgo(1440),
-  },
-];
+// Map a backend `type` (e.g. "case_accepted", "case_returned") onto the
+// broad UI category the NotificationCard keys its icon/color off of. Anything
+// case-related collapses to "case"; unknown types fall back to "system" so a
+// new backend type still renders sensibly without a frontend change.
+function mapType(backendType: string): Notification["type"] {
+  if (backendType.startsWith("case")) return "case";
+  if (backendType.startsWith("hearing")) return "hearing";
+  if (backendType.startsWith("message")) return "message";
+  if (backendType.startsWith("document")) return "document";
+  return "system";
+}
 
-const buildResponse = (): NotificationResponse => ({
-  notifications: [...mockNotifications],
-  unreadCount: mockNotifications.filter((n) => !n.read).length,
-});
+// Derive a click-through route from the related case id. Accepted/active
+// cases open in the editor; returned cases have their own detail page, but
+// the editor route handles all statuses, so we use it as the single, always-
+// valid destination. Notifications with no caseId get no actionUrl (clicking
+// them just marks read).
+function mapActionUrl(caseId: string | null): string | undefined {
+  return caseId ? `/lawyer-case-editor/${caseId}` : undefined;
+}
 
+// Map one backend row onto the UI Notification shape the existing components
+// render. The backend's `isRead` becomes the UI's `read`; `caseId` is
+// normalised from null to undefined to match the optional UI field.
+function mapNotification(row: ApiNotification): Notification {
+  return {
+    id: row.id,
+    title: row.title,
+    message: row.message,
+    type: mapType(row.type),
+    read: row.isRead,
+    createdAt: row.createdAt,
+    caseId: row.caseId ?? undefined,
+    actionUrl: mapActionUrl(row.caseId),
+  };
+}
+
+// GET /api/notifications -> { notifications, unreadCount }. The backend caps
+// the list (~50, newest first) and computes unreadCount across ALL rows so
+// the bell badge stays accurate even past the list cap.
 export async function fetchNotifications(): Promise<NotificationResponse> {
-  return buildResponse();
-}
-
-export async function markNotificationAsRead(notificationId: string): Promise<void> {
-  mockNotifications = mockNotifications.map((n) =>
-    n.id === notificationId ? { ...n, read: true } : n
+  const { data } = await apiClient.get<ApiNotificationResponse>(
+    "/notifications"
   );
+  return {
+    notifications: data.notifications.map(mapNotification),
+    unreadCount: data.unreadCount,
+  };
 }
 
+// PATCH /api/notifications/:id/read -> mark one read. 404s if the id isn't the
+// caller's own row.
+export async function markNotificationAsRead(
+  notificationId: string
+): Promise<void> {
+  await apiClient.patch(`/notifications/${notificationId}/read`);
+}
+
+// PATCH /api/notifications/read-all -> mark every unread one read.
 export async function markAllNotificationsAsRead(): Promise<void> {
-  mockNotifications = mockNotifications.map((n) => ({ ...n, read: true }));
-}
-
-export async function deleteNotification(notificationId: string): Promise<void> {
-  mockNotifications = mockNotifications.filter((n) => n.id !== notificationId);
+  await apiClient.patch("/notifications/read-all");
 }

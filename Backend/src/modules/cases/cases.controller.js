@@ -46,6 +46,7 @@ export async function createMyCase(req, res) {
     clientName: req.body.clientName.trim(),
     clientEmail: req.body.clientEmail?.trim() || null,
     clientPhone: req.body.clientPhone?.trim() || null,
+    clientUserId: req.body.clientUserId || null,
     oppositePartyName: req.body.oppositePartyName.trim(),
     assignedTehsil: req.body.assignedTehsil?.trim() || null
   });

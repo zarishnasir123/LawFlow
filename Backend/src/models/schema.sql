@@ -14,6 +14,7 @@ CREATE EXTENSION IF NOT EXISTS "citext";
 -- =====================================================================
 -- Drop in reverse dependency order. CASCADE removes dependent objects.
 -- =====================================================================
+DROP TABLE IF EXISTS notifications                  CASCADE;
 DROP TABLE IF EXISTS payment_receipts               CASCADE;
 DROP TABLE IF EXISTS payment_transactions           CASCADE;
 DROP TABLE IF EXISTS installments                   CASCADE;
@@ -484,6 +485,35 @@ CREATE TABLE case_attachments (
 CREATE INDEX idx_case_attachments_case_id ON case_attachments(case_id);
 
 -- =====================================================================
+-- In-app notifications: one row per delivered notification to a single
+-- recipient (user_id). Created best-effort by other modules — e.g. the
+-- registrar review flow inserts a row for the case lawyer when a case is
+-- accepted or returned. Every read/write is scoped to the recipient's
+-- user_id so a user only ever sees / marks their OWN rows. case_id is a
+-- nullable back-reference to the related case (NULL for non-case-bound
+-- notifications); it cascades so deleting a case clears its notifications.
+-- =====================================================================
+CREATE TABLE notifications (
+  id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id    UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+
+  type       VARCHAR(50)  NOT NULL,
+  title      VARCHAR(200) NOT NULL,
+  message    TEXT         NOT NULL,
+
+  case_id    UUID REFERENCES cases(id) ON DELETE CASCADE,
+
+  is_read    BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+-- The bell/list query is "my notifications, newest first" with the unread
+-- count derived from the same rows; this composite covers both the scope
+-- (user_id), the unread filter (is_read), and the ordering (created_at DESC).
+CREATE INDEX idx_notifications_user_unread
+  ON notifications (user_id, is_read, created_at DESC);
+
+-- =====================================================================
 -- Signature requests: ONE row PER SIGNER per "Send for signature" action.
 -- When a lawyer marks pages with "client + lawyer" both as required
 -- signers and hits Send, the backend creates TWO rows — one with
@@ -791,6 +821,7 @@ ALTER TABLE payment_plans                  ENABLE ROW LEVEL SECURITY;
 ALTER TABLE installments                   ENABLE ROW LEVEL SECURITY;
 ALTER TABLE payment_transactions           ENABLE ROW LEVEL SECURITY;
 ALTER TABLE payment_receipts               ENABLE ROW LEVEL SECURITY;
+ALTER TABLE notifications                  ENABLE ROW LEVEL SECURITY;
 
 -- =====================================================================
 -- Seed data: supported case types (5 civil + 5 family at tehsil level).

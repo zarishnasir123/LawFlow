@@ -4,7 +4,14 @@ import type { HeaderAction } from "../../../shared/types/dashboard";
 
 // Note: Profile + Logout are deliberately NOT here anymore — the
 // avatar dropdown in LawyerLayout owns both, Gmail-style.
-export function useNavbarActions(_onLogout: () => void, onNotificationClick: () => void): HeaderAction[] {
+//
+// `notificationBadge` is the live unread count (from useLawyerNotifications).
+// 0 hides the badge — HeaderAction only renders it when truthy.
+export function useNavbarActions(
+  _onLogout: () => void,
+  onNotificationClick: () => void,
+  notificationBadge = 0
+): HeaderAction[] {
   const navigate = useNavigate();
 
   return [
@@ -17,7 +24,7 @@ export function useNavbarActions(_onLogout: () => void, onNotificationClick: () 
       label: "Notifications",
       icon: Bell,
       onClick: onNotificationClick,
-      badge: 3,
+      badge: notificationBadge || undefined,
     },
   ];
 }
