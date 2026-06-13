@@ -112,6 +112,154 @@ async function countRejectedToday() {
   return rows[0].count;
 }
 
+// =====================================================================
+// Admin dashboard — Recent Activity feed.
+//
+// There is NO general audit-log table, so the feed is synthesized by
+// UNION ALL-ing real events from their own real timestamp columns, then
+// ordering the combined set newest-first and taking the top N. Every
+// branch selects the SAME column shape:
+//
+//   id        synthetic stable key  -> type || ':' || sourceRowId
+//   type      short enum the frontend maps to an icon/colour
+//   title     fixed human label for the event
+//   subject   the entity the event is about (lawyer / registrar / case name)
+//   ts        the event's real timestamp (used only for ORDER BY)
+//
+// Event sources (all timestamps are real columns — nothing fabricated):
+//   lawyer_approved   lawyer_profiles approved, ts = verified_at,
+//                     subject = lawyer name (users join)
+//   lawyer_rejected   lawyer_rejection_history, ts = rejected_at,
+//                     subject = the lawyer name stored on the audit row
+//   lawyer_requested  lawyer_profiles pending, ts = created_at,
+//                     subject = lawyer name (users join)
+//   registrar_created users(role=registrar), ts = created_at,
+//                     subject = registrar name
+//   case_accepted /   cases status in (accepted,returned),
+//   case_returned     ts = reviewed_at, subject = case title
+//                     (+ reviewing registrar name when present)
+//
+// We deliberately omit any "client verification" event: clients self-
+// register with no admin approval, so there is no source row for it.
+//
+// LIMIT is applied at the outer query so the DB does the ordering across
+// all sources. Parameterised throughout (no string interpolation of the
+// limit or the status literals).
+// =====================================================================
+async function getRecentActivity(limit = 8) {
+  const safeLimit = Math.min(Math.max(Number.parseInt(limit, 10) || 8, 1), 50);
+
+  const { rows } = await pool.query(
+    `
+    SELECT id, type, title, subject, ts AS timestamp
+    FROM (
+      -- Lawyer verification approved.
+      SELECT
+        'lawyer_approved:' || lp.id        AS id,
+        'lawyer_approved'                  AS type,
+        'Lawyer verification approved'     AS title,
+        TRIM(u.first_name || ' ' || u.last_name) AS subject,
+        lp.verified_at                     AS ts
+      FROM lawyer_profiles lp
+      JOIN users u ON u.id = lp.user_id
+      WHERE lp.verification_status = $1
+        AND lp.verified_at IS NOT NULL
+
+      UNION ALL
+
+      -- Lawyer verification rejected (audit row; user already deleted, so
+      -- the name is read from the snapshot stored on the history row).
+      SELECT
+        'lawyer_rejected:' || rh.id        AS id,
+        'lawyer_rejected'                  AS type,
+        'Lawyer verification rejected'     AS title,
+        TRIM(COALESCE(rh.first_name, '') || ' ' || COALESCE(rh.last_name, '')) AS subject,
+        rh.rejected_at                     AS ts
+      FROM lawyer_rejection_history rh
+
+      UNION ALL
+
+      -- New lawyer verification request (still pending).
+      SELECT
+        'lawyer_requested:' || lp.id       AS id,
+        'lawyer_requested'                 AS type,
+        'New lawyer verification request'  AS title,
+        TRIM(u.first_name || ' ' || u.last_name) AS subject,
+        lp.created_at                      AS ts
+      FROM lawyer_profiles lp
+      JOIN users u ON u.id = lp.user_id
+      WHERE lp.verification_status = $2
+
+      UNION ALL
+
+      -- New registrar account provisioned by an admin.
+      SELECT
+        'registrar_created:' || u.id       AS id,
+        'registrar_created'                AS type,
+        'Created new registrar account'    AS title,
+        TRIM(u.first_name || ' ' || u.last_name) AS subject,
+        u.created_at                       AS ts
+      FROM users u
+      JOIN roles r ON r.id = u.role_id
+      WHERE r.name = $3
+
+      UNION ALL
+
+      -- Case accepted by a registrar.
+      SELECT
+        'case_accepted:' || c.id           AS id,
+        'case_accepted'                    AS type,
+        'Case accepted'                    AS title,
+        CASE
+          WHEN ru.id IS NOT NULL
+            THEN c.title || ' (by ' || TRIM(ru.first_name || ' ' || ru.last_name) || ')'
+          ELSE c.title
+        END                                AS subject,
+        c.reviewed_at                      AS ts
+      FROM cases c
+      LEFT JOIN users ru ON ru.id = c.reviewed_by_registrar_id
+      WHERE c.status = $4
+        AND c.reviewed_at IS NOT NULL
+
+      UNION ALL
+
+      -- Case returned to the lawyer by a registrar.
+      SELECT
+        'case_returned:' || c.id           AS id,
+        'case_returned'                    AS type,
+        'Case returned'                    AS title,
+        CASE
+          WHEN ru.id IS NOT NULL
+            THEN c.title || ' (by ' || TRIM(ru.first_name || ' ' || ru.last_name) || ')'
+          ELSE c.title
+        END                                AS subject,
+        c.reviewed_at                      AS ts
+      FROM cases c
+      LEFT JOIN users ru ON ru.id = c.reviewed_by_registrar_id
+      WHERE c.status = $5
+        AND c.reviewed_at IS NOT NULL
+    ) AS activity
+    ORDER BY ts DESC
+    LIMIT $6
+    `,
+    ["approved", "pending", "registrar", "accepted", "returned", safeLimit]
+  );
+
+  return {
+    activities: rows.map((row) => ({
+      id: row.id,
+      type: row.type,
+      title: row.title,
+      subject: row.subject,
+      timestamp: row.timestamp
+    }))
+  };
+}
+
+export async function getRecentActivityFeed(limit = 8) {
+  return getRecentActivity(limit);
+}
+
 export async function getDashboardStats() {
   const [
     pendingVerifications,

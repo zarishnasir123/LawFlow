@@ -1,6 +1,9 @@
 import { Router } from "express";
 
-import { getDashboardStatsHandler } from "./admin.controller.js";
+import {
+  getDashboardStatsHandler,
+  getRecentActivityHandler
+} from "./admin.controller.js";
 import { asyncHandler } from "../../middleware/asyncHandler.js";
 import { authenticate } from "../../middleware/authenticate.js";
 import { authorizeRoles } from "../../middleware/authorizeRoles.js";
@@ -12,5 +15,6 @@ const router = Router();
 router.use(authenticate, authorizeRoles("admin"));
 
 router.get("/dashboard-stats", asyncHandler(getDashboardStatsHandler));
+router.get("/recent-activity", asyncHandler(getRecentActivityHandler));
 
 export default router;
