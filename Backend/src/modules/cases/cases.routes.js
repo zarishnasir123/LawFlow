@@ -16,7 +16,8 @@ import {
   listMySignedCases,
   patchMyCase,
   postCaseAttachment,
-  removeCaseAttachment
+  removeCaseAttachment,
+  submitMyCase
 } from "./cases.controller.js";
 import {
   attachmentIdParamValidator,
@@ -88,6 +89,18 @@ router.patch(
   updateCaseValidator,
   validateRequest,
   asyncHandler(patchMyCase)
+);
+
+// Submit a case to the registrar for review. Ownership + the status guard
+// ('draft'/'returned') and the tehsil/signed-PDF prerequisites are enforced
+// in the service. No body — the case id in the URL is all we need.
+router.post(
+  "/:caseId/submit",
+  authenticate,
+  authorizeRoles("lawyer"),
+  caseIdParamValidator,
+  validateRequest,
+  asyncHandler(submitMyCase)
 );
 
 // =====================================================================

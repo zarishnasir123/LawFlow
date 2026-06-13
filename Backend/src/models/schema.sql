@@ -425,6 +425,19 @@ CREATE TABLE cases (
   signed_pdf_storage_path  TEXT,
   signed_pdf_generated_at  TIMESTAMP,
 
+  -- Jurisdiction the lawyer picks at case creation. Routes the case to the
+  -- registrar whose registrar_profiles.assigned_tehsil matches (case-insensitive
+  -- equality). Must be populated before the case can be submitted for review.
+  assigned_tehsil VARCHAR(100),
+
+  -- Registrar review trail. review_remarks holds the registrar's reason when a
+  -- case is bounced back (status='returned'); reviewed_at / reviewed_by_registrar_id
+  -- stamp who actioned the most recent approve/return. reviewed_by_registrar_id
+  -- nulls out if the registrar account is later deleted.
+  review_remarks  TEXT,
+  reviewed_at     TIMESTAMP,
+  reviewed_by_registrar_id UUID REFERENCES users(id) ON DELETE SET NULL,
+
   -- draft = lawyer is still drafting / editing
   -- submitted = sent to registrar, awaiting review
   -- returned = registrar bounced it back with remarks
@@ -700,6 +713,8 @@ CREATE INDEX idx_case_types_category ON case_types(category, sort_order);
 CREATE INDEX idx_cases_lawyer_user_id ON cases(lawyer_user_id);
 CREATE INDEX idx_cases_client_user_id ON cases(client_user_id);
 CREATE INDEX idx_cases_status         ON cases(status);
+-- Registrar review queue: cases for a given tehsil filtered by status.
+CREATE INDEX idx_cases_status_tehsil  ON cases(status, assigned_tehsil);
 
 -- Lawyer's editor lists per-case + groups by batch.
 CREATE INDEX idx_signature_requests_case_id ON signature_requests(case_id);

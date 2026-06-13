@@ -1,36 +1,21 @@
 import { Eye } from "lucide-react";
-import { useMemo } from "react";
 import { useNavigate } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
 import RegistrarLayout from "../components/RegistrarLayout";
 import Card from "../../../shared/components/dashboard/Card";
-import { useCaseFilingStore } from "../../lawyer/store/caseFiling.store";
 import { getCaseDisplayTitle } from "../../../shared/utils/caseDisplay";
-import {
-  getFcfsSubmissionQueue,
-  getProcessedCaseIdsForLatestSubmission,
-} from "../utils/submissionQueue";
-import { useRegistrarReviewDecisionStore } from "../store/reviewDecisions.store";
+import { listSubmittedCases } from "../api";
 
 export function ViewCases() {
   const navigate = useNavigate();
-  const liveSubmittedCases = useCaseFilingStore((state) =>
-    state.getSubmittedCasesForRegistrar()
-  );
-  const decisionsByCaseId = useRegistrarReviewDecisionStore(
-    (state) => state.decisionsByCaseId
-  );
-  const queue = useMemo(
-    () => getFcfsSubmissionQueue(liveSubmittedCases),
-    [liveSubmittedCases]
-  );
-  const excludedCaseIds = useMemo(
-    () => getProcessedCaseIdsForLatestSubmission(queue, decisionsByCaseId),
-    [queue, decisionsByCaseId]
-  );
-  const submittedCases = useMemo(
-    () => queue.filter((item) => !excludedCaseIds.has(item.caseId)),
-    [queue, excludedCaseIds]
-  );
+  const {
+    data: submittedCases = [],
+    isLoading,
+    isError,
+  } = useQuery({
+    queryKey: ["registrar", "cases"],
+    queryFn: listSubmittedCases,
+  });
 
   return (
     <RegistrarLayout pageSubtitle="View Submitted Cases" notificationBadge={submittedCases.length}>
@@ -71,7 +56,7 @@ export function ViewCases() {
             </thead>
             <tbody className="divide-y divide-gray-100">
               {submittedCases.map((caseItem, index) => (
-                <tr key={caseItem.caseId} className="hover:bg-emerald-50/40">
+                <tr key={caseItem.id} className="hover:bg-emerald-50/40">
                   <td className="px-5 py-4">
                     <span className="inline-flex rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-700">
                       #{index + 1}
@@ -79,14 +64,18 @@ export function ViewCases() {
                   </td>
                   <td className="px-5 py-4">
                     <p className="font-semibold text-gray-900">
-                      {getCaseDisplayTitle(caseItem.title, caseItem.caseId)}
+                      {getCaseDisplayTitle(caseItem.title, caseItem.id)}
                     </p>
-                    <p className="text-xs capitalize text-gray-500">{caseItem.caseType} case</p>
+                    <p className="text-xs capitalize text-gray-500">
+                      {caseItem.caseTypeLabel || `${caseItem.category} case`}
+                    </p>
                   </td>
                   <td className="px-5 py-4 text-sm text-gray-700">{caseItem.clientName}</td>
-                  <td className="px-5 py-4 text-sm text-gray-700">{caseItem.submittedBy}</td>
+                  <td className="px-5 py-4 text-sm text-gray-700">{caseItem.lawyerName}</td>
                   <td className="px-5 py-4 text-sm text-gray-700">
-                    {new Date(caseItem.submittedAt).toLocaleString()}
+                    {caseItem.submittedAt
+                      ? new Date(caseItem.submittedAt).toLocaleString()
+                      : "—"}
                   </td>
                   <td className="px-5 py-4">
                     <span className="inline-flex rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-700">
@@ -98,7 +87,7 @@ export function ViewCases() {
                       onClick={() =>
                         navigate({
                           to: "/review-cases/$caseId",
-                          params: { caseId: caseItem.caseId },
+                          params: { caseId: caseItem.id },
                         })
                       }
                       className="inline-flex items-center gap-1 rounded-lg border border-gray-200 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
@@ -112,7 +101,19 @@ export function ViewCases() {
             </tbody>
           </table>
 
-          {submittedCases.length === 0 && (
+          {isLoading && (
+            <p className="py-8 text-center text-sm text-gray-500">
+              Loading submitted cases…
+            </p>
+          )}
+
+          {isError && (
+            <p className="py-8 text-center text-sm text-rose-600">
+              Could not load the registrar queue. Please try again.
+            </p>
+          )}
+
+          {!isLoading && !isError && submittedCases.length === 0 && (
             <p className="py-8 text-center text-sm text-gray-500">
               No submitted cases available yet.
             </p>

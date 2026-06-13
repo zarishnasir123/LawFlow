@@ -1,113 +1,145 @@
-import { Eye, RotateCcw, XCircle } from "lucide-react";
-import { useMemo } from "react";
-import { useNavigate } from "@tanstack/react-router";
+import { useForm } from "react-hook-form";
+import { ArrowLeft, XCircle } from "lucide-react";
+import { useNavigate, useSearch } from "@tanstack/react-router";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import RegistrarLayout from "../components/RegistrarLayout";
 import Card from "../../../shared/components/dashboard/Card";
-import { useRegistrarReviewDecisionStore } from "../store/reviewDecisions.store";
+import { getCaseDisplayTitle } from "../../../shared/utils/caseDisplay";
+import { getCase, getRegistrarErrorMessage, returnCase } from "../api";
+
+type ReturnFormValues = {
+  remarks: string;
+};
 
 export default function ReturnCase() {
   const navigate = useNavigate();
-  const returnedCases = useRegistrarReviewDecisionStore((state) => state.returnedCases);
-  const sortedReturnedCases = useMemo(
-    () =>
-      [...returnedCases].sort(
-        (a, b) =>
-          new Date(b.returnedAt).getTime() - new Date(a.returnedAt).getTime()
-      ),
-    [returnedCases]
-  );
+  const queryClient = useQueryClient();
+  const { caseId } = useSearch({ from: "/return-case" });
+
+  const {
+    register,
+    handleSubmit,
+    setError,
+    formState: { errors },
+  } = useForm<ReturnFormValues>({ defaultValues: { remarks: "" } });
+
+  const { data: caseData } = useQuery({
+    queryKey: ["registrar", "cases", caseId],
+    queryFn: () => getCase(caseId as string),
+    enabled: Boolean(caseId),
+  });
+
+  const returnMutation = useMutation({
+    mutationFn: (remarks: string) => returnCase(caseId as string, remarks),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["registrar", "cases"] });
+      navigate({ to: "/view-cases" });
+    },
+    onError: (error) => {
+      setError("remarks", { message: getRegistrarErrorMessage(error) });
+    },
+  });
+
+  const onSubmit = handleSubmit((values) => {
+    const trimmed = values.remarks.trim();
+    if (!trimmed) {
+      setError("remarks", { message: "Remarks are required to return a case." });
+      return;
+    }
+    returnMutation.mutate(trimmed);
+  });
+
+  // Reached without a target case (e.g. a stale bookmark). Send the
+  // registrar back to the queue rather than rendering a dead form.
+  if (!caseId) {
+    return (
+      <RegistrarLayout pageSubtitle="Return Case">
+        <Card className="p-10 text-center">
+          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-red-100 text-red-600">
+            <XCircle className="h-7 w-7" />
+          </div>
+          <h2 className="text-lg font-semibold text-gray-800">No case selected</h2>
+          <p className="mt-1 text-sm text-gray-500">
+            Open a case from the review queue to return it for corrections.
+          </p>
+          <button
+            onClick={() => navigate({ to: "/view-cases" })}
+            className="mt-5 inline-flex items-center gap-2 rounded-lg bg-[#01411C] px-4 py-2 text-sm font-semibold text-white hover:bg-[#025a27]"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Back to Queue
+          </button>
+        </Card>
+      </RegistrarLayout>
+    );
+  }
+
+  const caseTitleDisplay = getCaseDisplayTitle(caseData?.title, caseData?.id);
 
   return (
-    <RegistrarLayout
-      pageSubtitle="Returned Cases"
-      notificationBadge={sortedReturnedCases.length}
-    >
-      <Card className="overflow-hidden p-0">
-        <div className="border-b border-red-100 bg-red-50 px-5 py-4">
-          <h3 className="text-base font-semibold text-red-900">Returned Cases</h3>
-          <p className="mt-1 text-sm text-red-700">
-            Cases returned by registrar for lawyer corrections.
+    <RegistrarLayout pageSubtitle="Return Case">
+      <div className="mx-auto w-full max-w-2xl space-y-6">
+        <Card className="border-l-4 border-rose-500">
+          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-rose-600">
+            Return for Corrections
           </p>
-        </div>
+          <h1 className="mt-2 text-2xl font-bold tracking-tight text-gray-900">
+            {caseData ? caseTitleDisplay : "Return Case"}
+          </h1>
+          <p className="mt-2 text-sm text-gray-600">
+            Send this case back to the lawyer with specific correction remarks. The
+            case returns to the lawyer for editing and resubmission.
+          </p>
+        </Card>
 
-        {sortedReturnedCases.length === 0 ? (
-          <div className="p-10 text-center">
-            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-red-100 text-red-600">
-              <XCircle className="h-7 w-7" />
+        <Card>
+          <form onSubmit={onSubmit} className="space-y-5">
+            <div>
+              <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-rose-700">
+                Remarks for Lawyer <span className="text-rose-500">*</span>
+              </label>
+              <textarea
+                rows={5}
+                placeholder="Specify what needs to be corrected before resubmission..."
+                className="w-full rounded-xl border border-rose-200 bg-white p-3 text-sm outline-none focus:border-rose-400 focus:ring-1 focus:ring-rose-300"
+                {...register("remarks", {
+                  required: "Remarks are required to return a case.",
+                  validate: (value) =>
+                    value.trim().length > 0 ||
+                    "Remarks are required to return a case.",
+                })}
+              />
+              {errors.remarks && (
+                <p className="mt-2 text-sm text-rose-600">{errors.remarks.message}</p>
+              )}
             </div>
-            <h2 className="text-lg font-semibold text-gray-800">No returned cases yet</h2>
-            <p className="mt-1 text-sm text-gray-500">
-              Returned cases will appear here after registrar sends correction remarks.
-            </p>
-            <button
-              onClick={() => navigate({ to: "/view-cases" })}
-              className="mt-5 inline-flex items-center gap-2 rounded-lg bg-[#01411C] px-4 py-2 text-sm font-semibold text-white hover:bg-[#025a27]"
-            >
-              <Eye className="h-4 w-4" />
-              Open Review Queue
-            </button>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[820px] text-left">
-              <thead className="bg-white">
-                <tr>
-                  <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
-                    Case
-                  </th>
-                  <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
-                    Client
-                  </th>
-                  <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
-                    Lawyer
-                  </th>
-                  <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
-                    Returned At
-                  </th>
-                  <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
-                    Remarks
-                  </th>
-                  <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500 text-right">
-                    Action
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {sortedReturnedCases.map((caseItem) => (
-                  <tr key={caseItem.caseId} className="hover:bg-red-50/30">
-                    <td className="px-5 py-4">
-                      <p className="font-semibold text-gray-900">{caseItem.title}</p>
-                      <p className="text-xs capitalize text-gray-500">{caseItem.caseType} case</p>
-                    </td>
-                    <td className="px-5 py-4 text-sm text-gray-700">{caseItem.clientName}</td>
-                    <td className="px-5 py-4 text-sm text-gray-700">{caseItem.submittedBy}</td>
-                    <td className="px-5 py-4 text-sm text-gray-700">
-                      {new Date(caseItem.returnedAt).toLocaleString()}
-                    </td>
-                    <td className="px-5 py-4 text-sm text-gray-700">
-                      {caseItem.remarks || "Correction required"}
-                    </td>
-                    <td className="px-5 py-4 text-right">
-                      <button
-                        onClick={() =>
-                          navigate({
-                            to: "/review-cases/$caseId",
-                            params: { caseId: caseItem.caseId },
-                          })
-                        }
-                        className="inline-flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
-                      >
-                        <RotateCcw className="h-4 w-4" />
-                        Re-open
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Card>
+
+            <div className="flex flex-wrap justify-end gap-3 border-t border-gray-100 pt-5">
+              <button
+                type="button"
+                onClick={() =>
+                  navigate({
+                    to: "/review-cases/$caseId",
+                    params: { caseId },
+                  })
+                }
+                disabled={returnMutation.isPending}
+                className="rounded-lg border border-gray-300 px-5 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              >
+                Back to Review
+              </button>
+              <button
+                type="submit"
+                disabled={returnMutation.isPending}
+                className="inline-flex items-center gap-2 rounded-lg bg-rose-600 px-5 py-2 text-sm font-semibold text-white hover:bg-rose-700 disabled:opacity-50"
+              >
+                <XCircle className="h-4 w-4" />
+                {returnMutation.isPending ? "Returning…" : "Submit & Return Case"}
+              </button>
+            </div>
+          </form>
+        </Card>
+      </div>
     </RegistrarLayout>
   );
 }

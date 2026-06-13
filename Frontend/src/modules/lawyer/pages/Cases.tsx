@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   Search,
   CheckCircle,
@@ -14,12 +14,12 @@ import {
   Pencil,
 } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
 
 import LawyerLayout from "../components/LawyerLayout";
 import {
   casesApi,
   getCasesErrorMessage,
-  type ApiCase,
   type CaseStatus,
 } from "../api/cases.api";
 
@@ -86,31 +86,22 @@ function formatDate(iso: string | null | undefined) {
 
 export default function LawyerCases() {
   const navigate = useNavigate();
-  const [cases, setCases] = useState<ApiCase[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [filterStatus, setFilterStatus] = useState<StatusFilter>("all");
 
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
-    casesApi
-      .listMyCases()
-      .then((rows) => {
-        if (!cancelled) setCases(rows);
-      })
-      .catch((err) => {
-        if (!cancelled) setError(getCasesErrorMessage(err));
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  // Server state lives in TanStack Query (per Frontend-AGENTS.md) so the submit
+  // mutation on the submission page can invalidate ["lawyer", "cases"] and this
+  // list refreshes — a resubmitted case flips returned -> submitted here without
+  // a manual reload.
+  const {
+    data: cases = [],
+    isLoading: loading,
+    error: queryError,
+  } = useQuery({
+    queryKey: ["lawyer", "cases"],
+    queryFn: casesApi.listMyCases,
+  });
+  const error = queryError ? getCasesErrorMessage(queryError) : null;
 
   const filteredCases = useMemo(() => {
     const q = searchTerm.trim().toLowerCase();
@@ -301,6 +292,30 @@ export default function LawyerCases() {
                         </p>
                       ) : null}
 
+                      {/* Registrar return reason — the lawyer must read this and
+                          fix the case before resubmitting via the Submit button. */}
+                      {c.status === "returned" && (
+                        <div className="mt-3 rounded-lg border-l-4 border-red-500 bg-red-50 px-3 py-2">
+                          <div className="flex items-start gap-2">
+                            <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0 text-red-600" />
+                            <div>
+                              <p className="text-xs font-semibold text-red-900">
+                                Returned by registrar — reason for return
+                              </p>
+                              <p className="mt-0.5 text-sm text-red-800">
+                                {c.reviewRemarks?.trim() ||
+                                  "No written reason was provided. Contact the registrar for details."}
+                              </p>
+                              {c.reviewedAt ? (
+                                <p className="mt-1 text-[11px] text-red-700">
+                                  Returned {formatDate(c.reviewedAt)}
+                                </p>
+                              ) : null}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
                       <div className="mt-3 grid gap-2 text-xs text-gray-600 sm:grid-cols-2 lg:grid-cols-3">
                         <span className="inline-flex items-center gap-1.5">
                           <Users className="h-3.5 w-3.5 text-gray-400" />
@@ -353,7 +368,7 @@ export default function LawyerCases() {
                         className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700"
                       >
                         <UploadCloud className="h-4 w-4" />
-                        Submit
+                        {c.status === "returned" ? "Fix & Resubmit" : "Submit"}
                       </button>
                     </div>
                   </div>

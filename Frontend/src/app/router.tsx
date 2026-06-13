@@ -454,6 +454,11 @@ const returnCaseRoute = createRoute({
   path: "return-case",
   beforeLoad: registrarBeforeLoad,
   component: ReturnCase,
+  // The registrar lands here from a case's "Return for Corrections"
+  // action; caseId identifies which submitted case the remarks apply to.
+  validateSearch: (search: Record<string, unknown>) => ({
+    caseId: (search.caseId as string) || undefined,
+  }),
 });
 
 const scheduleHearingRoute = createRoute({

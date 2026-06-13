@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertCircle,
   CheckCircle2,
@@ -19,25 +19,17 @@ import type { JSONContent } from "@tiptap/react";
 import { AttachmentBlock } from "../extensions/AttachmentBlock";
 import { ImageAttachment } from "../extensions/ImageAttachment";
 import { pdfjs } from "react-pdf";
-import { casesApi } from "../api/cases.api";
+import { casesApi, getCasesErrorMessage, SUPPORTED_TEHSILS } from "../api/cases.api";
 import { signaturesApi, getSignaturesErrorMessage } from "../signatures/api/signatures.api";
 import LawyerLayout from "../components/LawyerLayout";
 import DocxPreviewSurface from "../components/documentEditor/DocxPreviewSurface";
 import { applyPriorCapturesToHost } from "../utils/capturePages";
 import type { SignedPageCapture } from "../../../shared/api/mySignatures.api";
 import { useDocumentEditorStore } from "../store/documentEditor.store";
-import { useSignatureRequestsStore } from "../signatures/store/signatureRequests.store";
 import SubmitConfirmationModal from "../components/caseFiling/SubmitConfirmationModal";
 import { useCaseFilingStore } from "../store/caseFiling.store";
 import { formatFilingDateTime } from "../utils/caseFiling.utils";
-import { useLoginStore } from "../../auth/store";
-import { useCurrentUser, displayFullName } from "../../auth/hooks/useCurrentUser";
 import { getCaseDisplayTitle } from "../../../shared/utils/caseDisplay";
-import type {
-  CompiledCaseBundle,
-  SubmittedCaseFilePreview,
-  SubmittedCaseFilePreviewItem,
-} from "../types/caseFiling";
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL(
   "pdfjs-dist/build/pdf.worker.min.mjs",
@@ -71,27 +63,6 @@ const exportExtensions = [
   ImageAttachment,
 ];
 
-function getDisplayNameFromEmail(email: string): string {
-  const handle = email.split("@")[0] ?? "";
-  if (!handle) return "";
-  return handle
-    .replace(/[._-]+/g, " ")
-    .trim()
-    .split(" ")
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
-}
-
-function normalizeTitle(value: string): string {
-  return value
-    .toLowerCase()
-    .replace(/\.(pdf|docx|doc|jpg|jpeg|png)$/g, "")
-    .replace(/-signed\b/g, "")
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim();
-}
-
 function resolveTemplateUrl(path: string) {
   if (path.startsWith("http://") || path.startsWith("https://")) return path;
   const base = import.meta.env.BASE_URL || "/";
@@ -123,161 +94,15 @@ async function renderPdfPagesToDataUrls(url: string): Promise<string[]> {
   return images;
 }
 
-async function buildSubmittedPreviewFromWorkspace(
-  caseId: string,
-  bundle: CompiledCaseBundle
-): Promise<SubmittedCaseFilePreview> {
-  useDocumentEditorStore.getState().loadDraft(caseId);
-  // Signature linkage temporarily unused while the new per-signer-per-row
-  // model is rewired into the submission preview (Phase 2).
-  void useSignatureRequestsStore;
-  const editorState = useDocumentEditorStore.getState();
-
-  const {
-    bundleItems,
-    documentsById,
-    attachmentsById,
-    attachments,
-    documentContents,
-    currentDocId,
-    activeEditorRef,
-  } = editorState;
-
-  const docByBundleId = new Map(bundle.orderedDocuments.map((doc) => [doc.id, doc]));
-  const docByTitle = new Map(
-    bundle.orderedDocuments.map((doc) => [normalizeTitle(doc.title), doc])
-  );
-  // Signature linkage rewired in Phase 2 — the new per-signer-per-row
-  // model doesn't have bundleItemId / signedAttachmentId, and the
-  // signed PDF lives on cases.signed_pdf (one per case) rather than
-  // per-request. Until that wiring lands, the preview falls back to
-  // "no signature linked" for every item, which matches the data
-  // available right now.
-  const signatureRequestByBundleItemId = new Map<string, never>();
-  const signatureRequestBySignedAttachmentId = new Map<string, never>();
-  const signatureRequestByDocTitle = new Map<string, never>();
-
-  const resolveDocHtmlAsync = async (docId: string) => {
-    if (docId === currentDocId && activeEditorRef) {
-      return activeEditorRef.getHTML();
-    }
-    const doc = documentsById[docId];
-    if (doc?.contentJSON) {
-      return generateHTML(doc.contentJSON as JSONContent, exportExtensions);
-    }
-    if (doc?.legacyHtml) return doc.legacyHtml;
-    if (documentContents[docId]) return documentContents[docId];
-    if (!doc?.url) return "<p></p>";
-
-    try {
-      const response = await fetch(resolveTemplateUrl(doc.url));
-      if (!response.ok) return "<p></p>";
-      const arrayBuffer = await response.arrayBuffer();
-      const converted = await mammoth.convertToHtml({ arrayBuffer });
-      return converted.value || "<p></p>";
-    } catch {
-      return "<p></p>";
-    }
-  };
-
-  const previewItems: SubmittedCaseFilePreviewItem[] = [];
-
-  for (const item of bundleItems) {
-    const bundleDoc =
-      docByBundleId.get(item.id) || docByTitle.get(normalizeTitle(item.title));
-    const linkedRequest =
-      signatureRequestByBundleItemId.get(item.id) ||
-      signatureRequestBySignedAttachmentId.get(item.refId) ||
-      signatureRequestByDocTitle.get(normalizeTitle(item.title));
-
-    // Phase 1: per-bundle-item signature linkage is gone; signature_requests
-    // now key off page indices, and the final signed artifact lives on
-    // cases.signed_pdf (one per case, populated in Phase 2). For preview
-    // purposes we fall back to bundleDoc's own flags and stop trying to
-    // pull request-level state.
-    void linkedRequest;
-    const signedRequired = bundleDoc?.signedRequired || false;
-    const signedByClient = false;
-    const signedByLawyer = false;
-    const signedCompleted = bundleDoc?.signedCompleted || false;
-    const signedDataUrl: string | undefined = undefined;
-
-    if (signedDataUrl) {
-      previewItems.push({
-        id: item.id,
-        title: item.title.toLowerCase().endsWith(".pdf")
-          ? item.title
-          : `${item.title}-Signed.pdf`,
-        type: "ATTACHMENT",
-        source: bundleDoc?.source || "evidence",
-        signedRequired,
-        signedCompleted,
-        signedByClient,
-        signedByLawyer,
-        mimeType: "application/pdf",
-        dataUrl: signedDataUrl,
-      });
-      continue;
-    }
-
-    if (item.type === "DOC") {
-      const htmlContent = await resolveDocHtmlAsync(item.refId);
-      previewItems.push({
-        id: item.id,
-        title: item.title,
-        type: "DOC",
-        source: bundleDoc?.source || "prepared_document",
-        signedRequired,
-        signedCompleted,
-        signedByClient,
-        signedByLawyer,
-        mimeType: "text/html",
-        htmlContent,
-      });
-      continue;
-    }
-
-    const attachment =
-      attachmentsById[item.refId] ||
-      attachments.find((attachmentItem) => attachmentItem.id === item.refId);
-
-    previewItems.push({
-      id: item.id,
-      title: item.title,
-      type: "ATTACHMENT",
-      source: bundleDoc?.source || "evidence",
-      signedRequired,
-      signedCompleted,
-      signedByClient,
-      signedByLawyer,
-      mimeType: attachment?.type,
-      dataUrl: attachment?.url,
-    });
-  }
-
-  return {
-    generatedAt: new Date().toISOString(),
-    items: previewItems,
-  };
-}
-
 export default function LawyerCaseFilingSubmissionPage() {
   const params = useParams({ strict: false }) as { caseId?: string };
-  const loginEmail = useLoginStore((state) => state.email);
-  // Pull the lawyer's name from the live /auth/me cache instead of
-  // the old localStorage-backed lawyerProfile store. The store
-  // contained fake "Adv. Fatima Ali" data; the cache has whatever
-  // the lawyer actually registered with, kept in sync server-side.
-  const { data: currentLawyer } = useCurrentUser();
-  const lawyerFullName = displayFullName(currentLawyer);
+  const queryClient = useQueryClient();
   const {
-    submittedCases,
     ensureCaseContext,
     getCaseById,
     getBundleByCaseId,
     refreshBundleFromWorkspace,
     mockDownloadBundle,
-    submitCaseToRegistrar,
   } = useCaseFilingStore();
 
   const selectedCaseId = params.caseId || "default-case";
@@ -292,18 +117,17 @@ export default function LawyerCaseFilingSubmissionPage() {
     null
   );
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
+  // Surfaces a backend validation / submission error inside the confirmation
+  // modal (e.g. "Select a court/tehsil before submitting", "Sign the case file
+  // before submitting") so the lawyer can fix it without losing the modal.
   const [technicalError, setTechnicalError] = useState<string | undefined>();
+  // Lets the lawyer assign / change the case's court-tehsil on this page —
+  // needed because a tehsil is required before submitting and older cases
+  // (created before tehsil routing existed) have none. null means "untouched",
+  // so the select falls back to the saved value from the backend case.
+  const [tehsilDraft, setTehsilDraft] = useState<string | null>(null);
 
-  const submittedByName =
-    getDisplayNameFromEmail(loginEmail).trim() ||
-    lawyerFullName.trim() ||
-    "Lawyer";
   const displayCaseTitle = getCaseDisplayTitle(filingCase?.title, selectedCaseId);
-
-  const latestSubmission = submittedCases.find(
-    (item) => item.caseId === selectedCaseId
-  );
 
   // Pull the backend case record so we can detect whether the signing
   // workflow finished (signedPdfStoragePath is set on the row only after
@@ -333,6 +157,57 @@ export default function LawyerCaseFilingSubmissionPage() {
     enabled: Boolean(selectedCaseId) && selectedCaseId !== "default-case",
     staleTime: 0,
     refetchOnMount: "always",
+  });
+
+  // Real submission. Hits POST /api/cases/:caseId/submit; the backend enforces
+  // the status guard ('draft'/'returned'), the tehsil requirement, and the
+  // signed-PDF requirement, returning the updated case on success. We keep the
+  // confirmation-modal UX, but everything it shows now reflects the actual
+  // server result: a backend 400 (no tehsil / not signed) lands in the modal's
+  // error slot, and success only fires after the row is really 'submitted'.
+  const submitMutation = useMutation({
+    mutationFn: (caseId: string) => casesApi.submitCase(caseId),
+    onSuccess: () => {
+      // Capture the pre-submit status before invalidation refetches the row so
+      // we can word the success message (first submit vs. resubmit) correctly.
+      const wasResubmission = backendCase?.status === "returned";
+      // Refresh the case detail + the lawyer's case list so the new
+      // 'submitted' status (and cleared returned state) shows everywhere
+      // without a manual reload.
+      queryClient.invalidateQueries({ queryKey: ["case", selectedCaseId] });
+      queryClient.invalidateQueries({ queryKey: ["lawyer", "cases"] });
+      setConfirmOpen(false);
+      setTechnicalError(undefined);
+      setFeedback(null);
+      setSuccessModalMessage(
+        wasResubmission
+          ? "Corrected case file successfully resubmitted to the registrar for review."
+          : "Case successfully submitted to the registrar for review."
+      );
+    },
+    onError: (error) => {
+      // Surface the backend's specific validation message inside the modal so
+      // the lawyer can read it and fix the missing step. The modal stays open.
+      setTechnicalError(getCasesErrorMessage(error));
+    },
+  });
+
+  // Persist the chosen court/tehsil to the case (PATCH /api/cases/:id). On
+  // success we refetch so the submit prerequisite clears and the confirmation
+  // modal's destination text updates; resetting the draft lets the select fall
+  // back to the freshly-saved value.
+  const saveTehsilMutation = useMutation({
+    mutationFn: (tehsil: string) =>
+      casesApi.updateCase(selectedCaseId, { assignedTehsil: tehsil }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["case", selectedCaseId] });
+      queryClient.invalidateQueries({ queryKey: ["lawyer", "cases"] });
+      setTehsilDraft(null);
+      setFeedback({ tone: "info", message: "Court / tehsil saved." });
+    },
+    onError: (error) => {
+      setFeedback({ tone: "error", message: getCasesErrorMessage(error) });
+    },
   });
 
   const signedPageIndices = useMemo(() => {
@@ -437,6 +312,15 @@ export default function LawyerCaseFilingSubmissionPage() {
       bundle &&
       bundle.orderedDocuments.length > 0
   );
+
+  // A tehsil can only be set while the case is still editable (draft/returned);
+  // the backend locks submitted/accepted cases. effectiveTehsil prefers the
+  // lawyer's unsaved pick, otherwise the value saved on the case.
+  const isCaseEditable =
+    !backendCase ||
+    backendCase.status === "draft" ||
+    backendCase.status === "returned";
+  const effectiveTehsil = tehsilDraft ?? backendCase?.assignedTehsil ?? "";
 
   const syncWorkspaceBundle = useCallback(() => {
     if (!selectedCaseId) return;
@@ -686,62 +570,10 @@ export default function LawyerCaseFilingSubmissionPage() {
     setFeedback({ tone: "info", message: "Complete case file download started." });
   };
 
-  const handleConfirmSubmission = async () => {
-    const latestCase = getCaseById(selectedCaseId);
-    if (!latestCase) return;
-
-    setSubmitting(true);
+  const handleConfirmSubmission = () => {
     setTechnicalError(undefined);
     setFeedback(null);
-
-    await new Promise((resolve) => setTimeout(resolve, 700));
-
-    syncWorkspaceBundle();
-    const refreshedBundle = useCaseFilingStore.getState().getBundleByCaseId(selectedCaseId);
-    if (!refreshedBundle) {
-      setSubmitting(false);
-      setConfirmOpen(false);
-      setFeedback({
-        tone: "error",
-        message: "Unable to prepare latest case bundle for submission.",
-      });
-      return;
-    }
-    useDocumentEditorStore.getState().saveDraft(selectedCaseId);
-    const submittedPreview = await buildSubmittedPreviewFromWorkspace(
-      selectedCaseId,
-      refreshedBundle
-    );
-
-    const result = submitCaseToRegistrar({
-      caseId: selectedCaseId,
-      submittedBy: submittedByName,
-      submittedPreview,
-      skipReadinessCheck: true,
-    });
-
-    setSubmitting(false);
-
-    if (!result.ok) {
-      if (result.type === "technical") {
-        setTechnicalError(result.error);
-        return;
-      }
-      setConfirmOpen(false);
-      setFeedback({
-        tone: "error",
-        message: result.error || "Unable to submit case file.",
-      });
-      return;
-    }
-
-    setConfirmOpen(false);
-    setTechnicalError(undefined);
-    const message = latestSubmission
-      ? "Updated case file successfully submitted to registrar."
-      : "Case successfully submitted to registrar.";
-    setFeedback(null);
-    setSuccessModalMessage(message);
+    submitMutation.mutate(selectedCaseId);
   };
 
   return (
@@ -884,16 +716,102 @@ export default function LawyerCaseFilingSubmissionPage() {
               )}
             </div>
 
+            {/* Registrar return reason — shown when the backend reports the
+                case was sent back. The lawyer addresses this, re-opens the
+                editor to fix the file, then resubmits with the same flow. */}
+            {backendCase?.status === "returned" && (
+              <div className="rounded-xl border-l-4 border-red-500 bg-red-50 p-4">
+                <div className="flex items-start gap-3">
+                  <AlertCircle className="mt-0.5 h-5 w-5 flex-shrink-0 text-red-600" />
+                  <div className="space-y-1">
+                    <p className="text-sm font-semibold text-red-900">
+                      Returned by the registrar — reason for return
+                    </p>
+                    <p className="text-sm leading-relaxed text-red-800">
+                      {backendCase.reviewRemarks?.trim() ||
+                        "The registrar returned this case without a written reason. Please contact them for details."}
+                    </p>
+                    {backendCase.reviewedAt && (
+                      <p className="text-xs text-red-700">
+                        Returned on {formatFilingDateTime(backendCase.reviewedAt)}
+                      </p>
+                    )}
+                    <p className="pt-1 text-xs text-red-700">
+                      Open the editor to fix the file, then submit again below.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Court / tehsil (jurisdiction). Routes the case to the matching
+                registrar and is required before submission. Editable while the
+                case is a draft or returned; older cases created before tehsil
+                routing have none and can assign it right here. */}
+            <div className="rounded-xl border border-gray-200 bg-white p-4">
+              <h3 className="text-base font-semibold text-gray-900">
+                Court / Tehsil (Jurisdiction)
+              </h3>
+              <p className="mt-1 text-xs text-gray-500">
+                Routes this case to the registrar for that tehsil. Required
+                before you can submit.
+              </p>
+
+              {isCaseEditable ? (
+                <div className="mt-3 flex flex-wrap items-end gap-3">
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium text-gray-700">
+                      Assigned tehsil
+                    </label>
+                    <select
+                      value={effectiveTehsil}
+                      onChange={(event) => setTehsilDraft(event.target.value)}
+                      disabled={saveTehsilMutation.isPending}
+                      className="w-64 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#01411C] disabled:bg-gray-100"
+                    >
+                      <option value="">— Select court / tehsil —</option>
+                      {SUPPORTED_TEHSILS.map((tehsil) => (
+                        <option key={tehsil} value={tehsil}>
+                          {tehsil}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <button
+                    onClick={() => saveTehsilMutation.mutate(effectiveTehsil)}
+                    disabled={
+                      saveTehsilMutation.isPending ||
+                      !effectiveTehsil ||
+                      effectiveTehsil === (backendCase?.assignedTehsil ?? "")
+                    }
+                    className="rounded-lg bg-[#01411C] px-4 py-2 text-sm font-semibold text-white hover:bg-[#024a23] disabled:cursor-not-allowed disabled:bg-gray-300"
+                  >
+                    {saveTehsilMutation.isPending ? "Saving…" : "Save tehsil"}
+                  </button>
+                </div>
+              ) : (
+                <p className="mt-3 text-sm font-medium text-gray-900">
+                  {backendCase?.assignedTehsil ?? "Not assigned"}
+                </p>
+              )}
+
+              {isCaseEditable && !backendCase?.assignedTehsil && (
+                <p className="mt-2 text-xs font-medium text-amber-700">
+                  No tehsil set yet — pick one and save before submitting.
+                </p>
+              )}
+            </div>
+
             <div className="rounded-xl border border-gray-200 bg-white p-4">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <h3 className="text-base font-semibold text-gray-900">
                     Submission Actions
                   </h3>
-                  {latestSubmission && (
+                  {backendCase?.status === "submitted" && backendCase.submittedAt && (
                     <div className="mt-1 inline-flex items-center gap-2 rounded-full bg-emerald-100 px-3 py-1 text-sm font-semibold text-emerald-700">
                       <CheckCircle2 className="h-4 w-4" />
-                      Submitted on {formatFilingDateTime(latestSubmission.submittedAt)}
+                      Submitted on {formatFilingDateTime(backendCase.submittedAt)}
                     </div>
                   )}
                 </div>
@@ -919,7 +837,9 @@ export default function LawyerCaseFilingSubmissionPage() {
                   className="inline-flex items-center gap-2 rounded-lg bg-[#01411C] px-4 py-2 text-sm font-semibold text-white hover:bg-[#024a23] disabled:cursor-not-allowed disabled:bg-gray-300"
                 >
                   <UploadCloud className="h-4 w-4" />
-                  {latestSubmission ? "Submit Updated Case File" : "Submit Case File"}
+                  {backendCase?.status === "returned"
+                    ? "Submit Corrected Case File"
+                    : "Submit Case File"}
                 </button>
               </div>
             </div>
@@ -950,10 +870,15 @@ export default function LawyerCaseFilingSubmissionPage() {
         <SubmitConfirmationModal
           open={confirmOpen}
           caseTitle={displayCaseTitle}
-          registrarName={filingCase.assignedRegistrar}
-          submitting={submitting}
+          destination={
+            backendCase?.assignedTehsil
+              ? `the registrar for ${backendCase.assignedTehsil}`
+              : "the assigned registrar"
+          }
+          submitting={submitMutation.isPending}
           technicalError={technicalError}
           onCancel={() => {
+            if (submitMutation.isPending) return;
             setConfirmOpen(false);
             setTechnicalError(undefined);
           }}

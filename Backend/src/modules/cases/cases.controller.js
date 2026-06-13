@@ -7,6 +7,7 @@ import {
   listCasesForLawyer,
   listSignedCasesForLawyer,
   resolveCaseTemplate,
+  submitCase,
   updateCase,
   uploadAttachmentToCase
 } from "./cases.service.js";
@@ -45,7 +46,8 @@ export async function createMyCase(req, res) {
     clientName: req.body.clientName.trim(),
     clientEmail: req.body.clientEmail?.trim() || null,
     clientPhone: req.body.clientPhone?.trim() || null,
-    oppositePartyName: req.body.oppositePartyName.trim()
+    oppositePartyName: req.body.oppositePartyName.trim(),
+    assignedTehsil: req.body.assignedTehsil?.trim() || null
   });
 
   return res.status(201).json({ case: created });
@@ -79,7 +81,8 @@ export async function patchMyCase(req, res) {
     clientName: req.body.clientName?.trim(),
     clientEmail: req.body.clientEmail?.trim(),
     clientPhone: req.body.clientPhone?.trim(),
-    oppositePartyName: req.body.oppositePartyName?.trim()
+    oppositePartyName: req.body.oppositePartyName?.trim(),
+    assignedTehsil: req.body.assignedTehsil?.trim()
   };
 
   const updated = await updateCase({
@@ -89,6 +92,17 @@ export async function patchMyCase(req, res) {
   });
 
   return res.status(200).json({ case: updated });
+}
+
+// Submit a case to the registrar for review. The service enforces the
+// status guard, ownership, and the tehsil / signed-PDF prerequisites.
+export async function submitMyCase(req, res) {
+  const submitted = await submitCase({
+    caseId: req.params.caseId,
+    lawyerUserId: req.user.sub
+  });
+
+  return res.status(200).json({ case: submitted });
 }
 
 // =====================================================================

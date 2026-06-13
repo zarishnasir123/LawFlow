@@ -8,6 +8,7 @@ import authRoutes from "./modules/auth/auth.routes.js";
 import casesRoutes from "./modules/cases/cases.routes.js";
 import lawyersRoutes from "./modules/lawyers/lawyer.routes.js";
 import registrarRoutes from "./modules/registrar/registrar.routes.js";
+import registrarReviewRoutes from "./modules/registrarReview/registrarReview.routes.js";
 import paymentRoutes from "./modules/payments/serviceCharges.routes.js";
 import agreementRoutes from "./modules/payments/agreements.routes.js";
 import paymentGatewayRoutes from "./modules/payments/payments.routes.js";
@@ -69,6 +70,9 @@ app.use("/api/payments", paymentGatewayRoutes);
 app.use("/api/cases/:caseId", caseSignatureRoutes);
 app.use("/api/me", mySignatureRoutes);
 app.use("/api/registrars", registrarRoutes);
+// Registrar-facing case review (role 'registrar'). Singular path —
+// distinct from the admin-only /api/registrars management API above.
+app.use("/api/registrar", registrarReviewRoutes);
 
 app.use(notFoundHandler);
 app.use(errorHandler);

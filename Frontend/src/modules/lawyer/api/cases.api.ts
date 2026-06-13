@@ -6,6 +6,19 @@ export type CaseCategory = "civil" | "family";
 export type CaseStatus = "draft" | "submitted" | "returned" | "accepted";
 export type CaseSignerRole = "client" | "lawyer";
 
+// Court/tehsil jurisdictions the backend routes cases to. Mirrors the
+// deployment's SUPPORTED_TEHSILS list (Backend/src/utils/location.js) — the
+// lawyer picks one at case creation and it routes the case to the matching
+// registrar. Keep this in sync with the backend list; an unsupported value is
+// rejected with a 400 on create/submit.
+export const SUPPORTED_TEHSILS = [
+  "Gujranwala City & Sadar",
+  "Kamoke",
+  "Nowshera Virkan",
+] as const;
+
+export type SupportedTehsil = (typeof SUPPORTED_TEHSILS)[number];
+
 export type ApiCaseType = {
   id: string;
   category: CaseCategory;
@@ -36,6 +49,15 @@ export type ApiCase = {
   // The path is internal; downloads go through short-lived signed URLs.
   signedPdfStoragePath: string | null;
   signedPdfGeneratedAt: string | null;
+  // Jurisdiction the case is routed to; chosen by the lawyer at creation and
+  // required before the case can be submitted to a registrar.
+  assignedTehsil: string | null;
+  // Registrar review trail. `reviewRemarks` is the return reason the registrar
+  // writes when a submitted case is sent back; it's what the lawyer must read
+  // and address before resubmitting.
+  reviewRemarks: string | null;
+  reviewedAt: string | null;
+  reviewedByRegistrarId: string | null;
   status: CaseStatus;
   createdAt: string;
   updatedAt: string;
@@ -56,6 +78,9 @@ export type CreateCasePayload = {
   clientEmail?: string;
   clientPhone?: string;
   oppositePartyName: string;
+  // Court/tehsil jurisdiction. Validated server-side against the supported
+  // list; must be one of SUPPORTED_TEHSILS.
+  assignedTehsil: string;
 };
 
 export type UpdateCasePayload = Partial<Omit<CreateCasePayload, "caseTypeId">>;
@@ -137,6 +162,19 @@ export const casesApi = {
     const { data } = await apiClient.patch<{ case: ApiCase }>(
       `/cases/${caseId}`,
       payload
+    );
+    return data.case;
+  },
+
+  // Submit the case to the registrar for review. The backend enforces the
+  // prerequisites (status must be 'draft' or 'returned', a tehsil must be set,
+  // and the case file must be signed) and returns a specific 400 message when
+  // one is missing — surface it via getCasesErrorMessage. No request body: the
+  // case id in the URL is all the endpoint needs. Returns the updated case
+  // (status='submitted'), so callers can reflect the real server result.
+  submitCase: async (caseId: string): Promise<ApiCase> => {
+    const { data } = await apiClient.post<{ case: ApiCase }>(
+      `/cases/${caseId}/submit`
     );
     return data.case;
   },

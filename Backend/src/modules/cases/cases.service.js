@@ -4,6 +4,7 @@ import { promises as fs } from "node:fs";
 
 import { pool } from "../../config/db.js";
 import { ApiError } from "../../utils/apiError.js";
+import { isSupportedTehsil } from "../../utils/location.js";
 import {
   deleteCaseAttachment as deleteCaseAttachmentObject,
   getCaseAttachmentSignedUrl,
@@ -55,6 +56,11 @@ function mapCase(row) {
     // signed URL minted on demand.
     signedPdfStoragePath: row.signed_pdf_storage_path,
     signedPdfGeneratedAt: row.signed_pdf_generated_at,
+    // Jurisdiction the case is routed to + the registrar review trail.
+    assignedTehsil: row.assigned_tehsil,
+    reviewRemarks: row.review_remarks,
+    reviewedAt: row.reviewed_at,
+    reviewedByRegistrarId: row.reviewed_by_registrar_id,
     status: row.status,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -152,6 +158,10 @@ function selectCaseWithType() {
     cases.edited_html,
     cases.signed_pdf_storage_path,
     cases.signed_pdf_generated_at,
+    cases.assigned_tehsil,
+    cases.review_remarks,
+    cases.reviewed_at,
+    cases.reviewed_by_registrar_id,
     cases.status,
     cases.created_at,
     cases.updated_at,
@@ -168,11 +178,20 @@ export async function createCase({
   clientName,
   clientEmail,
   clientPhone,
-  oppositePartyName
+  oppositePartyName,
+  assignedTehsil
 }) {
   const caseType = await findCaseTypeById(caseTypeId);
   if (!caseType) {
     throw new ApiError(400, "Selected case type does not exist");
+  }
+
+  // Defence in depth: the validator already rejected an unsupported tehsil,
+  // but re-check here so a future caller that bypasses the validator can't
+  // route a case to a jurisdiction with no registrar. Absent/empty is fine —
+  // the lawyer can pick it later, before submitting.
+  if (assignedTehsil && !isSupportedTehsil(assignedTehsil)) {
+    throw new ApiError(400, "Selected court/tehsil is not supported");
   }
 
   const insertResult = await pool.query(
@@ -184,9 +203,10 @@ export async function createCase({
       client_name,
       client_email,
       client_phone,
-      opposite_party_name
+      opposite_party_name,
+      assigned_tehsil
     )
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
     RETURNING id`,
     [
       lawyerUserId,
@@ -196,7 +216,8 @@ export async function createCase({
       clientName,
       clientEmail || null,
       clientPhone || null,
-      oppositePartyName
+      oppositePartyName,
+      assignedTehsil || null
     ]
   );
 
@@ -291,10 +312,55 @@ export async function getCaseForLawyer({ caseId, lawyerUserId }) {
   return mapCase(result.rows[0]);
 }
 
-// Patch a subset of fields on a draft case. Only fields present in `updates`
-// are written — undefined keys are skipped so callers can PATCH partial
-// payloads. Locked to draft status to keep the registrar review immutable
-// once submitted.
+// Submit a case to the registrar for review. Allowed only from 'draft' or
+// 'returned' (a returned case can be fixed and resubmitted). Both prerequisites
+// — a chosen tehsil and a compiled signed PDF — must be present, otherwise we
+// surface a specific 400 telling the lawyer which step is missing. On success
+// the case moves to 'submitted' and is stamped with submitted_at so the
+// registrar queue can order by oldest-first.
+export async function submitCase({ caseId, lawyerUserId }) {
+  const result = await pool.query(
+    `SELECT status, assigned_tehsil, signed_pdf_storage_path
+     FROM cases
+     WHERE id = $1 AND lawyer_user_id = $2`,
+    [caseId, lawyerUserId]
+  );
+
+  if (result.rowCount === 0) {
+    throw new ApiError(404, "Case not found");
+  }
+
+  const { status, assigned_tehsil, signed_pdf_storage_path } = result.rows[0];
+
+  if (status !== "draft" && status !== "returned") {
+    throw new ApiError(409, "Only draft or returned cases can be submitted");
+  }
+
+  if (!assigned_tehsil) {
+    throw new ApiError(400, "Select a court/tehsil before submitting");
+  }
+
+  if (!signed_pdf_storage_path) {
+    throw new ApiError(400, "Sign the case file before submitting");
+  }
+
+  await pool.query(
+    `UPDATE cases
+     SET status = 'submitted',
+         submitted_at = NOW(),
+         updated_at = NOW()
+     WHERE id = $1 AND lawyer_user_id = $2`,
+    [caseId, lawyerUserId]
+  );
+
+  return getCaseForLawyer({ caseId, lawyerUserId });
+}
+
+// Patch a subset of fields on an editable case. Only fields present in
+// `updates` are written — undefined keys are skipped so callers can PATCH
+// partial payloads. Editing is allowed while the case is 'draft' OR 'returned'
+// (a returned case must be fixable before resubmission); once 'submitted' or
+// 'accepted' the case is locked so the registrar review stays immutable.
 export async function updateCase({ caseId, lawyerUserId, updates }) {
   const allowed = {
     title: "title",
@@ -302,8 +368,19 @@ export async function updateCase({ caseId, lawyerUserId, updates }) {
     clientName: "client_name",
     clientEmail: "client_email",
     clientPhone: "client_phone",
-    oppositePartyName: "opposite_party_name"
+    oppositePartyName: "opposite_party_name",
+    assignedTehsil: "assigned_tehsil"
   };
+
+  // Guard the tehsil the same way createCase does — an edited case must not be
+  // routed to a jurisdiction with no registrar. isSupportedTehsil() treats
+  // empty/undefined as valid, so clearing the field (→ NULL) stays allowed.
+  if (
+    updates.assignedTehsil !== undefined &&
+    !isSupportedTehsil(updates.assignedTehsil)
+  ) {
+    throw new ApiError(400, "Selected court/tehsil is not supported");
+  }
 
   const setExpressions = [];
   const values = [];
@@ -329,7 +406,7 @@ export async function updateCase({ caseId, lawyerUserId, updates }) {
      SET ${setExpressions.join(", ")}
      WHERE id = $${paramIndex++}
        AND lawyer_user_id = $${paramIndex++}
-       AND status = 'draft'
+       AND status IN ('draft', 'returned')
      RETURNING id`,
     values
   );

@@ -10,12 +10,10 @@ import type {
   CaseSubmissionRecord,
   CompiledCaseBundle,
   FilingCaseRecord,
-  SubmittedCaseFilePreview,
 } from "../types/caseFiling";
 import {
   buildSignatureSnapshot,
   orderBundleDocuments,
-  validateCaseBundle,
 } from "../utils/caseFiling.utils";
 
 type EditorBundleItemInput = {
@@ -34,14 +32,6 @@ type SignatureRequestInput = {
   clientSigned: boolean;
   lawyerSigned: boolean;
   signedAttachmentId?: string;
-};
-
-type SubmitCaseInput = {
-  caseId: string;
-  submittedBy: string;
-  submittedPreview?: SubmittedCaseFilePreview;
-  forceFailure?: boolean;
-  skipReadinessCheck?: boolean;
 };
 
 type IntakeCaseInput = {
@@ -71,14 +61,6 @@ interface CaseFilingState {
     signatureRequests: SignatureRequestInput[]
   ) => void;
   mockDownloadBundle: (caseId: string) => { ok: boolean; error?: string };
-  submitCaseToRegistrar: (
-    input: SubmitCaseInput
-  ) => {
-    ok: boolean;
-    error?: string;
-    type?: "not_ready" | "technical";
-    submission?: CaseSubmissionRecord;
-  };
   getSubmittedCasesForRegistrar: () => CaseSubmissionRecord[];
 }
 
@@ -342,78 +324,11 @@ export const useCaseFilingStore = create<CaseFilingState>()(
         return { ok: true };
       },
 
-      submitCaseToRegistrar: ({
-        caseId,
-        submittedBy,
-        submittedPreview,
-        forceFailure,
-        skipReadinessCheck,
-      }) => {
-        const filingCase = get().getCaseById(caseId);
-        const bundle = get().getBundleByCaseId(caseId);
-        if (!filingCase || !bundle) {
-          return { ok: false, error: "Case record not found.", type: "technical" as const };
-        }
-
-        const checklist = validateCaseBundle(filingCase, bundle);
-        const hasBundleDocuments = bundle.orderedDocuments.length > 0;
-        if (!skipReadinessCheck && !checklist.isReady) {
-          return {
-            ok: false,
-            type: "not_ready" as const,
-            error: "Case file not ready for submission.",
-          };
-        }
-        if (skipReadinessCheck && !hasBundleDocuments) {
-          return {
-            ok: false,
-            type: "not_ready" as const,
-            error: "No documents found in the case bundle.",
-          };
-        }
-
-        if (forceFailure) {
-          return {
-            ok: false,
-            type: "technical" as const,
-            error:
-              "Submission failed due to connectivity issue. Please retry.",
-          };
-        }
-
-        const submittedAt = nowIso();
-        const submission: CaseSubmissionRecord = {
-          caseId: filingCase.id,
-          displayCaseId: filingCase.displayCaseId,
-          title: filingCase.title,
-          caseType: filingCase.caseType,
-          clientName: filingCase.clientName,
-          tehsil: filingCase.assignedTehsil,
-          registrar: filingCase.assignedRegistrar,
-          submittedBy,
-          submittedAt,
-          status: "submitted",
-          bundle: {
-            ...bundle,
-            generatedAt: submittedAt,
-          },
-          submittedPreview,
-        };
-
-        set((state) => ({
-          cases: state.cases.map((item) =>
-            item.id === caseId
-              ? { ...item, status: "submitted", updatedAt: submittedAt }
-              : item
-          ),
-          submittedCases: [
-            submission,
-            ...state.submittedCases.filter((item) => item.caseId !== caseId),
-          ],
-        }));
-
-        return { ok: true, submission };
-      },
+      // Real case submission moved to the backend: the submission page calls
+      // POST /api/cases/:caseId/submit via a TanStack Query mutation
+      // (casesApi.submitCase). This store no longer performs an in-browser
+      // submit. getSubmittedCasesForRegistrar below remains only to feed the
+      // registrar-side mock screens that haven't been wired to the backend yet.
 
       getSubmittedCasesForRegistrar: () => get().submittedCases,
     }),
