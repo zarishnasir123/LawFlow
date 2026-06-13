@@ -1,18 +1,47 @@
 import { useNavigate } from "@tanstack/react-router";
-import { BadgeCheck, BarChart3, FileText, Shield, UserCheck, UserX } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import {
+  BadgeCheck,
+  BarChart3,
+  CheckCircle,
+  Clock,
+  FileText,
+  Shield,
+  UserCheck,
+  Users,
+  UserX,
+} from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 
 import { ActionCard } from "../components/ActionCard";
 import { PendingVerificationList } from "../components/PendingVerificationList";
 import { RecentActivityList } from "../components/RecentActivity";
 
 import {
-  adminDashboardStats,
   adminPendingVerifications,
   adminRecentActivity,
 } from "../dashboard.mock";
 
+import { getDashboardStats } from "../api/dashboardStats";
 import { useAdminNotificationsStore } from "../store/notifications.store";
 import { usePendingLawyerCount } from "../hooks/usePendingLawyerCount";
+
+// Card with no live number yet (loading) shows a dash placeholder, never a 0.
+const LOADING_PLACEHOLDER = "—";
+
+// Format a count with thousands separators (e.g. 1248 -> "1,248").
+function formatCount(value: number): string {
+  return value.toLocaleString("en-US");
+}
+
+type StatCard = {
+  title: string;
+  icon: LucideIcon;
+  colorClass: string;
+  value: string;
+  // sub caption; null = hide the sub-line entirely (no fake fallback).
+  change: string | null;
+};
 
 export default function AdminDashboardPage() {
   const navigate = useNavigate();
@@ -23,6 +52,66 @@ export default function AdminDashboardPage() {
   const lawyerVerificationItems = adminPendingVerifications.filter(
     (request) => request.type === "Lawyer",
   );
+
+  // Live stats for the four cards. While fetching we render a dash for each
+  // number; on error we fall back to a dash too (the dashboard stays usable).
+  const { data: stats, isLoading: statsLoading } = useQuery({
+    queryKey: ["admin", "dashboard-stats"],
+    queryFn: getDashboardStats,
+    staleTime: 1000 * 30,
+  });
+
+  const loading = statsLoading || !stats;
+
+  // Keep the exact original card visuals (icon + colour + order); only the
+  // number and sub-caption become real. A null metric hides its sub-line.
+  const dashboardCards: StatCard[] = [
+    {
+      title: "Pending Verifications",
+      icon: Clock,
+      colorClass: "bg-yellow-500",
+      value: loading ? LOADING_PLACEHOLDER : formatCount(stats.pendingVerifications),
+      change:
+        loading || stats.pendingVerificationsToday == null
+          ? null
+          : `+${stats.pendingVerificationsToday} today`,
+    },
+    {
+      title: "Active Registrars",
+      icon: UserCheck,
+      colorClass: "bg-green-500",
+      value: loading ? LOADING_PLACEHOLDER : formatCount(stats.activeRegistrars),
+      // registrarsOnline is always null (no presence tracking) -> hide sub-line.
+      change:
+        loading || stats?.registrarsOnline == null
+          ? null
+          : `${stats.registrarsOnline} online`,
+    },
+    {
+      title: "Total Users",
+      icon: Users,
+      colorClass: "bg-blue-500",
+      value: loading ? LOADING_PLACEHOLDER : formatCount(stats.totalUsers),
+      change:
+        loading || stats.newUsersThisWeek == null
+          ? null
+          : `+${stats.newUsersThisWeek} this week`,
+    },
+    {
+      title: "Verified Today",
+      icon: CheckCircle,
+      colorClass: "bg-purple-500",
+      value: loading
+        ? LOADING_PLACEHOLDER
+        : stats.verifiedToday == null
+          ? "—"
+          : formatCount(stats.verifiedToday),
+      change:
+        loading || stats.approvedToday == null
+          ? null
+          : `${stats.approvedToday} approved`,
+    },
+  ];
 
   return (
     <div className="w-full px-6 lg:px-8 xl:px-10 py-8">
@@ -41,7 +130,7 @@ export default function AdminDashboardPage() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-            {adminDashboardStats.map((s, idx) => {
+            {dashboardCards.map((s, idx) => {
               const Icon = s.icon;
               return (
                 <div
@@ -55,7 +144,9 @@ export default function AdminDashboardPage() {
                     {s.value}
                   </h3>
                   <p className="text-sm text-gray-600 mb-2">{s.title}</p>
-                  <p className="text-xs text-gray-500">{s.change}</p>
+                  {s.change !== null && (
+                    <p className="text-xs text-gray-500">{s.change}</p>
+                  )}
                 </div>
               );
             })}
