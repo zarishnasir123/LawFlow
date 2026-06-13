@@ -35,11 +35,38 @@ export type CaseSummary = {
   assignedTehsil: string | null;
 };
 
-// Detail view adds the signed-PDF link plus the registrar's own review
-// metadata. signedPdfUrl is a short-lived signed URL minted from
-// cases.signed_pdf_storage_path; null when no signed PDF exists yet.
+// A single document attached to the case (an image / evidence file the
+// lawyer uploaded). url is a freshly-minted, short-lived signed view URL
+// from the storage service; null when minting failed server-side.
+export type RegistrarCaseAttachment = {
+  id: string;
+  fileName: string;
+  mimeType: string;
+  url: string | null;
+};
+
+// Detail view adds the complete case file plus the registrar's own review
+// metadata.
+//   - signedPdfUrl: short-lived signed URL minted from
+//     cases.signed_pdf_storage_path; null when no signed PDF exists yet.
+//     This is only the signed page(s), not the whole file.
+//   - editedHtml: the prepared-document HTML snapshot (cases.edited_html,
+//     the same value the lawyer's getCase returns). The full multi-section
+//     plaint, with inline images embedded as data: URLs. null when the
+//     lawyer has not built the document yet.
+//   - signedPageIndices: sorted, de-duplicated 0-based absolute page indices
+//     that carry a completed signature for this case (union of every signed
+//     signature_request's page_indices). Used to overlay the signed-page
+//     captures pulled out of signedPdfUrl onto the matching sections of the
+//     edited document, so the registrar sees one complete file with the
+//     signatures in place. [] when there are no signed pages.
+//   - attachments: every row in case_attachments for this case, each with a
+//     fresh signed view URL.
 export type CaseDetail = CaseSummary & {
   signedPdfUrl: string | null;
+  editedHtml: string | null;
+  signedPageIndices: number[];
+  attachments: RegistrarCaseAttachment[];
   reviewRemarks: string | null;
   reviewedAt: string | null;
 };

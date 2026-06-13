@@ -1,6 +1,9 @@
 import { pool } from "../../config/db.js";
 import { ApiError } from "../../utils/apiError.js";
-import { getSignedCasePdfDownloadUrl } from "../../services/storage.service.js";
+import {
+  getSignedCasePdfDownloadUrl,
+  getCaseAttachmentSignedUrl
+} from "../../services/storage.service.js";
 
 // =====================================================================
 // Registrar-facing case review.
@@ -33,6 +36,7 @@ function selectRegistrarCase() {
     cases.submitted_at,
     cases.assigned_tehsil,
     cases.signed_pdf_storage_path,
+    cases.edited_html,
     cases.review_remarks,
     cases.reviewed_at
   FROM cases
@@ -62,17 +66,103 @@ function mapCaseSummary(row) {
   };
 }
 
+// Map one case_attachments row to the registrar's detail shape, minting a
+// fresh signed view URL per attachment. Mirrors the lawyer side's
+// mapCaseAttachment (cases.service.js) but trims to the four fields the
+// registrar review page needs. `url` is null when minting fails — the page
+// degrades to a disabled "View" link rather than erroring the whole detail.
+async function mapRegistrarAttachment(row) {
+  const url = row.storage_path
+    ? await getCaseAttachmentSignedUrl(row.storage_path)
+    : null;
+  return {
+    id: row.id,
+    fileName: row.file_name,
+    mimeType: row.mime_type,
+    url
+  };
+}
+
+// Load every attachment for a case (oldest first), each with a signed URL.
+// Same column set + ordering the lawyer's listCaseAttachments uses. Called
+// only from the detail path, after the tehsil ownership check has passed.
+async function loadCaseAttachments(caseId) {
+  const result = await pool.query(
+    `SELECT id, file_name, mime_type, storage_path
+     FROM case_attachments
+     WHERE case_id = $1
+     ORDER BY created_at ASC`,
+    [caseId]
+  );
+
+  return Promise.all(result.rows.map(mapRegistrarAttachment));
+}
+
+// The sorted, de-duplicated list of 0-based absolute page indices that carry
+// a completed signature for this case. Mirrors the lawyer client's overlay
+// logic: each signed signature_requests row owns a slice of page_indices
+// (JSONB array of 0-based indices), so we union them across all signed rows.
+//
+// page_indices parsing reuses the pattern from signatures.service.js
+// (getSignatureRequestForSigner): node-postgres auto-parses JSONB to a JS
+// array, but a JSON string is handled too. A NULL page_indices means "entire
+// document" — the lawyer client treats a null page list as empty, so we
+// contribute nothing for those rows. Returns [] when no signed pages exist.
+//
+// Detail-only: called from mapCaseDetail, inside the tehsil-ownership-checked
+// getCaseForRegistrar path. Parameterised SQL.
+async function loadSignedPageIndices(caseId) {
+  const result = await pool.query(
+    `SELECT page_indices
+     FROM signature_requests
+     WHERE case_id = $1
+       AND status = 'signed'`,
+    [caseId]
+  );
+
+  const indices = new Set();
+  for (const row of result.rows) {
+    let pages = row.page_indices;
+    if (typeof pages === "string") {
+      // node-postgres usually auto-parses JSONB; this string branch is a
+      // rarely-hit fallback. Guard it so a malformed value skips the row
+      // instead of 500-ing the whole detail response.
+      try {
+        pages = JSON.parse(pages);
+      } catch {
+        continue;
+      }
+    }
+    if (!Array.isArray(pages)) continue;
+    for (const pageIndex of pages) {
+      if (typeof pageIndex === "number") indices.add(pageIndex);
+    }
+  }
+
+  return [...indices].sort((a, b) => a - b);
+}
+
 // CaseDetail = CaseSummary + the review trail + a short-lived signed URL for
-// the signed PDF (null when no PDF has been compiled yet). Async because the
-// signed URL is minted on demand via the storage service.
+// the signed PDF (null when no PDF has been compiled yet) + the COMPLETE case
+// file: the prepared-document HTML snapshot (cases.edited_html) and every
+// attachment with a freshly-minted signed view URL. Async because the signed
+// URLs are minted on demand via the storage service.
+//
+// Detail-only: the queue/list (R1) keeps the mapCaseSummary shape unchanged.
 async function mapCaseDetail(row) {
   const signed = row.signed_pdf_storage_path
     ? await getSignedCasePdfDownloadUrl({ storagePath: row.signed_pdf_storage_path })
     : null;
 
+  const attachments = await loadCaseAttachments(row.id);
+  const signedPageIndices = await loadSignedPageIndices(row.id);
+
   return {
     ...mapCaseSummary(row),
     signedPdfUrl: signed?.downloadUrl ?? null,
+    signedPageIndices,
+    editedHtml: row.edited_html ?? null,
+    attachments,
     reviewRemarks: row.review_remarks,
     reviewedAt: row.reviewed_at
   };
