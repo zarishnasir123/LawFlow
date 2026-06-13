@@ -458,7 +458,8 @@ export default function ReviewCases() {
               </div>
               <h3 className="text-lg font-semibold text-gray-900">Approve this case?</h3>
               <p className="mt-1 text-sm text-gray-600">
-                The case will be accepted and removed from your review queue.
+                The case will be accepted and moved out of your review queue
+                into your Approved Cases list, where you can still track it.
               </p>
               <div className="mt-5 flex flex-wrap justify-center gap-3">
                 <button

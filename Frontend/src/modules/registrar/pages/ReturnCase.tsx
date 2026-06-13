@@ -88,7 +88,8 @@ export default function ReturnCase() {
           </h1>
           <p className="mt-2 text-sm text-gray-600">
             Send this case back to the lawyer with specific correction remarks. The
-            case returns to the lawyer for editing and resubmission.
+            case returns to the lawyer for editing and resubmission, and stays
+            tracked in your Returned Cases list.
           </p>
         </Card>
 
