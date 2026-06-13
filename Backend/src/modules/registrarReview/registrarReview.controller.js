@@ -8,10 +8,13 @@ import {
 // req.user.sub is the registrar's user id (JWT payload — see issueSessionTokens
 // in auth.service.js). The service resolves their tehsil from that id.
 
-// R1: GET /api/registrar/cases
+// R1: GET /api/registrar/cases?status=submitted|accepted|returned
+// status is optional and validated upstream; default 'submitted' keeps the
+// existing queue page working unchanged.
 export async function listRegistrarQueue(req, res) {
   const cases = await listSubmittedCasesForRegistrar({
-    registrarUserId: req.user.sub
+    registrarUserId: req.user.sub,
+    status: req.query.status ?? "submitted"
   });
 
   return res.status(200).json({ cases });

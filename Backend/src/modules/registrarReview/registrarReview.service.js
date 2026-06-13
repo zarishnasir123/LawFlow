@@ -63,6 +63,7 @@ function mapCaseSummary(row) {
     lawyerName: buildLawyerName(row),
     status: row.status,
     submittedAt: row.submitted_at,
+    reviewedAt: row.reviewed_at,
     assignedTehsil: row.assigned_tehsil
   };
 }
@@ -193,16 +194,45 @@ async function getRegistrarTehsil(registrarUserId) {
   return tehsil;
 }
 
-// R1: the registrar's queue — submitted cases in their tehsil, oldest first.
-export async function listSubmittedCasesForRegistrar({ registrarUserId }) {
+// The status values a registrar may list, mapped to the column + direction
+// each list is sorted by. The submitted queue is oldest-first (FIFO, so the
+// registrar works the backlog from the top); the accepted / returned lists are
+// most-recent-decision-first (reviewed_at DESC) so the latest decisions surface
+// at the top of the persistent lists / dashboard. The ORDER BY is built from
+// this allow-list ONLY (never from user input), so the status param can never
+// reach the SQL string — the tehsil + the chosen status both bind as $-params.
+const LISTABLE_STATUS_ORDER = {
+  submitted: "cases.submitted_at ASC",
+  accepted: "cases.reviewed_at DESC",
+  returned: "cases.reviewed_at DESC"
+};
+
+// R1: the registrar's cases in their tehsil, filtered by `status`
+// (default 'submitted' — the original queue). Ordering per status:
+//   submitted -> submitted_at ASC  (queue, oldest first)
+//   accepted  -> reviewed_at DESC  (most recent decision first)
+//   returned  -> reviewed_at DESC  (most recent decision first)
+// Status is validated at the route boundary; we re-clamp to the allow-list here
+// so an unexpected value can never select an arbitrary ORDER BY fragment.
+export async function listSubmittedCasesForRegistrar({
+  registrarUserId,
+  status = "submitted"
+}) {
   const tehsil = await getRegistrarTehsil(registrarUserId);
+
+  const orderBy = LISTABLE_STATUS_ORDER[status];
+  if (!orderBy) {
+    // Defensive: the validator already rejects anything else with a 400, so
+    // this only fires if a caller bypasses it. Surface a 400 rather than a 500.
+    throw new ApiError(400, "Unsupported case status filter");
+  }
 
   const result = await pool.query(
     `${selectRegistrarCase()}
-     WHERE cases.status = 'submitted'
-       AND LOWER(cases.assigned_tehsil) = LOWER($1)
-     ORDER BY cases.submitted_at ASC`,
-    [tehsil]
+     WHERE cases.status = $1
+       AND LOWER(cases.assigned_tehsil) = LOWER($2)
+     ORDER BY ${orderBy}`,
+    [status, tehsil]
   );
 
   return result.rows.map(mapCaseSummary);

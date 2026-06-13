@@ -7,6 +7,7 @@ import { ApiError } from "../../utils/apiError.js";
 import { isSupportedTehsil } from "../../utils/location.js";
 import {
   deleteCaseAttachment as deleteCaseAttachmentObject,
+  deleteSignedCasePdf,
   getCaseAttachmentSignedUrl,
   uploadCaseAttachment as uploadCaseAttachmentObject,
 } from "../../services/storage.service.js";
@@ -484,6 +485,101 @@ export async function updateCase({ caseId, lawyerUserId, updates }) {
   }
 
   return getCaseForLawyer({ caseId, lawyerUserId });
+}
+
+// Hard-delete a case the lawyer owns. This is a permanent, irreversible
+// removal of the row — there is no soft-delete column to flip. Allowed at
+// ANY status (the lawyer explicitly asked for a full hard delete), so no
+// status guard here.
+//
+// Ownership is enforced IN the DELETE's WHERE clause (id + lawyer_user_id),
+// so a lawyer can only ever delete their own case and we never need a
+// separate ownership SELECT. rowCount 0 means the case either doesn't exist
+// or belongs to another lawyer — both collapse to a 404 so we don't leak
+// existence-vs-access.
+//
+// Dependents are removed by ON DELETE CASCADE FKs to cases(id):
+// case_attachments, signature_requests, notifications, agreements (→
+// payment_plans → installments), payment_transactions, payment_receipts.
+// In the current schema EVERY FK to cases(id) cascades, so the delete
+// succeeds cleanly. Defence in depth: if a deployment has (or later adds)
+// an FK with ON DELETE RESTRICT/NO ACTION, the DELETE raises a
+// foreign_key_violation (SQLSTATE 23503); we catch that and surface a clean
+// 409 instead of a 500.
+//
+// Storage cleanup is best-effort and happens AFTER the row is gone: we read
+// the signed-PDF path + every attachment storage path BEFORE the delete (the
+// rows vanish with the cascade), then sweep the objects. A storage failure
+// never fails the delete — the swallowing lives in the storage helpers, and
+// we additionally guard the whole sweep so an unexpected throw can't bubble.
+export async function deleteCaseForLawyer({ caseId, lawyerUserId }) {
+  // Capture the storage paths we'll want to sweep, scoped to the owning
+  // lawyer so a non-owner learns nothing. If the case isn't theirs we get
+  // zero rows and fall through to the 404 below after the DELETE no-ops.
+  const pdfPathResult = await pool.query(
+    `SELECT signed_pdf_storage_path
+     FROM cases
+     WHERE id = $1 AND lawyer_user_id = $2`,
+    [caseId, lawyerUserId]
+  );
+
+  const attachmentPathsResult = await pool.query(
+    `SELECT ca.storage_path
+     FROM case_attachments ca
+     JOIN cases ON cases.id = ca.case_id
+     WHERE ca.case_id = $1 AND cases.lawyer_user_id = $2`,
+    [caseId, lawyerUserId]
+  );
+
+  let deleteResult;
+  try {
+    deleteResult = await pool.query(
+      `DELETE FROM cases
+       WHERE id = $1 AND lawyer_user_id = $2`,
+      [caseId, lawyerUserId]
+    );
+  } catch (err) {
+    // 23503 = foreign_key_violation. Reached only if some FK to cases(id) is
+    // ON DELETE RESTRICT/NO ACTION (e.g. a payments/agreements constraint a
+    // deployment changed). Turn the raw PG error into a clean 409 so the UI
+    // can explain it, rather than a generic 500.
+    if (err && err.code === "23503") {
+      throw new ApiError(
+        409,
+        "This case has linked records (e.g. payments) and cannot be deleted"
+      );
+    }
+    throw err;
+  }
+
+  if (deleteResult.rowCount === 0) {
+    // Not found, or owned by a different lawyer — don't distinguish.
+    throw new ApiError(404, "Case not found");
+  }
+
+  // Best-effort storage sweep AFTER the row (and its cascaded rows) are gone.
+  // Never let a storage hiccup undo / fail a completed delete: each helper
+  // already swallows its own errors, and the try/catch is a final backstop.
+  try {
+    const signedPdfPath = pdfPathResult.rows[0]?.signed_pdf_storage_path;
+    if (signedPdfPath) {
+      await deleteSignedCasePdf(signedPdfPath);
+    }
+
+    await Promise.all(
+      attachmentPathsResult.rows
+        .map((row) => row.storage_path)
+        .filter(Boolean)
+        .map((storagePath) => deleteCaseAttachmentObject(storagePath))
+    );
+  } catch (storageErr) {
+    // Orphaned objects are reconciled out-of-band; the delete itself stands.
+    console.error("[STORAGE CLEANUP FAILED]", {
+      task: "delete-case-storage",
+      caseId,
+      message: storageErr?.message
+    });
+  }
 }
 
 // =====================================================================

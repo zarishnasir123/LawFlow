@@ -18,7 +18,7 @@ import { getCaseDisplayTitle } from "../../../shared/utils/caseDisplay";
 import RegistrarLayout from "../components/RegistrarLayout";
 import { useCurrentUser, displayFullName } from "../../auth/hooks/useCurrentUser";
 import { useEnforcePasswordChange } from "../../auth/hooks/useEnforcePasswordChange";
-import { listSubmittedCases } from "../api";
+import { listCases } from "../api";
 
 type QueueCase = {
   caseId: string;
@@ -37,11 +37,32 @@ export function RegistrarDashboard() {
   useEnforcePasswordChange();
   const { data: currentUser } = useCurrentUser();
   const { data: submittedCases = [] } = useQuery({
-    queryKey: ["registrar", "cases"],
-    queryFn: listSubmittedCases,
+    queryKey: ["registrar", "cases", "submitted"],
+    queryFn: () => listCases("submitted"),
+  });
+  const { data: acceptedCases = [] } = useQuery({
+    queryKey: ["registrar", "cases", "accepted"],
+    queryFn: () => listCases("accepted"),
+  });
+  const { data: returnedCases = [] } = useQuery({
+    queryKey: ["registrar", "cases", "returned"],
+    queryFn: () => listCases("returned"),
   });
   const displayName = displayFullName(currentUser) || "Registrar";
   const greeting = currentUser?.firstLoginCompleted ? "Welcome back" : "Welcome";
+
+  // "Processed Today" = accepted + returned decisions whose reviewedAt falls on
+  // the current local calendar day. reviewedAt is set when a case is accepted
+  // or returned, so this counts the registrar's decisions made today.
+  const processedTodayCount = useMemo(() => {
+    const today = new Date().toDateString();
+    const isToday = (iso: string | null) =>
+      Boolean(iso) && new Date(iso as string).toDateString() === today;
+    return (
+      acceptedCases.filter((item) => isToday(item.reviewedAt)).length +
+      returnedCases.filter((item) => isToday(item.reviewedAt)).length
+    );
+  }, [acceptedCases, returnedCases]);
 
   const queueCases: QueueCase[] = useMemo(
     () =>
@@ -66,19 +87,19 @@ export function RegistrarDashboard() {
   const stats: DashboardStat[] = [
     {
       label: "Pending Review",
-      value: String(queueCases.length),
+      value: String(submittedCases.length),
       icon: Clock3,
       accentClassName: "bg-amber-500",
     },
     {
       label: "Submitted Cases",
-      value: String(queueCases.length),
+      value: String(submittedCases.length),
       icon: FileCheck2,
       accentClassName: "bg-[#01411C]",
     },
     {
       label: "Processed Today",
-      value: "0",
+      value: String(processedTodayCount),
       icon: CheckCircle2,
       accentClassName: "bg-emerald-600",
     },
@@ -90,7 +111,7 @@ export function RegistrarDashboard() {
     },
     {
       label: "Returned Cases",
-      value: "0",
+      value: String(returnedCases.length),
       icon: FileText,
       accentClassName: "bg-red-600",
     },
@@ -119,7 +140,7 @@ export function RegistrarDashboard() {
       label: "Return Cases",
       icon: FileCheck2,
       className: "bg-emerald-700 hover:bg-emerald-800",
-      to: "/return-case",
+      to: "/returned-cases",
     },
     {
       label: "Schedule Hearing",

@@ -13,6 +13,7 @@ import {
 } from "./registrarReview.controller.js";
 import {
   caseIdParamValidator,
+  listRegistrarCasesValidator,
   returnCaseValidator
 } from "./registrarReview.validators.js";
 
@@ -24,8 +25,15 @@ const router = Router();
 // 'registrar' role; the service enforces the per-case tehsil ownership.
 router.use(authenticate, authorizeRoles("registrar"));
 
-// R1: the registrar's queue — submitted cases in their tehsil, oldest first.
-router.get("/cases", asyncHandler(listRegistrarQueue));
+// R1: the registrar's cases in their tehsil, filtered by ?status= (default
+// 'submitted', the original oldest-first queue). Validates the status param so
+// anything outside {submitted, accepted, returned} is a clean 400.
+router.get(
+  "/cases",
+  listRegistrarCasesValidator,
+  validateRequest,
+  asyncHandler(listRegistrarQueue)
+);
 
 // R2: one case detail + signed PDF URL. 404 on tehsil mismatch.
 router.get(

@@ -67,6 +67,7 @@ import { ViewCases } from "../modules/registrar/pages/viewCases";
 import { RegistrarDashboard } from "../modules/registrar/pages/Dashboard";
 import ReviewCases from "../modules/registrar/pages/ReviewCases";
 import ApprovedCases from "../modules/registrar/pages/ApprovedCases";
+import ReturnedCasesList from "../modules/registrar/pages/ReturnedCasesList";
 import ReturnCase from "../modules/registrar/pages/ReturnCase";
 import ScheduleHearing from "../modules/registrar/pages/ScheduleHearing";
 import RegistrarProfile from "../modules/registrar/pages/RegistrarProfile";
@@ -449,6 +450,13 @@ const approvedCasesRoute = createRoute({
   component: ApprovedCases,
 });
 
+const returnedCasesRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "returned-cases",
+  beforeLoad: registrarBeforeLoad,
+  component: ReturnedCasesList,
+});
+
 const returnCaseRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "return-case",
@@ -543,6 +551,7 @@ const routeTree = rootRoute.addChildren([
   registrarDashboardRoute,
   reviewCasesRoute,
   approvedCasesRoute,
+  returnedCasesRoute,
   returnCaseRoute,
   scheduleHearingRoute,
   registrarProfileRoute,

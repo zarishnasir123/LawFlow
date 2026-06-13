@@ -1,6 +1,7 @@
 import {
   createCase,
   deleteCaseAttachment,
+  deleteCaseForLawyer,
   getCaseForLawyer,
   listCaseAttachments,
   listCaseTypes,
@@ -104,6 +105,19 @@ export async function submitMyCase(req, res) {
   });
 
   return res.status(200).json({ case: submitted });
+}
+
+// Hard-delete a case the lawyer owns. The service enforces ownership in the
+// DELETE's WHERE clause (404 if not found / not owned), relies on FK cascades
+// to remove dependents, returns a 409 if a RESTRICT FK blocks the delete, and
+// best-effort sweeps the case's storage objects. 204 No Content on success.
+export async function deleteMyCase(req, res) {
+  await deleteCaseForLawyer({
+    caseId: req.params.caseId,
+    lawyerUserId: req.user.sub
+  });
+
+  return res.status(204).end();
 }
 
 // =====================================================================

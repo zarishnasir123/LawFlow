@@ -32,6 +32,10 @@ export type CaseSummary = {
   lawyerName: string;
   status: RegistrarCaseStatus;
   submittedAt: string | null;
+  // The registrar's decision time (cases.reviewed_at): set when a case is
+  // accepted or returned, null while still submitted. Drives the accepted /
+  // returned lists' "decision date" and the dashboard "Processed Today" count.
+  reviewedAt: string | null;
   assignedTehsil: string | null;
 };
 
@@ -71,13 +75,24 @@ export type CaseDetail = CaseSummary & {
   reviewedAt: string | null;
 };
 
-// (R1) The registrar's review queue: submitted cases routed to this
-// registrar's tehsil, oldest-submitted first (FCFS, ordered server-side).
-export async function listSubmittedCases(): Promise<CaseSummary[]> {
+// (R1) The registrar's case lists, filtered by lifecycle status within the
+// registrar's tehsil. The backend orders server-side:
+//   - submitted -> submitted_at ASC (queue / oldest first)
+//   - accepted / returned -> reviewed_at DESC (most recent decision first)
+// Defaults to "submitted" so the existing review-queue callers keep working.
+export async function listCases(
+  status: RegistrarCaseStatus = "submitted"
+): Promise<CaseSummary[]> {
   const { data } = await apiClient.get<{ cases: CaseSummary[] }>(
-    "/registrar/cases"
+    "/registrar/cases",
+    { params: { status } }
   );
   return data.cases;
+}
+
+// Back-compat alias for the review-queue callers (defaults to submitted).
+export async function listSubmittedCases(): Promise<CaseSummary[]> {
+  return listCases("submitted");
 }
 
 // (R2) One case for the review screen. The backend 404s on a tehsil

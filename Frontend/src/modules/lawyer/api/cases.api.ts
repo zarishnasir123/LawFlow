@@ -231,6 +231,16 @@ export const casesApi = {
   ): Promise<void> => {
     await apiClient.delete(`/cases/${caseId}/attachments/${attachmentId}`);
   },
+
+  // Hard-delete a case. The backend removes the row outright
+  // (DELETE /api/cases/:caseId, lawyer-owned via SQL); FK cascades clear
+  // dependent attachments / signature requests / notifications. Allowed at
+  // any status. A 409 comes back when the case has linked records that
+  // block the delete (e.g. payments) — callers should surface that message
+  // to the user rather than treating it as a generic failure.
+  deleteCase: async (caseId: string): Promise<void> => {
+    await apiClient.delete(`/cases/${caseId}`);
+  },
 };
 
 export function getCasesErrorMessage(error: unknown): string {
