@@ -28,7 +28,8 @@ export const REGISTRAR_TEHSIL_OPTIONS = [
 ] as const;
 
 export type RegistrarFormValues = {
-  name: string;
+  firstName: string;
+  lastName: string;
   email: string;
   phone: string;
   cnic: string;
@@ -70,7 +71,8 @@ export default function RegistrarForm({
 }: RegistrarFormProps) {
   const defaults = useMemo<RegistrarFormValues>(
     () => ({
-      name: initialValues?.name ?? "",
+      firstName: initialValues?.firstName ?? "",
+      lastName: initialValues?.lastName ?? "",
       email: initialValues?.email ?? "",
       phone: initialValues?.phone ?? "",
       cnic: initialValues?.cnic ?? "",
@@ -92,10 +94,8 @@ export default function RegistrarForm({
     e.preventDefault();
     setError("");
 
-    if (!values.name.trim()) return setError("Name is required.");
-    if (values.name.trim().split(/\s+/).length < 2) {
-      return setError("Please enter first name and last name.");
-    }
+    if (!values.firstName.trim()) return setError("First name is required.");
+    if (!values.lastName.trim()) return setError("Last name is required.");
     if (!values.email.trim()) return setError("Email is required.");
     if (!values.phone.trim()) return setError("Phone is required.");
     if (!values.cnic.trim()) return setError("CNIC is required.");
@@ -131,15 +131,28 @@ export default function RegistrarForm({
         </h2>
 
         <div className="space-y-5">
-          <div className="space-y-2">
-            <label className="text-sm font-medium">Full Name *</label>
-            <input
-              className="w-full rounded-lg border border-gray-300 px-4 py-2 focus:outline-none focus:ring-2 focus:ring-[#01411C]"
-              value={values.name}
-              onChange={(e) => setValues({ ...values, name: e.target.value })}
-              placeholder="Muhammad Asif"
-              disabled={submitting}
-            />
+          <div className="grid md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">First Name *</label>
+              <input
+                className="w-full rounded-lg border border-gray-300 px-4 py-2 focus:outline-none focus:ring-2 focus:ring-[#01411C]"
+                value={values.firstName}
+                onChange={(e) => setValues({ ...values, firstName: e.target.value })}
+                placeholder="Muhammad"
+                disabled={submitting}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Last Name *</label>
+              <input
+                className="w-full rounded-lg border border-gray-300 px-4 py-2 focus:outline-none focus:ring-2 focus:ring-[#01411C]"
+                value={values.lastName}
+                onChange={(e) => setValues({ ...values, lastName: e.target.value })}
+                placeholder="Asif"
+                disabled={submitting}
+              />
+            </div>
           </div>
 
           <div className="grid md:grid-cols-2 gap-4">
