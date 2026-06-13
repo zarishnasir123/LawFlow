@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Wallet, HandCoins, Receipt } from "lucide-react";
 import LawyerLayout from "../../lawyer/components/LawyerLayout";
 import TransactionHistoryList from "../components/TransactionHistoryList";
+import PayoutAccountCard from "../components/PayoutAccountCard";
 import { getLawyerEarnings } from "../api";
 import type { PaymentTransaction } from "../types/payments";
 import { formatCurrency } from "../utils/paymentCalculations";
@@ -62,11 +63,13 @@ export default function LawyerEarningsPage() {
           </div>
           <h1 className="mt-2 text-2xl font-semibold text-gray-900">Your Earnings</h1>
           <p className="mt-1 text-sm text-gray-600">
-            Payments your clients have made against their installment plans. The
-            money is settled to your bank account through your normal banking;
-            this page is your record of what has been received.
+            Payments your clients have made against their installment plans.
+            LawFlow collects these and settles your share to your payout account
+            (set it up below). This page is your record of what's been received.
           </p>
         </div>
+
+        <PayoutAccountCard />
 
         {isLoading ? (
           <div className="py-8 text-center text-gray-600">Loading your earnings…</div>

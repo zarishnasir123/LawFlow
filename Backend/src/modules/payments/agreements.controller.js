@@ -21,6 +21,10 @@ import {
   getServiceChargesByLawyerId,
   mapServiceChargesRow,
 } from "./serviceCharges.service.js";
+import {
+  getLawyerPayoutAccount,
+  upsertLawyerPayoutAccount,
+} from "./payouts.service.js";
 
 function mapAgreementResponse(snapshot) {
   return {
@@ -272,6 +276,37 @@ export async function listLawyerEarningsHandler(req, res) {
   } catch (error) {
     console.error("Error listing lawyer earnings:", error);
     return res.status(500).json({ message: "Failed to fetch earnings" });
+  }
+}
+
+export async function getLawyerPayoutAccountHandler(req, res) {
+  try {
+    const account = await getLawyerPayoutAccount(req.user.sub);
+    return res.status(200).json({ data: account });
+  } catch (error) {
+    if (error instanceof ApiError) {
+      return res.status(error.statusCode).json({ message: error.message });
+    }
+    console.error("Error fetching payout account:", error);
+    return res.status(500).json({ message: "Failed to fetch payout account" });
+  }
+}
+
+export async function updateLawyerPayoutAccountHandler(req, res) {
+  const { accountTitle, accountNumber, bankName } = req.body;
+  try {
+    const account = await upsertLawyerPayoutAccount(req.user.sub, {
+      accountTitle,
+      accountNumber,
+      bankName,
+    });
+    return res.status(200).json({ message: "Payout account saved", data: account });
+  } catch (error) {
+    if (error instanceof ApiError) {
+      return res.status(error.statusCode).json({ message: error.message });
+    }
+    console.error("Error saving payout account:", error);
+    return res.status(500).json({ message: "Failed to save payout account" });
   }
 }
 
