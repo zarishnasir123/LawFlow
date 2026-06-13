@@ -232,3 +232,24 @@ export const getLawyerEarnings = async (): Promise<LawyerEarnings> => {
   const { data } = await apiClient.get("/payments/lawyer/earnings");
   return data.data as LawyerEarnings;
 };
+
+export type LawyerPayoutAccount = {
+  accountTitle: string | null;
+  accountNumber: string | null;
+  bankName: string | null;
+} | null;
+
+// Where LawFlow settles the lawyer's collected payments (his bank account).
+export const getLawyerPayoutAccount = async (): Promise<LawyerPayoutAccount> => {
+  const { data } = await apiClient.get("/payments/lawyer/payout-account");
+  return data.data as LawyerPayoutAccount;
+};
+
+export const updateLawyerPayoutAccount = async (payload: {
+  accountTitle?: string;
+  accountNumber?: string;
+  bankName?: string;
+}): Promise<LawyerPayoutAccount> => {
+  const { data } = await apiClient.put("/payments/lawyer/payout-account", payload);
+  return data.data as LawyerPayoutAccount;
+};

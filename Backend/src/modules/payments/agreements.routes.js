@@ -9,11 +9,13 @@ import {
   getAgreementHandler,
   getAgreementsByCaseHandler,
   getLawyerCaseAgreementContextHandler,
+  getLawyerPayoutAccountHandler,
   getReceiptHandler,
   listClientAgreementsHandler,
   listLawyerAgreementCasesHandler,
   listLawyerEarningsHandler,
   listReceiptsHandler,
+  updateLawyerPayoutAccountHandler,
   listTransactionsHandler,
   updateAgreementStatusHandler,
 } from "./agreements.controller.js";
@@ -58,6 +60,20 @@ router.get(
   authenticate,
   authorizeRoles("lawyer"),
   asyncHandler(listLawyerEarningsHandler)
+);
+
+router.get(
+  "/lawyer/payout-account",
+  authenticate,
+  authorizeRoles("lawyer"),
+  asyncHandler(getLawyerPayoutAccountHandler)
+);
+
+router.put(
+  "/lawyer/payout-account",
+  authenticate,
+  authorizeRoles("lawyer"),
+  asyncHandler(updateLawyerPayoutAccountHandler)
 );
 
 router.get(

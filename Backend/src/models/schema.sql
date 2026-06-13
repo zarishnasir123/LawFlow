@@ -225,6 +225,15 @@ CREATE TABLE lawyer_profiles (
   -- 2000 chars by the backend validator.
   bio                TEXT,
 
+  -- Payout/bank details: where LawFlow settles this lawyer's collected
+  -- installment payments. The platform collects payments via its own Safepay
+  -- account and pays each lawyer his share to this account. Optional until the
+  -- lawyer fills them in on the Payments Received page. Never exposed on the
+  -- public lawyer directory.
+  payout_account_title  VARCHAR(150),
+  payout_account_number VARCHAR(50),
+  payout_bank_name      VARCHAR(150),
+
   cnic_match         BOOLEAN NOT NULL DEFAULT false,
   cnic_match_remarks TEXT,
 
