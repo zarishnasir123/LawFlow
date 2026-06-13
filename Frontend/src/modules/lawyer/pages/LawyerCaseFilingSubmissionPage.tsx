@@ -307,20 +307,32 @@ export default function LawyerCaseFilingSubmissionPage() {
     setRenderedPages(pages);
   }, []);
 
-  const canSubmit = Boolean(
-    filingCase &&
-      bundle &&
-      bundle.orderedDocuments.length > 0
-  );
-
-  // A tehsil can only be set while the case is still editable (draft/returned);
-  // the backend locks submitted/accepted cases. effectiveTehsil prefers the
-  // lawyer's unsaved pick, otherwise the value saved on the case.
+  // A case can be submitted / edited only while it's a draft or returned; the
+  // backend locks submitted and accepted cases. Once submitted, the Submit
+  // button stays disabled until the registrar returns the case.
   const isCaseEditable =
     !backendCase ||
     backendCase.status === "draft" ||
     backendCase.status === "returned";
   const effectiveTehsil = tehsilDraft ?? backendCase?.assignedTehsil ?? "";
+
+  const canSubmit = Boolean(
+    filingCase &&
+      bundle &&
+      bundle.orderedDocuments.length > 0 &&
+      isCaseEditable
+  );
+
+  // The Submit button doubles as a status indicator: it's disabled (via
+  // canSubmit) for submitted/accepted cases and the label says why.
+  const submitButtonLabel =
+    backendCase?.status === "submitted"
+      ? "Awaiting Registrar Review"
+      : backendCase?.status === "accepted"
+        ? "Accepted by Registrar"
+        : backendCase?.status === "returned"
+          ? "Submit Corrected Case File"
+          : "Submit Case File";
 
   const syncWorkspaceBundle = useCallback(() => {
     if (!selectedCaseId) return;
@@ -744,60 +756,58 @@ export default function LawyerCaseFilingSubmissionPage() {
               </div>
             )}
 
-            {/* Court / tehsil (jurisdiction). Routes the case to the matching
-                registrar and is required before submission. Editable while the
-                case is a draft or returned; older cases created before tehsil
-                routing have none and can assign it right here. */}
+            {/* Court / tehsil (jurisdiction). Normally chosen at case creation,
+                so it's shown read-only here. The picker only appears as a
+                rescue for cases that have no tehsil yet (e.g. created before
+                tehsil routing existed) so they can still be submitted. */}
             <div className="rounded-xl border border-gray-200 bg-white p-4">
               <h3 className="text-base font-semibold text-gray-900">
                 Court / Tehsil (Jurisdiction)
               </h3>
               <p className="mt-1 text-xs text-gray-500">
-                Routes this case to the registrar for that tehsil. Required
-                before you can submit.
+                Routes this case to the registrar for that tehsil.
               </p>
 
-              {isCaseEditable ? (
-                <div className="mt-3 flex flex-wrap items-end gap-3">
-                  <div className="space-y-1">
-                    <label className="text-xs font-medium text-gray-700">
-                      Assigned tehsil
-                    </label>
-                    <select
-                      value={effectiveTehsil}
-                      onChange={(event) => setTehsilDraft(event.target.value)}
-                      disabled={saveTehsilMutation.isPending}
-                      className="w-64 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#01411C] disabled:bg-gray-100"
+              {backendCase?.assignedTehsil ? (
+                <p className="mt-3 text-sm font-medium text-gray-900">
+                  {backendCase.assignedTehsil}
+                </p>
+              ) : isCaseEditable ? (
+                <>
+                  <div className="mt-3 flex flex-wrap items-end gap-3">
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium text-gray-700">
+                        Assigned tehsil
+                      </label>
+                      <select
+                        value={effectiveTehsil}
+                        onChange={(event) => setTehsilDraft(event.target.value)}
+                        disabled={saveTehsilMutation.isPending}
+                        className="w-64 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#01411C] disabled:bg-gray-100"
+                      >
+                        <option value="">— Select court / tehsil —</option>
+                        {SUPPORTED_TEHSILS.map((tehsil) => (
+                          <option key={tehsil} value={tehsil}>
+                            {tehsil}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <button
+                      onClick={() => saveTehsilMutation.mutate(effectiveTehsil)}
+                      disabled={saveTehsilMutation.isPending || !effectiveTehsil}
+                      className="rounded-lg bg-[#01411C] px-4 py-2 text-sm font-semibold text-white hover:bg-[#024a23] disabled:cursor-not-allowed disabled:bg-gray-300"
                     >
-                      <option value="">— Select court / tehsil —</option>
-                      {SUPPORTED_TEHSILS.map((tehsil) => (
-                        <option key={tehsil} value={tehsil}>
-                          {tehsil}
-                        </option>
-                      ))}
-                    </select>
+                      {saveTehsilMutation.isPending ? "Saving…" : "Save tehsil"}
+                    </button>
                   </div>
-                  <button
-                    onClick={() => saveTehsilMutation.mutate(effectiveTehsil)}
-                    disabled={
-                      saveTehsilMutation.isPending ||
-                      !effectiveTehsil ||
-                      effectiveTehsil === (backendCase?.assignedTehsil ?? "")
-                    }
-                    className="rounded-lg bg-[#01411C] px-4 py-2 text-sm font-semibold text-white hover:bg-[#024a23] disabled:cursor-not-allowed disabled:bg-gray-300"
-                  >
-                    {saveTehsilMutation.isPending ? "Saving…" : "Save tehsil"}
-                  </button>
-                </div>
+                  <p className="mt-2 text-xs font-medium text-amber-700">
+                    No tehsil set yet — pick one and save before submitting.
+                  </p>
+                </>
               ) : (
                 <p className="mt-3 text-sm font-medium text-gray-900">
-                  {backendCase?.assignedTehsil ?? "Not assigned"}
-                </p>
-              )}
-
-              {isCaseEditable && !backendCase?.assignedTehsil && (
-                <p className="mt-2 text-xs font-medium text-amber-700">
-                  No tehsil set yet — pick one and save before submitting.
+                  Not assigned
                 </p>
               )}
             </div>
@@ -837,9 +847,7 @@ export default function LawyerCaseFilingSubmissionPage() {
                   className="inline-flex items-center gap-2 rounded-lg bg-[#01411C] px-4 py-2 text-sm font-semibold text-white hover:bg-[#024a23] disabled:cursor-not-allowed disabled:bg-gray-300"
                 >
                   <UploadCloud className="h-4 w-4" />
-                  {backendCase?.status === "returned"
-                    ? "Submit Corrected Case File"
-                    : "Submit Case File"}
+                  {submitButtonLabel}
                 </button>
               </div>
             </div>
