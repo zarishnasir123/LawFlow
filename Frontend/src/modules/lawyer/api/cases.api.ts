@@ -112,6 +112,25 @@ export type LawyerDashboardStats = {
   totalEarnings: number | null;
 };
 
+// One row in the lawyer dashboard "Recent Activity" feed. The backend builds
+// this as a UNION across real event sources (case submissions, registrar
+// accept/return decisions, client signatures), all scoped to the logged-in
+// lawyer, newest first. `id` is "<type>:<sourceRowId>" — stable React key.
+// `timestamp` is an ISO string; render it with formatDate(ts, "relative").
+export type LawyerActivityType =
+  | "case_submitted"
+  | "case_accepted"
+  | "case_returned"
+  | "client_signed";
+
+export type LawyerActivityItem = {
+  id: string;
+  type: LawyerActivityType;
+  title: string;
+  subject: string;
+  timestamp: string;
+};
+
 // Relative API path that streams the generated .docx for a given
 // case_types.code. Building it here (not inline at call-sites) keeps the
 // path in one place and lets the apiClient interceptor attach auth headers
@@ -153,6 +172,17 @@ export const casesApi = {
       "/cases/dashboard-stats"
     );
     return data;
+  },
+
+  // Lawyer dashboard "Recent Activity" feed — the ~6 most recent real events
+  // (case submissions, registrar accept/return decisions, client signatures)
+  // across the lawyer's own cases, newest first. Backend scopes everything to
+  // the authenticated lawyer (cases.lawyer_user_id), so no params are needed.
+  getRecentActivity: async (): Promise<LawyerActivityItem[]> => {
+    const { data } = await apiClient.get<{ activities: LawyerActivityItem[] }>(
+      "/cases/recent-activity"
+    );
+    return data.activities;
   },
 
   // Only cases where the PDF compile has produced a downloadable

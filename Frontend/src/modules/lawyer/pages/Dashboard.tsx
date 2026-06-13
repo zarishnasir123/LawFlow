@@ -3,18 +3,15 @@ import { useNavigate } from "@tanstack/react-router";
 import { DollarSign, FileText, FolderOpen } from "lucide-react";
 import LawyerLayout from "../components/LawyerLayout";
 import StatCard from "../../../shared/components/dashboard/StatCard";
-import RecentActivity from "../../../shared/components/dashboard/RecentActivity";
-import RecentCases from "../../../shared/components/dashboard/RecentCases";
 import UpcomingHearings from "../../../shared/components/dashboard/UpcomingHearings";
 import QuickActions from "../../../shared/components/dashboard/QuickActions";
-import type { ActivityItem, CaseItem } from "../../../shared/types/dashboard";
+import LawyerRecentActivity from "../components/dashboard/LawyerRecentActivity";
+import LawyerRecentCases from "../components/dashboard/LawyerRecentCases";
 import { useCurrentUser, displayFullName } from "../../auth/hooks/useCurrentUser";
 import { useEnforcePasswordChange } from "../../auth/hooks/useEnforcePasswordChange";
 import { useSignatureRequestsStore } from "../signatures/store/signatureRequests.store";
 import { casesApi } from "../api/cases.api";
 import {
-  lawyerDashboardActivity,
-  lawyerDashboardCases,
   lawyerDashboardHearings,
   lawyerDashboardQuickActions,
   lawyerDashboardStats,
@@ -63,23 +60,6 @@ export default function LawyerDashboard() {
   const statsReady = !statsLoading && !statsError && stats !== undefined;
   const statValue = (value: number | undefined): string =>
     statsReady && value !== undefined ? String(value) : "—";
-
-  const signedCount: number = statsReady ? stats.clientSigned : 0;
-  const signedActivity: ActivityItem[] =
-    signedCount > 0
-      ? [
-          {
-            id: 999,
-            label: `${signedCount} document${signedCount !== 1 ? "s" : ""} signed by client`,
-            time: "Just now",
-            type: "case" as const,
-          },
-        ]
-      : [];
-  const dashboardActivity: ActivityItem[] = [
-    ...signedActivity,
-    ...lawyerDashboardActivity,
-  ];
 
   const displayName = displayFullName(currentUser) || "Lawyer";
   const greeting = currentUser?.firstLoginCompleted ? "Welcome back" : "Welcome";
@@ -150,19 +130,24 @@ export default function LawyerDashboard() {
         {/* CASES + ACTIVITY */}
         <section className="mt-8 grid gap-6 lg:grid-cols-3">
           <div className="lg:col-span-2">
-            <RecentCases
-              cases={lawyerDashboardCases}
+            {/* PANEL 1: My Cases — 2 most recent real cases for this lawyer. */}
+            <LawyerRecentCases
               onViewAll={() => navigate({ to: "/lawyer-cases" })}
-              onSelectCase={(caseItem: CaseItem) => navigate({ to: `/lawyer-case-editor/${caseItem.id}` })}
+              onSelectCase={(caseItem) =>
+                navigate({ to: `/lawyer-case-editor/${caseItem.id}` })
+              }
             />
           </div>
 
           <div className="space-y-6">
+            {/* Upcoming Hearings — OUT OF SCOPE: hearings have no backend, so
+                this panel stays mock and is left untouched. */}
             <UpcomingHearings
               hearings={lawyerDashboardHearings}
               onNavigate={() => navigate({ to: "/lawyer-hearings" })}
             />
-            <RecentActivity items={dashboardActivity} />
+            {/* PANEL 2: Recent Activity — real lawyer feed. */}
+            <LawyerRecentActivity />
           </div>
         </section>
     </LawyerLayout>

@@ -4,6 +4,7 @@ import {
   deleteCaseForLawyer,
   getCaseForLawyer,
   getLawyerDashboardStats,
+  getLawyerRecentActivity,
   listCaseAttachments,
   listCaseTypes,
   listCasesForLawyer,
@@ -66,6 +67,15 @@ export async function listMyCases(req, res) {
 export async function getDashboardStats(req, res) {
   const stats = await getLawyerDashboardStats({ lawyerUserId: req.user.sub });
   return res.status(200).json(stats);
+}
+
+// Lawyer dashboard "Recent Activity" feed, scoped to the logged-in lawyer
+// (req.user.sub). Returns { activities: [{ id, type, title, subject, timestamp }] }
+// — the 6 most recent real events (submissions, accept/return decisions, and
+// client signatures) across the lawyer's own cases, newest first.
+export async function getRecentActivity(req, res) {
+  const activities = await getLawyerRecentActivity({ lawyerUserId: req.user.sub });
+  return res.status(200).json({ activities });
 }
 
 export async function listMySignedCases(req, res) {

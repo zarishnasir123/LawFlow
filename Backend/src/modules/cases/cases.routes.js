@@ -14,6 +14,7 @@ import {
   getDashboardStats,
   getCaseTypes,
   getMyCase,
+  getRecentActivity,
   listMyCases,
   listMySignedCases,
   patchMyCase,
@@ -84,6 +85,19 @@ router.get(
   authenticate,
   authorizeRoles("lawyer"),
   asyncHandler(getDashboardStats)
+);
+
+// Lawyer dashboard "Recent Activity" feed — the 6 most recent real events
+// (case submissions, registrar accept/return decisions, client signatures)
+// across the logged-in lawyer's own cases, newest first. All scoped to
+// req.user.sub. Placed before the `/:caseId` route — like `/signed` and
+// `/dashboard-stats` — so "recent-activity" isn't captured as a caseId.
+// No params/body: everything derives from req.user.sub.
+router.get(
+  "/recent-activity",
+  authenticate,
+  authorizeRoles("lawyer"),
+  asyncHandler(getRecentActivity)
 );
 
 router.get(

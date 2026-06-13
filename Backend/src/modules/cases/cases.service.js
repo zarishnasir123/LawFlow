@@ -423,6 +423,92 @@ export async function getLawyerDashboardStats({ lawyerUserId }) {
   };
 }
 
+// Lawyer-scoped "Recent Activity" feed for the dashboard. A single UNION ALL
+// over the real event sources, every branch scoped to the logged-in lawyer
+// (cases.lawyer_user_id = $1), ordered newest-first and capped to 6 rows. We
+// deliberately compute id, type, title and subject INSIDE each branch as plain
+// columns so the outer query only has to ORDER BY ts DESC / LIMIT — no app-side
+// merge sort, and the DB does the work. id = "<type>:<sourceRowId>" so each row
+// has a stable React key even when two events share a timestamp.
+//
+// Event sources (no in-app messaging — that has no backend, so it's omitted):
+//   case_submitted — cases.submitted_at  IS NOT NULL                (any status)
+//   case_accepted  — cases.status='accepted' AND reviewed_at NOT NULL
+//   case_returned  — cases.status='returned' AND reviewed_at NOT NULL
+//   client_signed  — signature_requests joined to the lawyer's case where the
+//                    CLIENT signer reached status='signed' (signed_at NOT NULL)
+//
+// The $1 placeholder is reused across every branch — node-postgres expands the
+// single bound value to all positions, so this stays fully parameterised.
+export async function getLawyerRecentActivity({ lawyerUserId }) {
+  const result = await pool.query(
+    `SELECT id, type, title, subject, ts AS timestamp
+     FROM (
+       SELECT
+         'case_submitted:' || c.id::text AS id,
+         'case_submitted'                AS type,
+         'Case submitted to registrar'   AS title,
+         c.title                         AS subject,
+         c.submitted_at                  AS ts
+       FROM cases c
+       WHERE c.lawyer_user_id = $1
+         AND c.submitted_at IS NOT NULL
+
+       UNION ALL
+
+       SELECT
+         'case_accepted:' || c.id::text  AS id,
+         'case_accepted'                 AS type,
+         'Case approved by registrar'    AS title,
+         c.title                         AS subject,
+         c.reviewed_at                   AS ts
+       FROM cases c
+       WHERE c.lawyer_user_id = $1
+         AND c.status = 'accepted'
+         AND c.reviewed_at IS NOT NULL
+
+       UNION ALL
+
+       SELECT
+         'case_returned:' || c.id::text   AS id,
+         'case_returned'                  AS type,
+         'Case returned for corrections'  AS title,
+         c.title                          AS subject,
+         c.reviewed_at                    AS ts
+       FROM cases c
+       WHERE c.lawyer_user_id = $1
+         AND c.status = 'returned'
+         AND c.reviewed_at IS NOT NULL
+
+       UNION ALL
+
+       SELECT
+         'client_signed:' || sr.id::text AS id,
+         'client_signed'                 AS type,
+         'Document signed by client'     AS title,
+         c.title                         AS subject,
+         sr.signed_at                    AS ts
+       FROM signature_requests sr
+       JOIN cases c ON c.id = sr.case_id
+       WHERE c.lawyer_user_id = $1
+         AND sr.signer_role = 'client'
+         AND sr.status = 'signed'
+         AND sr.signed_at IS NOT NULL
+     ) activity
+     ORDER BY ts DESC
+     LIMIT 6`,
+    [lawyerUserId]
+  );
+
+  return result.rows.map((row) => ({
+    id: row.id,
+    type: row.type,
+    title: row.title,
+    subject: row.subject,
+    timestamp: row.timestamp
+  }));
+}
+
 export async function getCaseForLawyer({ caseId, lawyerUserId }) {
   const result = await pool.query(
     `${selectCaseWithType()}
