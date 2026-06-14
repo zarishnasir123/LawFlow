@@ -82,11 +82,16 @@ export default function AiLegalGuidance() {
       setMessages((prev) => [...prev, aiMsg]);
     } catch (err) {
       // Show the backend's real reason (e.g. "AI assistant is not configured",
-      // "The assistant is busy right now") instead of a generic message — it
-      // tells the lawyer whether to retry or whether setup is incomplete.
+      // "The assistant is busy right now", or a validation message) instead of a
+      // generic line — it tells the lawyer whether to retry or fix something.
+      const data = axios.isAxiosError(err)
+        ? (err.response?.data as
+            | { message?: string; errors?: { msg?: string }[] }
+            | undefined)
+        : undefined;
       const serverMessage =
-        (axios.isAxiosError(err) &&
-          (err.response?.data as { message?: string } | undefined)?.message) ||
+        data?.message ||
+        data?.errors?.[0]?.msg ||
         "Couldn't reach the assistant. Check your connection and try again.";
 
       setMessages((prev) => [

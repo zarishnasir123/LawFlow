@@ -13,8 +13,8 @@ export const aiGuidanceValidator = [
     .notEmpty()
     .withMessage("prompt is required")
     .bail()
-    .isLength({ max: 400 })
-    .withMessage("prompt must be 400 characters or less"),
+    .isLength({ max: 8000 })
+    .withMessage("prompt must be 8000 characters or less"),
 
   body("history")
     .optional()
@@ -24,10 +24,13 @@ export const aiGuidanceValidator = [
     .optional()
     .isIn(["ai", "user"])
     .withMessage("history role must be 'ai' or 'user'"),
+  // History echoes the assistant's own prior answers, which are far longer than
+  // a user prompt. Cap generously so a normal multi-turn chat never trips it;
+  // the service still trims history to the last few messages to bound cost.
   body("history.*.text")
     .optional()
     .isString()
     .withMessage("history text must be text")
-    .isLength({ max: 400 })
-    .withMessage("history text must be 400 characters or less")
+    .isLength({ max: 20000 })
+    .withMessage("history text must be 20000 characters or less")
 ];

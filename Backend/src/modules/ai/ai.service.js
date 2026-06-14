@@ -1,4 +1,5 @@
-import { generateGeminiText } from "../../services/gemini.service.js";
+import { generateGeminiText, isGeminiConfigured } from "../../services/gemini.service.js";
+import { generateGroqText, isGroqConfigured } from "../../services/groq.service.js";
 
 // Grounded knowledge block for the lawyer-facing assistant.
 //
@@ -55,10 +56,23 @@ Family suits (all under the Family Courts Act 1964; all require the three §7(2)
 // ("now draft the prayer", "what about the schedules?").
 const MAX_HISTORY_MESSAGES = 10;
 
-// Maps the frontend chat roles to Gemini's roles. The UI uses "ai"; Gemini
-// expects "model".
-function toGeminiRole(role) {
+// Maps the frontend chat roles to the neutral provider shape ("ai" -> "model").
+function toNeutralRole(role) {
   return role === "ai" ? "model" : "user";
+}
+
+// Picks the LLM provider. AI_PROVIDER ("groq" | "gemini") forces one; otherwise
+// we auto-select: Groq first (faster, more generous free tier), then Gemini.
+// Both clients share the same generate* contract, so the rest of the flow is
+// provider-agnostic. Defaults to Groq, whose service throws a clean 503 if its
+// key is missing.
+function resolveGenerator() {
+  const explicit = (process.env.AI_PROVIDER || "").toLowerCase();
+  if (explicit === "gemini") return generateGeminiText;
+  if (explicit === "groq") return generateGroqText;
+  if (isGroqConfigured()) return generateGroqText;
+  if (isGeminiConfigured()) return generateGeminiText;
+  return generateGroqText;
 }
 
 // Builds the ordered message list (trimmed history + the new prompt) and asks
@@ -71,9 +85,10 @@ export async function askLegalGuidance({ prompt, history = [] }) {
   const messages = [
     ...trimmedHistory
       .filter((m) => m && typeof m.text === "string" && m.text.trim())
-      .map((m) => ({ role: toGeminiRole(m.role), text: m.text.trim() })),
+      .map((m) => ({ role: toNeutralRole(m.role), text: m.text.trim() })),
     { role: "user", text: prompt.trim() }
   ];
 
-  return generateGeminiText({ systemInstruction: SYSTEM_INSTRUCTION, messages });
+  const generate = resolveGenerator();
+  return generate({ systemInstruction: SYSTEM_INSTRUCTION, messages });
 }
