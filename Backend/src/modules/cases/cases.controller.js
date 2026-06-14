@@ -3,6 +3,9 @@ import {
   deleteCaseAttachment,
   deleteCaseForLawyer,
   getCaseForLawyer,
+  getLawyerDashboardStats,
+  getLawyerRecentActivity,
+  getReturnedCasesForLawyer,
   listCaseAttachments,
   listCaseTypes,
   listCasesForLawyer,
@@ -57,6 +60,30 @@ export async function createMyCase(req, res) {
 
 export async function listMyCases(req, res) {
   const cases = await listCasesForLawyer({ lawyerUserId: req.user.sub });
+  return res.status(200).json({ cases });
+}
+
+// Lawyer dashboard stat tiles, scoped to the logged-in lawyer (req.user.sub).
+// Returns { activeCases, pendingSubmissions, clientSigned, totalEarnings }.
+export async function getDashboardStats(req, res) {
+  const stats = await getLawyerDashboardStats({ lawyerUserId: req.user.sub });
+  return res.status(200).json(stats);
+}
+
+// Lawyer dashboard "Recent Activity" feed, scoped to the logged-in lawyer
+// (req.user.sub). Returns { activities: [{ id, type, title, subject, timestamp }] }
+// — the 6 most recent real events (submissions, accept/return decisions, and
+// client signatures) across the lawyer's own cases, newest first.
+export async function getRecentActivity(req, res) {
+  const activities = await getLawyerRecentActivity({ lawyerUserId: req.user.sub });
+  return res.status(200).json({ activities });
+}
+
+// Lawyer "Returned Cases" page — the lawyer's registrar-returned cases with
+// the return reason, client info, document count, and fee/paid, scoped to
+// req.user.sub. Returns { cases: [...] }.
+export async function getReturnedCases(req, res) {
+  const cases = await getReturnedCasesForLawyer({ lawyerUserId: req.user.sub });
   return res.status(200).json({ cases });
 }
 

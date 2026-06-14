@@ -9,6 +9,7 @@ import casesRoutes from "./modules/cases/cases.routes.js";
 import clientsRoutes from "./modules/clients/client.routes.js";
 import lawyersRoutes from "./modules/lawyers/lawyer.routes.js";
 import registrarRoutes from "./modules/registrar/registrar.routes.js";
+import adminRoutes from "./modules/admin/admin.routes.js";
 import registrarReviewRoutes from "./modules/registrarReview/registrarReview.routes.js";
 import notificationRoutes from "./modules/notifications/notifications.routes.js";
 import paymentRoutes from "./modules/payments/serviceCharges.routes.js";
@@ -75,6 +76,9 @@ app.use("/api/payments", paymentGatewayRoutes);
 app.use("/api/cases/:caseId", caseSignatureRoutes);
 app.use("/api/me", mySignatureRoutes);
 app.use("/api/registrars", registrarRoutes);
+// Admin-only aggregate endpoints (dashboard stats, …). Gated by
+// authenticate + authorizeRoles('admin') inside the router.
+app.use("/api/admin", adminRoutes);
 // Registrar-facing case review (role 'registrar'). Singular path —
 // distinct from the admin-only /api/registrars management API above.
 app.use("/api/registrar", registrarReviewRoutes);

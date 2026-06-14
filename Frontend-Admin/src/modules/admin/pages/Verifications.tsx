@@ -8,7 +8,6 @@ import {
   CheckCircle2,
   ExternalLink,
   FileText,
-  Globe,
   Hash,
   IdCard,
   ImageOff,
@@ -273,8 +272,7 @@ export default function Verifications() {
                     </h1>
                     <p className="mt-1 max-w-3xl text-sm text-gray-600">
                       Review every pending lawyer below. Verify their Bar Council
-                      license number against the uploaded card. SJP cross-check is
-                      optional and available at the bottom of this page.
+                      license number against the uploaded card.
                     </p>
                   </div>
                 </div>
@@ -674,39 +672,6 @@ export default function Verifications() {
               )}
             </section>
             )}
-
-            {/* Optional SJP cross-check */}
-            <section className="rounded-2xl border border-dashed border-gray-300 bg-white p-5 shadow-sm">
-              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                <div className="flex items-start gap-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gray-100 text-[#01411C]">
-                    <Globe className="h-5 w-5" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-semibold text-gray-900">
-                      Optional: cross-check on the SJP directory
-                    </p>
-                    <p className="mt-0.5 text-xs text-gray-600">
-                      The Sindh Judicial Portal can be used for an additional public-records lookup if needed.
-                    </p>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() =>
-                    window.open(
-                      "https://sjp.com.pk/",
-                      "_blank",
-                      "noopener,noreferrer",
-                    )
-                  }
-                  className="inline-flex items-center justify-center gap-2 self-start rounded-lg border border-[#01411C] bg-white px-4 py-2.5 text-sm font-semibold text-[#01411C] transition hover:bg-green-50 md:self-auto"
-                >
-                  Open SJP Directory
-                  <ExternalLink className="h-4 w-4" />
-                </button>
-              </div>
-            </section>
         </div>
       </div>
     </>

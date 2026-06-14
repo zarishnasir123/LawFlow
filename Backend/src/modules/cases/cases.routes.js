@@ -11,8 +11,11 @@ import {
   deleteMyCase,
   downloadCaseTemplate,
   getCaseAttachments,
+  getDashboardStats,
   getCaseTypes,
   getMyCase,
+  getRecentActivity,
+  getReturnedCases,
   listMyCases,
   listMySignedCases,
   patchMyCase,
@@ -72,6 +75,41 @@ router.get(
   authenticate,
   authorizeRoles("lawyer"),
   asyncHandler(listMySignedCases)
+);
+
+// Lawyer dashboard stat tiles (active cases / pending submissions / client
+// signed / total earnings), all scoped to the logged-in lawyer. Placed before
+// the `/:caseId` route — like `/signed` — so "dashboard-stats" isn't captured
+// as a caseId. No params/body: everything derives from req.user.sub.
+router.get(
+  "/dashboard-stats",
+  authenticate,
+  authorizeRoles("lawyer"),
+  asyncHandler(getDashboardStats)
+);
+
+// Lawyer dashboard "Recent Activity" feed — the 6 most recent real events
+// (case submissions, registrar accept/return decisions, client signatures)
+// across the logged-in lawyer's own cases, newest first. All scoped to
+// req.user.sub. Placed before the `/:caseId` route — like `/signed` and
+// `/dashboard-stats` — so "recent-activity" isn't captured as a caseId.
+// No params/body: everything derives from req.user.sub.
+router.get(
+  "/recent-activity",
+  authenticate,
+  authorizeRoles("lawyer"),
+  asyncHandler(getRecentActivity)
+);
+
+// Lawyer "Returned Cases" page — registrar-returned cases with the return
+// reason, client info, document count, and fee/paid. Scoped to req.user.sub.
+// Placed before `/:caseId` (like the other lawyer-scoped list routes) so
+// "returned" isn't captured as a caseId.
+router.get(
+  "/returned",
+  authenticate,
+  authorizeRoles("lawyer"),
+  asyncHandler(getReturnedCases)
 );
 
 router.get(

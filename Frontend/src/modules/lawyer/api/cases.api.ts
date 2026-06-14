@@ -101,6 +101,56 @@ export type ApiCaseAttachment = {
   url: string | null;
 };
 
+// Lawyer dashboard stat tiles, scoped server-side to the logged-in lawyer.
+// `totalEarnings` is the lawyer's total received money in PKR (summed from
+// successful payment transactions), or null when no clean source exists — the
+// dashboard renders "Rs. —" in that case.
+export type LawyerDashboardStats = {
+  activeCases: number;
+  pendingSubmissions: number;
+  clientSigned: number;
+  totalEarnings: number | null;
+};
+
+// One row in the lawyer dashboard "Recent Activity" feed. The backend builds
+// this as a UNION across real event sources (case submissions, registrar
+// accept/return decisions, client signatures), all scoped to the logged-in
+// lawyer, newest first. `id` is "<type>:<sourceRowId>" — stable React key.
+// `timestamp` is an ISO string; render it with formatDate(ts, "relative").
+export type LawyerActivityType =
+  | "case_submitted"
+  | "case_accepted"
+  | "case_returned"
+  | "client_signed";
+
+export type LawyerActivityItem = {
+  id: string;
+  type: LawyerActivityType;
+  title: string;
+  subject: string;
+  timestamp: string;
+};
+
+// A registrar-returned case as shown on the lawyer "Returned Cases" page.
+// caseFee/paidAmount are null when the case has no fee agreement (the page
+// hides the fee block then). No "progress" field — that has no backend.
+export type ReturnedCase = {
+  id: string;
+  title: string;
+  description: string | null;
+  caseTypeName: string;
+  category: CaseCategory;
+  reviewRemarks: string | null;
+  reviewedAt: string | null;
+  submittedAt: string | null;
+  clientName: string;
+  clientEmail: string | null;
+  clientPhone: string | null;
+  documentCount: number;
+  caseFee: number | null;
+  paidAmount: number | null;
+};
+
 // Relative API path that streams the generated .docx for a given
 // case_types.code. Building it here (not inline at call-sites) keeps the
 // path in one place and lets the apiClient interceptor attach auth headers
@@ -132,6 +182,36 @@ export const casesApi = {
 
   listMyCases: async (): Promise<ApiCase[]> => {
     const { data } = await apiClient.get<{ cases: ApiCase[] }>("/cases");
+    return data.cases;
+  },
+
+  // Lawyer dashboard stat tiles. The backend scopes every count to the
+  // authenticated lawyer (cases.lawyer_user_id), so this needs no params.
+  getDashboardStats: async (): Promise<LawyerDashboardStats> => {
+    const { data } = await apiClient.get<LawyerDashboardStats>(
+      "/cases/dashboard-stats"
+    );
+    return data;
+  },
+
+  // Lawyer dashboard "Recent Activity" feed — the ~6 most recent real events
+  // (case submissions, registrar accept/return decisions, client signatures)
+  // across the lawyer's own cases, newest first. Backend scopes everything to
+  // the authenticated lawyer (cases.lawyer_user_id), so no params are needed.
+  getRecentActivity: async (): Promise<LawyerActivityItem[]> => {
+    const { data } = await apiClient.get<{ activities: LawyerActivityItem[] }>(
+      "/cases/recent-activity"
+    );
+    return data.activities;
+  },
+
+  // The lawyer's registrar-returned cases (status='returned') with the return
+  // reason, client info, document count, and fee/paid — for the Returned
+  // Cases page. Scoped server-side to the authenticated lawyer.
+  getReturnedCases: async (): Promise<ReturnedCase[]> => {
+    const { data } = await apiClient.get<{ cases: ReturnedCase[] }>(
+      "/cases/returned"
+    );
     return data.cases;
   },
 

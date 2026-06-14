@@ -9,25 +9,6 @@ export type AdminStat = {
   change: string;
 };
 
-export type RecentActivityItem = {
-  id: number;
-  user: string;
-  action: string;
-  time: string;
-  status: "success" | "info";
-};
-
-export type PendingVerification = {
-  id: number;
-  name: string;
-  type: "Lawyer" | "Client";
-  email: string;
-  submitted: string;
-  documents: string[];
-  barCouncilLicenseNumber?: string;
-  licenseIssuingAuthority?: string;
-};
-
 export type CaseDomain = "civil" | "family";
 
 export type TemplateDocument = {

@@ -30,6 +30,7 @@ import { PDFDocument } from "pdf-lib";
 
 import { pool } from "../../config/db.js";
 import { uploadSignedCasePdf } from "../../services/storage.service.js";
+import { safeRecordCaseEvent } from "../cases/caseEvents.service.js";
 
 // Strip the data: prefix and decode the base64 payload so pdf-lib's
 // embedPng / embedJpg can accept raw bytes.
@@ -175,6 +176,17 @@ export async function compileCaseSignedPdf({ caseId, lawyerUserId }) {
      WHERE id = $2`,
     [storagePath, caseId]
   );
+
+  // Best-effort audit event AFTER the signed_pdf_storage_path UPDATE commits.
+  // The compile runs on the lawyer's behalf, so the lawyer is the actor.
+  // Never throws out here — a failed event write must not fail the compile.
+  await safeRecordCaseEvent({
+    caseId,
+    eventType: "signed_pdf_compiled",
+    actorUserId: lawyerUserId,
+    actorRole: "lawyer",
+    payload: { storagePath }
+  });
 
   return { storagePath };
 }

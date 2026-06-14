@@ -5,6 +5,7 @@ import { promises as fs } from "node:fs";
 import { pool } from "../../config/db.js";
 import { ApiError } from "../../utils/apiError.js";
 import { isSupportedTehsil } from "../../utils/location.js";
+import { safeRecordCaseEvent } from "./caseEvents.service.js";
 import {
   deleteCaseAttachment as deleteCaseAttachmentObject,
   deleteSignedCasePdf,
@@ -293,6 +294,21 @@ export async function createCase({
     [insertResult.rows[0].id]
   );
 
+  // Best-effort audit event AFTER the insert has committed. Never throws
+  // out here — a failed event write must not undo a successful create.
+  await safeRecordCaseEvent({
+    caseId: insertResult.rows[0].id,
+    eventType: "created",
+    actorUserId: lawyerUserId,
+    actorRole: "lawyer",
+    payload: {
+      title,
+      caseType: caseTypeId,
+      assignedTehsil: assignedTehsil || null,
+      clientName
+    }
+  });
+
   return mapCase(created.rows[0]);
 }
 
@@ -365,6 +381,204 @@ export async function listSignedCasesForLawyer({ lawyerUserId }) {
   }));
 }
 
+// Lawyer dashboard stat tiles. Four small aggregate queries, every one scoped
+// to the logged-in lawyer (cases.lawyer_user_id = $1) so a lawyer only ever
+// counts their own work. Run in parallel — they touch independent indexes and
+// none depends on another's result.
+//
+//   activeCases        — every case the lawyer owns, any status.
+//   pendingSubmissions — cases sitting with the registrar (status='submitted').
+//   clientSigned       — DISTINCT cases where the CLIENT signer has signed
+//                        (signature_requests.signer_role='client' AND
+//                        status='signed'). DISTINCT because one case can spawn
+//                        several client signature_request rows.
+//   totalEarnings      — money this lawyer has actually received, summed from
+//                        successful payment_transactions (status='success'),
+//                        scoped by payment_transactions.lawyer_user_id. This is
+//                        the same source the "Payments Received" page uses
+//                        (listLawyerEarnings). Always a number (0 when the
+//                        lawyer has no successful payments), never null here —
+//                        the schema gives a clean lawyer-received column.
+export async function getLawyerDashboardStats({ lawyerUserId }) {
+  const [activeCases, pendingSubmissions, clientSigned, totalEarnings] =
+    await Promise.all([
+      pool.query(
+        `SELECT COUNT(*)::int AS count
+         FROM cases
+         WHERE lawyer_user_id = $1`,
+        [lawyerUserId]
+      ),
+      pool.query(
+        `SELECT COUNT(*)::int AS count
+         FROM cases
+         WHERE lawyer_user_id = $1 AND status = 'submitted'`,
+        [lawyerUserId]
+      ),
+      pool.query(
+        `SELECT COUNT(DISTINCT c.id)::int AS count
+         FROM cases c
+         JOIN signature_requests sr ON sr.case_id = c.id
+         WHERE c.lawyer_user_id = $1
+           AND sr.signer_role = 'client'
+           AND sr.status = 'signed'`,
+        [lawyerUserId]
+      ),
+      pool.query(
+        `SELECT COALESCE(SUM(amount), 0)::float AS total
+         FROM payment_transactions
+         WHERE lawyer_user_id = $1 AND status = 'success'`,
+        [lawyerUserId]
+      )
+    ]);
+
+  return {
+    activeCases: activeCases.rows[0].count,
+    pendingSubmissions: pendingSubmissions.rows[0].count,
+    clientSigned: clientSigned.rows[0].count,
+    totalEarnings: totalEarnings.rows[0].total
+  };
+}
+
+// Lawyer-scoped "Recent Activity" feed for the dashboard. A single UNION ALL
+// over the real event sources, every branch scoped to the logged-in lawyer
+// (cases.lawyer_user_id = $1), ordered newest-first and capped to 6 rows. We
+// deliberately compute id, type, title and subject INSIDE each branch as plain
+// columns so the outer query only has to ORDER BY ts DESC / LIMIT — no app-side
+// merge sort, and the DB does the work. id = "<type>:<sourceRowId>" so each row
+// has a stable React key even when two events share a timestamp.
+//
+// Event sources (no in-app messaging — that has no backend, so it's omitted):
+//   case_submitted — cases.submitted_at  IS NOT NULL                (any status)
+//   case_accepted  — cases.status='accepted' AND reviewed_at NOT NULL
+//   case_returned  — cases.status='returned' AND reviewed_at NOT NULL
+//   client_signed  — signature_requests joined to the lawyer's case where the
+//                    CLIENT signer reached status='signed' (signed_at NOT NULL)
+//
+// The $1 placeholder is reused across every branch — node-postgres expands the
+// single bound value to all positions, so this stays fully parameterised.
+export async function getLawyerRecentActivity({ lawyerUserId }) {
+  const result = await pool.query(
+    `SELECT id, type, title, subject, ts AS timestamp
+     FROM (
+       SELECT
+         'case_submitted:' || c.id::text AS id,
+         'case_submitted'                AS type,
+         'Case submitted to registrar'   AS title,
+         c.title                         AS subject,
+         c.submitted_at                  AS ts
+       FROM cases c
+       WHERE c.lawyer_user_id = $1
+         AND c.submitted_at IS NOT NULL
+
+       UNION ALL
+
+       SELECT
+         'case_accepted:' || c.id::text  AS id,
+         'case_accepted'                 AS type,
+         'Case approved by registrar'    AS title,
+         c.title                         AS subject,
+         c.reviewed_at                   AS ts
+       FROM cases c
+       WHERE c.lawyer_user_id = $1
+         AND c.status = 'accepted'
+         AND c.reviewed_at IS NOT NULL
+
+       UNION ALL
+
+       SELECT
+         'case_returned:' || c.id::text   AS id,
+         'case_returned'                  AS type,
+         'Case returned for corrections'  AS title,
+         c.title                          AS subject,
+         c.reviewed_at                    AS ts
+       FROM cases c
+       WHERE c.lawyer_user_id = $1
+         AND c.status = 'returned'
+         AND c.reviewed_at IS NOT NULL
+
+       UNION ALL
+
+       SELECT
+         'client_signed:' || sr.id::text AS id,
+         'client_signed'                 AS type,
+         'Document signed by client'     AS title,
+         c.title                         AS subject,
+         sr.signed_at                    AS ts
+       FROM signature_requests sr
+       JOIN cases c ON c.id = sr.case_id
+       WHERE c.lawyer_user_id = $1
+         AND sr.signer_role = 'client'
+         AND sr.status = 'signed'
+         AND sr.signed_at IS NOT NULL
+     ) activity
+     ORDER BY ts DESC
+     LIMIT 6`,
+    [lawyerUserId]
+  );
+
+  return result.rows.map((row) => ({
+    id: row.id,
+    type: row.type,
+    title: row.title,
+    subject: row.subject,
+    timestamp: row.timestamp
+  }));
+}
+
+// Lawyer "Returned Cases" page data — the lawyer's cases the registrar sent
+// back (status='returned'), newest-decision first, enriched with the return
+// reason, client info, attachment count, and the case fee/paid from the
+// payments tables. There is NO "progress" concept in the system, so none is
+// returned. caseFee is null when the case has no fee agreement; paidAmount is
+// null in that case too (the page hides the fee/paid block). Scoped to the
+// lawyer; parameterised SQL only.
+export async function getReturnedCasesForLawyer({ lawyerUserId }) {
+  const result = await pool.query(
+    `SELECT
+       c.id,
+       c.title,
+       c.description,
+       ct.display_name AS case_type_name,
+       ct.category     AS category,
+       c.review_remarks,
+       c.reviewed_at,
+       c.submitted_at,
+       c.client_name,
+       c.client_email,
+       c.client_phone,
+       (SELECT COUNT(*) FROM case_attachments ca WHERE ca.case_id = c.id)::int
+         AS document_count,
+       ag.agreed_total_amount::float AS case_fee,
+       (SELECT COALESCE(SUM(pt.amount), 0)::float
+          FROM payment_transactions pt
+         WHERE pt.case_id = c.id AND pt.status = 'success') AS paid_amount
+     FROM cases c
+     JOIN case_types ct ON ct.id = c.case_type_id
+     LEFT JOIN agreements ag ON ag.case_id = c.id
+     WHERE c.lawyer_user_id = $1
+       AND c.status = 'returned'
+     ORDER BY c.reviewed_at DESC NULLS LAST`,
+    [lawyerUserId]
+  );
+
+  return result.rows.map((row) => ({
+    id: row.id,
+    title: row.title,
+    description: row.description,
+    caseTypeName: row.case_type_name,
+    category: row.category,
+    reviewRemarks: row.review_remarks,
+    reviewedAt: row.reviewed_at,
+    submittedAt: row.submitted_at,
+    clientName: row.client_name,
+    clientEmail: row.client_email,
+    clientPhone: row.client_phone,
+    documentCount: row.document_count,
+    caseFee: row.case_fee,
+    paidAmount: row.case_fee === null ? null : row.paid_amount
+  }));
+}
+
 export async function getCaseForLawyer({ caseId, lawyerUserId }) {
   const result = await pool.query(
     `${selectCaseWithType()}
@@ -420,6 +634,23 @@ export async function submitCase({ caseId, lawyerUserId }) {
     [caseId, lawyerUserId]
   );
 
+  // Best-effort audit event AFTER the status=submitted UPDATE commits. The
+  // CURRENT status (captured above, before the UPDATE) decides whether this
+  // is a first submission (draft -> submitted) or a resubmission of a case
+  // the registrar bounced back (returned -> submitted).
+  const isResubmit = status === "returned";
+  await safeRecordCaseEvent({
+    caseId,
+    eventType: isResubmit ? "resubmitted" : "submitted",
+    actorUserId: lawyerUserId,
+    actorRole: "lawyer",
+    payload: {
+      fromStatus: isResubmit ? "returned" : "draft",
+      toStatus: "submitted",
+      assignedTehsil: assigned_tehsil
+    }
+  });
+
   return getCaseForLawyer({ caseId, lawyerUserId });
 }
 
@@ -451,12 +682,14 @@ export async function updateCase({ caseId, lawyerUserId, updates }) {
 
   const setExpressions = [];
   const values = [];
+  const changedFields = [];
   let paramIndex = 1;
 
   for (const [key, column] of Object.entries(allowed)) {
     if (updates[key] === undefined) continue;
     setExpressions.push(`${column} = $${paramIndex++}`);
     values.push(updates[key] === "" ? null : updates[key]);
+    changedFields.push(key);
   }
 
   if (setExpressions.length === 0) {
@@ -483,6 +716,17 @@ export async function updateCase({ caseId, lawyerUserId, updates }) {
     // already been submitted/returned/accepted. Don't leak which.
     throw new ApiError(404, "Case not found or no longer editable");
   }
+
+  // Best-effort audit event AFTER the guarded UPDATE succeeds. Record only
+  // the KEYS that were actually applied (never the values — they can carry
+  // client PII). Never throws out here.
+  await safeRecordCaseEvent({
+    caseId,
+    eventType: "edited",
+    actorUserId: lawyerUserId,
+    actorRole: "lawyer",
+    payload: { changedFields }
+  });
 
   return getCaseForLawyer({ caseId, lawyerUserId });
 }

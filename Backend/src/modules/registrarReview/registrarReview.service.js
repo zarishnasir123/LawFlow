@@ -5,6 +5,7 @@ import {
   getCaseAttachmentSignedUrl
 } from "../../services/storage.service.js";
 import { createNotification } from "../notifications/notifications.service.js";
+import { safeRecordCaseEvent } from "../cases/caseEvents.service.js";
 
 // =====================================================================
 // Registrar-facing case review.
@@ -369,6 +370,23 @@ async function transitionCase({
     title: updatedRow.title,
     lawyerUserId: updatedRow.lawyer_user_id,
     reviewRemarks
+  });
+
+  // Best-effort audit event AFTER the transition has committed (and after the
+  // lawyer notification). newStatus is 'returned' or 'accepted'; the registrar
+  // is the actor. reviewRemarks is only meaningful on a return, so attach it
+  // only there. Never throws out here — same convention as the notification.
+  await safeRecordCaseEvent({
+    caseId,
+    eventType: newStatus,
+    actorUserId: registrarUserId,
+    actorRole: "registrar",
+    payload: {
+      fromStatus: "submitted",
+      toStatus: newStatus,
+      tehsil,
+      ...(newStatus === "returned" ? { reviewRemarks } : {})
+    }
   });
 
   return detail;
