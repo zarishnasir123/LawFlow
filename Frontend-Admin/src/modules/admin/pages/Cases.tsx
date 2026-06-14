@@ -206,9 +206,19 @@ export default function Cases() {
                       </td>
                       <td className="px-5 py-3 align-top">
                         <div className="text-gray-900">{item.lawyerName}</div>
-                        <div className="text-xs text-gray-500">
+                        {item.lawyerEmail ? (
+                          <div className="text-xs text-gray-500">
+                            {item.lawyerEmail}
+                          </div>
+                        ) : null}
+                        <div className="mt-1.5 text-gray-700">
                           Client: {item.clientName}
                         </div>
+                        {item.clientEmail ? (
+                          <div className="text-xs text-gray-500">
+                            {item.clientEmail}
+                          </div>
+                        ) : null}
                       </td>
                       <td className="px-5 py-3 align-top">
                         <span

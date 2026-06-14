@@ -11,7 +11,9 @@ import {
   FileSignature,
   FileStack,
   GitBranch,
+  Mail,
   Pencil,
+  Phone,
   RotateCcw,
   Send,
   Sparkles,
@@ -185,16 +187,6 @@ export default function CaseDetail() {
 
               <dl className="grid gap-x-6 gap-y-4 p-6 sm:grid-cols-2 lg:grid-cols-3">
                 <Fact
-                  icon={Briefcase}
-                  label="Lawyer"
-                  value={detail.case.lawyerName}
-                />
-                <Fact
-                  icon={User}
-                  label="Client"
-                  value={detail.case.clientName}
-                />
-                <Fact
                   icon={GitBranch}
                   label="Assigned Tehsil"
                   value={detail.case.assignedTehsil ?? "—"}
@@ -222,7 +214,31 @@ export default function CaseDetail() {
               </dl>
             </section>
 
-            {/* (2) Vertical timeline — oldest first */}
+            {/* (2) Parties — full client + lawyer contact details */}
+            <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+              <h2 className="flex items-center gap-2 text-base font-semibold text-gray-900">
+                <User className="h-4 w-4 text-[#01411C]" />
+                Parties
+              </h2>
+              <div className="mt-5 grid gap-5 sm:grid-cols-2">
+                <Party
+                  icon={User}
+                  role="Client"
+                  name={detail.case.clientName}
+                  email={detail.case.clientEmail}
+                  phone={detail.case.clientPhone}
+                />
+                <Party
+                  icon={Briefcase}
+                  role="Lawyer"
+                  name={detail.case.lawyerName}
+                  email={detail.case.lawyerEmail}
+                  phone={detail.case.lawyerPhone}
+                />
+              </div>
+            </section>
+
+            {/* (3) Vertical timeline — oldest first */}
             <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
               <h2 className="flex items-center gap-2 text-base font-semibold text-gray-900">
                 <FilePenLine className="h-4 w-4 text-[#01411C]" />
@@ -342,6 +358,67 @@ function Fact({
         <dd className="truncate text-sm text-gray-900" title={value}>
           {value}
         </dd>
+      </div>
+    </div>
+  );
+}
+
+// A party (client or lawyer) with full contact details. Email/phone are
+// clickable (mailto:/tel:) so the admin can reach out directly; both are
+// nullable and fall back to a muted "not on file" note.
+function Party({
+  icon: Icon,
+  role,
+  name,
+  email,
+  phone,
+}: {
+  icon: LucideIcon;
+  role: string;
+  name: string;
+  email: string | null;
+  phone: string | null;
+}) {
+  return (
+    <div className="rounded-xl border border-gray-200 bg-gray-50/60 p-4">
+      <div className="flex items-center gap-2">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#01411C] text-white">
+          <Icon className="h-4 w-4" />
+        </span>
+        <div className="min-w-0">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+            {role}
+          </p>
+          <p className="truncate text-sm font-semibold text-gray-900" title={name}>
+            {name}
+          </p>
+        </div>
+      </div>
+      <div className="mt-3 space-y-2">
+        <div className="flex items-center gap-2 text-sm">
+          <Mail className="h-4 w-4 shrink-0 text-gray-400" />
+          {email ? (
+            <a
+              href={`mailto:${email}`}
+              className="truncate text-[#01411C] hover:underline"
+              title={email}
+            >
+              {email}
+            </a>
+          ) : (
+            <span className="text-gray-400">No email on file</span>
+          )}
+        </div>
+        <div className="flex items-center gap-2 text-sm">
+          <Phone className="h-4 w-4 shrink-0 text-gray-400" />
+          {phone ? (
+            <a href={`tel:${phone}`} className="text-[#01411C] hover:underline">
+              {phone}
+            </a>
+          ) : (
+            <span className="text-gray-400">No phone on file</span>
+          )}
+        </div>
       </div>
     </div>
   );

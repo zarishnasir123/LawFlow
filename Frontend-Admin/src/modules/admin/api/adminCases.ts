@@ -13,7 +13,11 @@ export type AdminCaseListItem = {
   caseType: string;
   category: string;
   lawyerName: string;
+  lawyerEmail: string | null;
+  lawyerPhone: string | null;
   clientName: string;
+  clientEmail: string | null;
+  clientPhone: string | null;
   status: AdminCaseStatus;
   assignedTehsil: string | null;
   createdAt: string;
