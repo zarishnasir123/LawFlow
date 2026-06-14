@@ -14,7 +14,7 @@ import {
 
 import LawyerLayout from "../components/LawyerLayout";
 import AiChatSidebar from "../components/AiChatSidebar";
-import { useLoginStore } from "../../auth/store";
+import { useCurrentUser, displayFullName } from "../../auth/hooks/useCurrentUser";
 import {
   askAiLegalGuidance,
   deleteAiSession,
@@ -22,10 +22,7 @@ import {
   listAiSessions,
   updateAiSession,
 } from "../api";
-import {
-  type AiChatMessage,
-  getInitialAiGuidanceMessages,
-} from "../data/aiGuidance";
+import type { AiChatMessage } from "../data/aiGuidance";
 import { formatDate } from "../../../shared/utils/formatDate";
 
 // Minimal, dependency-free renderer for the assistant's replies. The model
@@ -57,48 +54,31 @@ function extractErrorMessage(err: unknown): string {
 }
 
 export default function AiLegalGuidance() {
-  const email = useLoginStore((state) => state.email);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
 
-  const lawyerName = (() => {
-    if (!email) return "Counselor";
-    const handle = email.split("@")[0] ?? "";
-    if (!handle) return "Counselor";
-    return handle
-      .replace(/[._-]+/g, " ")
-      .trim()
-      .split(" ")
-      .filter(Boolean)
-      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-      .join(" ");
-  })();
+  // Real logged-in user — drives the avatar + initial (shared ["currentUser"]
+  // query, so it reflects profile-picture changes without extra fetching).
+  const { data: currentUser } = useCurrentUser();
+  const fullName = displayFullName(currentUser);
+  const userInitial = (fullName.charAt(0) || "?").toUpperCase();
 
   const [input, setInput] = useState("");
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
-  const [messages, setMessages] = useState<AiChatMessage[]>(
-    getInitialAiGuidanceMessages()
-  );
+  const [messages, setMessages] = useState<AiChatMessage[]>([]);
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [loadingSession, setLoadingSession] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
-
-  // Copy an answer to the clipboard, with a brief "copied" check on that bubble.
-  const copyMessage = async (m: AiChatMessage) => {
-    try {
-      await navigator.clipboard.writeText(m.text);
-      setCopiedId(m.id);
-      setTimeout(() => setCopiedId((cur) => (cur === m.id ? null : cur)), 1500);
-    } catch {
-      // clipboard unavailable (e.g. insecure context) — silently ignore
-    }
-  };
 
   // Sidebar conversation list (server state).
   const sessionsQuery = useQuery({
     queryKey: ["lawyer", "ai-sessions"],
     queryFn: listAiSessions,
   });
+
+  const activeTitle = selectedSessionId
+    ? sessionsQuery.data?.find((s) => s.id === selectedSessionId)?.title ?? "Conversation"
+    : "New conversation";
 
   const sendMutation = useMutation({
     mutationFn: (vars: { prompt: string; sessionId: string | null }) =>
@@ -107,7 +87,6 @@ export default function AiLegalGuidance() {
       setMessages((prev) => [...prev, res.message]);
       setSuggestions(res.suggestions);
       if (!selectedSessionId) setSelectedSessionId(res.sessionId);
-      // Refresh the sidebar so the new/continued conversation's title + order update.
       queryClient.invalidateQueries({ queryKey: ["lawyer", "ai-sessions"] });
     },
     onError: (err) => {
@@ -133,7 +112,6 @@ export default function AiLegalGuidance() {
     },
   });
 
-  // Rename / pin — refresh the sidebar so the title + pinned-first order update.
   const updateMutation = useMutation({
     mutationFn: (vars: { sessionId: string; patch: { title?: string; pinned?: boolean } }) =>
       updateAiSession(vars.sessionId, vars.patch),
@@ -144,20 +122,17 @@ export default function AiLegalGuidance() {
 
   const sending = sendMutation.isPending;
 
-  // Auto-scroll to the latest content.
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, suggestions, sending, loadingSession]);
 
   function startNewChat() {
     setSelectedSessionId(null);
-    setMessages(getInitialAiGuidanceMessages());
+    setMessages([]);
     setSuggestions([]);
     setInput("");
   }
 
-  // Loading a past conversation is driven by the click, not an effect, per the
-  // app's "no setState in effects" rule.
   async function selectSession(sessionId: string) {
     if (sessionId === selectedSessionId || sending) return;
     setSelectedSessionId(sessionId);
@@ -166,19 +141,17 @@ export default function AiLegalGuidance() {
     setLoadingSession(true);
     try {
       const detail = await getAiSession(sessionId);
-      setMessages([
-        ...getInitialAiGuidanceMessages(),
-        ...detail.messages.map((m) => ({
+      setMessages(
+        detail.messages.map((m) => ({
           id: m.id,
           role: m.role,
           text: m.text,
           time: formatDate(m.createdAt, "time"),
           kind: "message" as const,
-        })),
-      ]);
+        }))
+      );
     } catch {
       setMessages([
-        ...getInitialAiGuidanceMessages(),
         {
           id: `ai-err-${Date.now()}`,
           role: "ai",
@@ -192,8 +165,6 @@ export default function AiLegalGuidance() {
     }
   }
 
-  // Send a message. `text` lets a follow-up chip send directly; otherwise we use
-  // the composer's value.
   const send = (text?: string) => {
     const prompt = (text ?? input).trim();
     if (!prompt || sending) return;
@@ -213,14 +184,24 @@ export default function AiLegalGuidance() {
     sendMutation.mutate({ prompt, sessionId: selectedSessionId });
   };
 
+  const copyMessage = async (m: AiChatMessage) => {
+    try {
+      await navigator.clipboard.writeText(m.text);
+      setCopiedId(m.id);
+      setTimeout(() => setCopiedId((cur) => (cur === m.id ? null : cur)), 1500);
+    } catch {
+      // clipboard unavailable (insecure context) — silently ignore
+    }
+  };
+
   const canSend = !!input.trim() && !sending && !loadingSession;
+  const showHero = messages.length === 0 && !sending && !loadingSession;
 
   return (
     <LawyerLayout brandTitle="LawFlow" brandSubtitle="AI Legal Assistant">
       {/* h-[calc(100vh-130px)] keeps the page within the viewport so the shared
           navbar stays put and only the inner panes scroll (mirrors Messages.tsx). */}
       <div className="flex gap-4 h-[calc(100vh-130px)] lg:gap-5">
-        {/* Conversation sidebar (hidden on mobile to give the chat full width). */}
         <div className="hidden sm:flex">
           <AiChatSidebar
             sessions={sessionsQuery.data ?? []}
@@ -238,11 +219,35 @@ export default function AiLegalGuidance() {
 
         {/* Chat pane */}
         <div className="flex flex-1 flex-col overflow-hidden rounded-xl border-2 border-gray-300 bg-white shadow-sm">
+          {/* Pane header — assistant identity + active conversation title */}
+          <div className="flex flex-shrink-0 items-center gap-3 border-b border-gray-200 bg-white px-4 py-3 sm:px-6">
+            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-purple-600 text-white">
+              <Lightbulb className="h-5 w-5" />
+            </div>
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold text-gray-900">{activeTitle}</p>
+              <p className="text-xs text-gray-500">AI Legal Assistant · Pakistani civil &amp; family law</p>
+            </div>
+          </div>
+
           <div className="flex-1 overflow-y-auto bg-gray-50">
-            <div className="mx-auto w-full max-w-3xl px-4 sm:px-6 py-6">
+            <div className="mx-auto h-full w-full max-w-3xl px-4 sm:px-6 py-6">
               {loadingSession ? (
                 <div className="py-10 text-center text-sm text-gray-500">
                   Loading conversation…
+                </div>
+              ) : showHero ? (
+                <div className="flex h-full flex-col items-center justify-center px-6 text-center">
+                  <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-purple-100">
+                    <Lightbulb className="h-8 w-8 text-purple-600" />
+                  </div>
+                  <h2 className="text-xl font-semibold text-gray-900">
+                    How can I help with your case?
+                  </h2>
+                  <p className="mt-2 max-w-md text-sm text-gray-500">
+                    Ask about a civil or family suit — choosing the right template, required
+                    documents, procedure, or drafting. Grounded in Pakistani law.
+                  </p>
                 </div>
               ) : (
                 <div className="space-y-5">
@@ -276,14 +281,6 @@ export default function AiLegalGuidance() {
                               : "bg-white text-gray-900 border border-gray-200 rounded-bl-none"
                           }`}
                         >
-                          {m.kind === "intro" && m.role === "ai" && (
-                            <div className="mb-2 pb-2 border-b border-gray-200">
-                              <span className="text-sm font-semibold text-purple-700">
-                                AI Assistant
-                              </span>
-                            </div>
-                          )}
-
                           <p className="text-sm whitespace-pre-line leading-relaxed">
                             {m.role === "ai" && !isError ? renderRichText(m.text) : m.text}
                           </p>
@@ -299,7 +296,7 @@ export default function AiLegalGuidance() {
                             >
                               {m.time}
                             </span>
-                            {m.role === "ai" && !isError && m.kind !== "intro" && (
+                            {m.role === "ai" && !isError && (
                               <button
                                 type="button"
                                 onClick={() => copyMessage(m)}
@@ -323,11 +320,18 @@ export default function AiLegalGuidance() {
                           </div>
                         </div>
 
-                        {m.role === "user" && (
-                          <div className="w-8 h-8 rounded-full bg-[#01411C] flex items-center justify-center text-white text-xs font-bold flex-shrink-0 ml-3">
-                            {lawyerName.charAt(0).toUpperCase()}
-                          </div>
-                        )}
+                        {m.role === "user" &&
+                          (currentUser?.avatarUrl ? (
+                            <img
+                              src={currentUser.avatarUrl}
+                              alt={fullName || "You"}
+                              className="w-8 h-8 rounded-full object-cover flex-shrink-0 ml-3"
+                            />
+                          ) : (
+                            <div className="w-8 h-8 rounded-full bg-[#01411C] flex items-center justify-center text-white text-xs font-bold flex-shrink-0 ml-3">
+                              {userInitial}
+                            </div>
+                          ))}
                       </div>
                     );
                   })}
@@ -347,7 +351,6 @@ export default function AiLegalGuidance() {
                     </div>
                   )}
 
-                  {/* Dynamic follow-up suggestions — appear after an answer. */}
                   {!sending && suggestions.length > 0 && (
                     <div className="pl-11 pt-1">
                       <div className="flex items-center gap-1.5 mb-2 text-xs font-medium text-gray-500">
