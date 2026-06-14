@@ -115,3 +115,13 @@ export const registrarCredentialsLimiter = rateLimiter({
   max: 100,
   message: "Too many credentials emails requested. Please try again after 15 minutes."
 });
+
+// AI legal-guidance endpoint proxies to Google Gemini, which costs quota/money
+// per call. Authenticated + lawyer-only already; this per-IP cap is defence in
+// depth against a runaway client loop or an abused token. Generous enough for
+// real back-and-forth chat.
+export const aiGuidanceLimiter = rateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 60,
+  message: "Too many AI assistant requests. Please try again in a few minutes."
+});

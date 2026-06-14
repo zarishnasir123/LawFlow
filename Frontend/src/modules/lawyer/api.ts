@@ -10,8 +10,12 @@ import type {
   RegisterResponse,
   VerificationResponse,
 } from "../auth/types";
-import { generateAiMockResponse } from "./data/aiGuidance.mock";
-import type { AiChatMessage } from "./data/aiGuidance.mock";
+import type {
+  AiChatMessage,
+  AiChatSession,
+  AiChatSessionDetail,
+} from "./data/aiGuidance";
+import { formatDate } from "../../shared/utils/formatDate";
 
 export async function registerLawyer(
   payload: LawyerRegisterPayload
@@ -112,14 +116,58 @@ export async function uploadLawyerBarLicenseCard(
   return data;
 }
 
-// AI Legal Guidance API
-export async function askAiLegalGuidance(prompt: string): Promise<AiChatMessage> {
-  // TODO: Replace with actual backend API call
-  // const { data } = await apiClient.post<AiChatMessage>("/ai/guidance", { prompt });
-  // return data;
-  
-  // For now, use mock response
-  return generateAiMockResponse(prompt);
+// AI Legal Guidance — calls the backend, which proxies to the active LLM
+// provider (Groq/Gemini) grounded in LawFlow's case templates. Pass a
+// `sessionId` to continue an existing conversation, or omit it to start a new
+// one (the backend creates it and returns the id + auto-derived title). The
+// server owns conversation history, so we no longer send it from the client.
+// Returns the wrapped chat message, follow-up suggestions, and the resolved
+// session id/title.
+export async function askAiLegalGuidance(
+  prompt: string,
+  sessionId?: string
+): Promise<{
+  message: AiChatMessage;
+  suggestions: string[];
+  sessionId: string;
+  title: string;
+}> {
+  const { data } = await apiClient.post<{
+    reply: string;
+    suggestions?: string[];
+    sessionId: string;
+    title: string;
+  }>("/ai/guidance", { prompt, sessionId });
+
+  return {
+    message: {
+      id: `ai-${Date.now()}`,
+      role: "ai",
+      text: data.reply,
+      time: formatDate(new Date(), "time"),
+      kind: "message",
+    },
+    suggestions: Array.isArray(data.suggestions) ? data.suggestions : [],
+    sessionId: data.sessionId,
+    title: data.title,
+  };
+}
+
+// AI conversation history (sidebar). Server state — consumed via TanStack Query.
+export async function listAiSessions(): Promise<AiChatSession[]> {
+  const { data } = await apiClient.get<{ sessions: AiChatSession[] }>("/ai/sessions");
+  return data.sessions ?? [];
+}
+
+export async function getAiSession(sessionId: string): Promise<AiChatSessionDetail> {
+  const { data } = await apiClient.get<{ session: AiChatSessionDetail }>(
+    `/ai/sessions/${sessionId}`
+  );
+  return data.session;
+}
+
+export async function deleteAiSession(sessionId: string): Promise<void> {
+  await apiClient.delete(`/ai/sessions/${sessionId}`);
 }
 
 import type { ChatMessage, LawyerChatThread, SendMessagePayload } from "../../types/chat";
