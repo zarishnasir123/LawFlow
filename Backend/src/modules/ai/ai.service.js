@@ -49,7 +49,14 @@ Family suits (all under the Family Courts Act 1964; all require the three §7(2)
 - You MAY cite the statutes, sections, and the landmark cases listed above. DO NOT invent or guess case citations, section numbers, or PLD/SCMR/YLR references that are not in your grounding. If you are unsure of an exact citation, say so plainly and give the general legal principle instead.
 - LawFlow does NOT do online filing and does NOT host online/virtual hearings. Hearings remain physical in court; a court registrar bridges the digital case file to the physical court. Never tell a lawyer they can file a case or attend a hearing online through LawFlow.
 - Do not ask the lawyer to paste a client's CNIC or other sensitive personal identifiers.
-- You assist a qualified professional; your output is drafting and research help, not a final legal opinion, and the lawyer must verify it. State this briefly when you give substantive legal content — do not repeat the disclaimer in every message.`;
+- You assist a qualified professional; your output is drafting and research help, not a final legal opinion, and the lawyer must verify it. State this briefly when you give substantive legal content — do not repeat the disclaimer in every message.
+
+=== SUGGESTED FOLLOW-UPS ===
+After every substantive in-scope answer (NEVER after a refusal), end your message with one final line in EXACTLY this format, and nothing after it:
+[[FOLLOWUPS]] first question || second question || third question
+Each must be a COMPLETE, natural question the same lawyer would likely ask NEXT about this case type — phrased in full and ending with "?", under 80 characters, and within your scope.
+Example: [[FOLLOWUPS]] What documents are required for this suit? || How is the court fee calculated? || Can you draft the prayer clause?
+Do not number them and add no other text on that line.`;
 
 // Cap how much prior conversation we forward to the model. Keeps prompts bounded
 // and cost predictable while preserving enough context for follow-up questions
@@ -75,8 +82,29 @@ function resolveGenerator() {
   return generateGroqText;
 }
 
-// Builds the ordered message list (trimmed history + the new prompt) and asks
-// Gemini, grounded by SYSTEM_INSTRUCTION. Returns the reply text.
+// Pulls the optional "[[FOLLOWUPS]] a || b || c" trailer the model appends to
+// in-scope answers, returning the clean reply plus up to 3 suggested next
+// questions. Refusals (no trailer) yield an empty suggestions list, and a
+// malformed trailer simply yields no suggestions rather than leaking markup.
+function parseFollowups(text) {
+  const marker = "[[FOLLOWUPS]]";
+  const idx = text.indexOf(marker);
+  if (idx === -1) return { reply: text.trim(), suggestions: [] };
+
+  const reply = text.slice(0, idx).trim();
+  const suggestions = text
+    .slice(idx + marker.length)
+    .split("||")
+    .map((s) => s.replace(/[\r\n]+/g, " ").trim())
+    .filter(Boolean)
+    .slice(0, 3);
+
+  return { reply, suggestions };
+}
+
+// Builds the ordered message list (trimmed history + the new prompt), asks the
+// active provider grounded by SYSTEM_INSTRUCTION, and splits the answer from its
+// suggested follow-up questions. Returns { reply, suggestions }.
 export async function askLegalGuidance({ prompt, history = [] }) {
   const trimmedHistory = Array.isArray(history)
     ? history.slice(-MAX_HISTORY_MESSAGES)
@@ -90,5 +118,6 @@ export async function askLegalGuidance({ prompt, history = [] }) {
   ];
 
   const generate = resolveGenerator();
-  return generate({ systemInstruction: SYSTEM_INSTRUCTION, messages });
+  const raw = await generate({ systemInstruction: SYSTEM_INSTRUCTION, messages });
+  return parseFollowups(raw);
 }

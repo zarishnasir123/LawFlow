@@ -112,25 +112,30 @@ export async function uploadLawyerBarLicenseCard(
   return data;
 }
 
-// AI Legal Guidance — calls the backend, which proxies to Google Gemini
-// grounded in LawFlow's case templates. The backend returns plain reply text;
-// we wrap it into a chat message (id + timestamp) for the UI. `history` carries
-// the recent conversation so follow-up questions keep context.
+// AI Legal Guidance — calls the backend, which proxies to the active LLM
+// provider (Groq/Gemini) grounded in LawFlow's case templates. The backend
+// returns the reply text plus up to three suggested follow-up questions. We wrap
+// the reply into a chat message (id + timestamp); the page renders the
+// suggestions as clickable chips. `history` carries the recent conversation so
+// follow-up questions keep context.
 export async function askAiLegalGuidance(
   prompt: string,
   history: { role: AiChatRole; text: string }[] = []
-): Promise<AiChatMessage> {
-  const { data } = await apiClient.post<{ reply: string }>("/ai/guidance", {
-    prompt,
-    history,
-  });
+): Promise<{ message: AiChatMessage; suggestions: string[] }> {
+  const { data } = await apiClient.post<{ reply: string; suggestions?: string[] }>(
+    "/ai/guidance",
+    { prompt, history }
+  );
 
   return {
-    id: `ai-${Date.now()}`,
-    role: "ai",
-    text: data.reply,
-    time: formatDate(new Date(), "time"),
-    kind: "message",
+    message: {
+      id: `ai-${Date.now()}`,
+      role: "ai",
+      text: data.reply,
+      time: formatDate(new Date(), "time"),
+      kind: "message",
+    },
+    suggestions: Array.isArray(data.suggestions) ? data.suggestions : [],
   };
 }
 
