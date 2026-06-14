@@ -27,3 +27,25 @@ export const aiGuidanceValidator = [
 export const sessionIdParamValidator = [
   param("sessionId").isUUID().withMessage("sessionId must be a valid UUID")
 ];
+
+// Rename / pin a conversation. Both body fields are optional, but the service
+// rejects an empty patch; title (if present) must be non-empty and capped.
+export const sessionUpdateValidator = [
+  param("sessionId").isUUID().withMessage("sessionId must be a valid UUID"),
+  body("title")
+    .optional()
+    .isString()
+    .withMessage("title must be text")
+    .bail()
+    .trim()
+    .notEmpty()
+    .withMessage("title cannot be empty")
+    .bail()
+    .isLength({ max: 120 })
+    .withMessage("title must be 120 characters or less"),
+  body("pinned")
+    .optional()
+    .isBoolean()
+    .withMessage("pinned must be a boolean")
+    .toBoolean()
+];

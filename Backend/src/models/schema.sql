@@ -529,12 +529,14 @@ CREATE TABLE ai_chat_sessions (
   user_id    UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
 
   title      VARCHAR(120) NOT NULL DEFAULT 'New chat',
+  -- Pinned conversations float to the top of the sidebar (ChatGPT-style).
+  pinned     BOOLEAN NOT NULL DEFAULT FALSE,
 
   created_at TIMESTAMP NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
--- Sidebar query: "my sessions, most recently used first."
+-- Sidebar query: "my sessions, pinned first, then most recently used."
 CREATE INDEX idx_ai_chat_sessions_user_updated
   ON ai_chat_sessions (user_id, updated_at DESC);
 

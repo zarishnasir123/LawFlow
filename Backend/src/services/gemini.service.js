@@ -1,4 +1,5 @@
 import { ApiError } from "../utils/apiError.js";
+import { postJsonWithRetry } from "./llmHttp.js";
 
 // Reusable Google Gemini client for LawFlow. Mirrors the "is it configured?"
 // pattern used by email.service.js: when the API key is missing or still a
@@ -100,21 +101,15 @@ export async function generateGeminiText({
     body.system_instruction = { parts: [{ text: systemInstruction }] };
   }
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-
-  try {
-    const res = await fetch(`${GENERATIVE_LANGUAGE_BASE}/${model}:generateContent`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-goog-api-key": getApiKey()
-      },
-      body: JSON.stringify(body),
-      signal: controller.signal
-    });
-
-    if (!res.ok) {
+  // postJsonWithRetry handles the per-attempt timeout, transient-failure retry,
+  // and maps 429/timeout/network errors to clean ApiErrors.
+  const data = await postJsonWithRetry({
+    url: `${GENERATIVE_LANGUAGE_BASE}/${model}:generateContent`,
+    headers: { "x-goog-api-key": getApiKey() },
+    body,
+    timeoutMs,
+    label: "gemini",
+    onUpstreamError: async (res) => {
       // Read the upstream error for our own logs only — never forward Google's
       // raw payload (or our key) to the client.
       let upstreamStatus = "";
@@ -125,23 +120,8 @@ export async function generateGeminiText({
         // body wasn't JSON; ignore
       }
       console.error(`[gemini] upstream error ${res.status} ${upstreamStatus}`);
-
-      if (res.status === 429) {
-        throw new ApiError(429, "The assistant is busy right now. Please try again in a moment.");
-      }
-      throw new ApiError(502, "Could not reach the AI assistant service.");
     }
+  });
 
-    const data = await res.json();
-    return extractText(data);
-  } catch (err) {
-    if (err instanceof ApiError) throw err;
-    if (err?.name === "AbortError") {
-      throw new ApiError(504, "The assistant took too long to respond. Please try again.");
-    }
-    console.error("[gemini] request failed", err?.message);
-    throw new ApiError(502, "Could not reach the AI assistant service.");
-  } finally {
-    clearTimeout(timer);
-  }
+  return extractText(data);
 }
