@@ -6,18 +6,41 @@ import { authorizeRoles } from "../../middleware/authorizeRoles.js";
 import { validateRequest } from "../../middleware/validateRequest.js";
 import { aiGuidanceLimiter } from "../../middleware/rateLimiter.js";
 
-import { postLegalGuidance } from "./ai.controller.js";
-import { aiGuidanceValidator } from "./ai.validators.js";
+import {
+  getSession,
+  getSessions,
+  postLegalGuidance,
+  removeSession
+} from "./ai.controller.js";
+import { aiGuidanceValidator, sessionIdParamValidator } from "./ai.validators.js";
 
 const router = Router();
 
-// Lawyer-only legal assistant. Authenticated + role-gated, then per-IP rate
-// limited because every call proxies to Gemini (quota/cost). The grounded
-// system prompt and Gemini key live entirely on the backend.
+// Every route is lawyer-only. The grounded system prompt, the LLM key, and the
+// conversation store all live on the backend.
+router.use(authenticate, authorizeRoles("lawyer"));
+
+// Conversation sidebar: list / open / delete the caller's chats.
+router.get("/sessions", asyncHandler(getSessions));
+
+router.get(
+  "/sessions/:sessionId",
+  sessionIdParamValidator,
+  validateRequest,
+  asyncHandler(getSession)
+);
+
+router.delete(
+  "/sessions/:sessionId",
+  sessionIdParamValidator,
+  validateRequest,
+  asyncHandler(removeSession)
+);
+
+// Ask the assistant. Rate limited because every call proxies to the LLM
+// (quota/cost). Creates or continues a conversation and persists the turn.
 router.post(
   "/guidance",
-  authenticate,
-  authorizeRoles("lawyer"),
   aiGuidanceLimiter,
   aiGuidanceValidator,
   validateRequest,

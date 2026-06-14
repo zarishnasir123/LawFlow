@@ -1,3 +1,5 @@
+import { pool } from "../../config/db.js";
+import { ApiError } from "../../utils/apiError.js";
 import { generateGeminiText, isGeminiConfigured } from "../../services/gemini.service.js";
 import { generateGroqText, isGroqConfigured } from "../../services/groq.service.js";
 
@@ -120,4 +122,164 @@ export async function askLegalGuidance({ prompt, history = [] }) {
   const generate = resolveGenerator();
   const raw = await generate({ systemInstruction: SYSTEM_INSTRUCTION, messages });
   return parseFollowups(raw);
+}
+
+// =====================================================================
+// Conversation history (ai_chat_sessions + ai_chat_messages)
+//
+// Every query is scoped to the owning userId so a lawyer only ever reads or
+// mutates their OWN chats. Parameterized queries only; FK cascade removes a
+// session's messages when the session (or the user) is deleted.
+// =====================================================================
+
+function mapSession(row) {
+  return {
+    id: row.id,
+    title: row.title,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+}
+
+function mapMessage(row) {
+  return {
+    id: row.id,
+    role: row.role,
+    text: row.text,
+    createdAt: row.created_at
+  };
+}
+
+// First user message becomes the sidebar title (collapsed to one line, capped).
+function deriveTitle(text) {
+  const oneLine = text.replace(/\s+/g, " ").trim();
+  if (!oneLine) return "New chat";
+  return oneLine.length > 60 ? `${oneLine.slice(0, 60)}…` : oneLine;
+}
+
+// Sidebar list: the lawyer's sessions, most recently used first.
+export async function listSessions(userId) {
+  const result = await pool.query(
+    `SELECT id, title, created_at, updated_at
+       FROM ai_chat_sessions
+      WHERE user_id = $1
+      ORDER BY updated_at DESC`,
+    [userId]
+  );
+  return result.rows.map(mapSession);
+}
+
+// Full conversation for the chat pane. 404s (not 403) if the session does not
+// exist OR isn't owned by the caller — never leak another user's session.
+export async function getSessionWithMessages(userId, sessionId) {
+  const sessionResult = await pool.query(
+    `SELECT id, title, created_at, updated_at
+       FROM ai_chat_sessions
+      WHERE id = $1 AND user_id = $2`,
+    [sessionId, userId]
+  );
+
+  const session = sessionResult.rows[0];
+  if (!session) {
+    throw new ApiError(404, "Conversation not found");
+  }
+
+  const messagesResult = await pool.query(
+    `SELECT id, role, text, created_at
+       FROM ai_chat_messages
+      WHERE session_id = $1
+      ORDER BY created_at ASC`,
+    [sessionId]
+  );
+
+  return {
+    ...mapSession(session),
+    messages: messagesResult.rows.map(mapMessage)
+  };
+}
+
+// Recent turns of a session as LLM context ([{ role: "user"|"ai", text }],
+// oldest-first), capped to MAX_HISTORY_MESSAGES. Assumes ownership is already
+// established by the caller.
+export async function getRecentMessagesForContext(sessionId) {
+  const result = await pool.query(
+    `SELECT role, text
+       FROM ai_chat_messages
+      WHERE session_id = $1
+      ORDER BY created_at DESC
+      LIMIT $2`,
+    [sessionId, MAX_HISTORY_MESSAGES]
+  );
+  return result.rows.reverse().map((row) => ({ role: row.role, text: row.text }));
+}
+
+// Delete a conversation the caller owns. 404 if it isn't theirs / doesn't exist.
+// Messages cascade away with the session.
+export async function deleteSession(userId, sessionId) {
+  const result = await pool.query(
+    `DELETE FROM ai_chat_sessions WHERE id = $1 AND user_id = $2 RETURNING id`,
+    [sessionId, userId]
+  );
+  if (!result.rows[0]) {
+    throw new ApiError(404, "Conversation not found");
+  }
+}
+
+// Persist one chat turn (the user prompt + the AI reply) in a single
+// transaction. Creates the session if sessionId is null (titled from the
+// prompt); otherwise verifies ownership and bumps updated_at so the session
+// rises to the top of the sidebar. Returns the resolved { sessionId, title }.
+export async function appendTurn({ userId, sessionId, userText, aiText }) {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    let resolvedId = sessionId;
+    let title;
+
+    if (resolvedId) {
+      const owned = await client.query(
+        `SELECT id, title FROM ai_chat_sessions WHERE id = $1 AND user_id = $2 FOR UPDATE`,
+        [resolvedId, userId]
+      );
+      if (!owned.rows[0]) {
+        throw new ApiError(404, "Conversation not found");
+      }
+      title = owned.rows[0].title;
+    } else {
+      title = deriveTitle(userText);
+      const created = await client.query(
+        `INSERT INTO ai_chat_sessions (user_id, title) VALUES ($1, $2) RETURNING id`,
+        [userId, title]
+      );
+      resolvedId = created.rows[0].id;
+    }
+
+    // Two statements with clock_timestamp() (which advances within a
+    // transaction, unlike NOW()) so the user message always sorts strictly
+    // before the AI reply.
+    await client.query(
+      `INSERT INTO ai_chat_messages (session_id, role, text, created_at)
+       VALUES ($1, 'user', $2, clock_timestamp())`,
+      [resolvedId, userText]
+    );
+    await client.query(
+      `INSERT INTO ai_chat_messages (session_id, role, text, created_at)
+       VALUES ($1, 'ai', $2, clock_timestamp())`,
+      [resolvedId, aiText]
+    );
+
+    await client.query(
+      `UPDATE ai_chat_sessions SET updated_at = NOW() WHERE id = $1`,
+      [resolvedId]
+    );
+
+    await client.query("COMMIT");
+    return { sessionId: resolvedId, title };
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
 }

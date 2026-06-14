@@ -14,6 +14,8 @@ CREATE EXTENSION IF NOT EXISTS "citext";
 -- =====================================================================
 -- Drop in reverse dependency order. CASCADE removes dependent objects.
 -- =====================================================================
+DROP TABLE IF EXISTS ai_chat_messages               CASCADE;
+DROP TABLE IF EXISTS ai_chat_sessions               CASCADE;
 DROP TABLE IF EXISTS notifications                  CASCADE;
 DROP TABLE IF EXISTS payment_receipts               CASCADE;
 DROP TABLE IF EXISTS payment_transactions           CASCADE;
@@ -515,6 +517,42 @@ CREATE INDEX idx_notifications_user_unread
   ON notifications (user_id, is_read, created_at DESC);
 
 -- =====================================================================
+-- AI Legal Assistant chat history. Each lawyer's conversations with the
+-- grounded AI assistant: one row per conversation in ai_chat_sessions
+-- (title auto-derived from the first user message), one row per turn in
+-- ai_chat_messages. Every read/write is scoped to the owning user_id so a
+-- lawyer only ever sees their OWN chats. Deleting a session cascades to its
+-- messages; deleting the user cascades to everything.
+-- =====================================================================
+CREATE TABLE ai_chat_sessions (
+  id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id    UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+
+  title      VARCHAR(120) NOT NULL DEFAULT 'New chat',
+
+  created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+-- Sidebar query: "my sessions, most recently used first."
+CREATE INDEX idx_ai_chat_sessions_user_updated
+  ON ai_chat_sessions (user_id, updated_at DESC);
+
+CREATE TABLE ai_chat_messages (
+  id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  session_id UUID NOT NULL REFERENCES ai_chat_sessions(id) ON DELETE CASCADE,
+
+  role       VARCHAR(10) NOT NULL CHECK (role IN ('user', 'ai')),
+  text       TEXT NOT NULL,
+
+  created_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+-- Loading a conversation + building LLM context: a session's messages in order.
+CREATE INDEX idx_ai_chat_messages_session_created
+  ON ai_chat_messages (session_id, created_at ASC);
+
+-- =====================================================================
 -- Signature requests: ONE row PER SIGNER per "Send for signature" action.
 -- When a lawyer marks pages with "client + lawyer" both as required
 -- signers and hits Send, the backend creates TWO rows — one with
@@ -882,6 +920,8 @@ ALTER TABLE installments                   ENABLE ROW LEVEL SECURITY;
 ALTER TABLE payment_transactions           ENABLE ROW LEVEL SECURITY;
 ALTER TABLE payment_receipts               ENABLE ROW LEVEL SECURITY;
 ALTER TABLE notifications                  ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ai_chat_sessions               ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ai_chat_messages               ENABLE ROW LEVEL SECURITY;
 
 -- =====================================================================
 -- Seed data: supported case types (5 civil + 5 family at tehsil level).
