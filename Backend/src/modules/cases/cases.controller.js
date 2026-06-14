@@ -5,6 +5,7 @@ import {
   getCaseForLawyer,
   getLawyerDashboardStats,
   getLawyerRecentActivity,
+  getReturnedCasesForLawyer,
   listCaseAttachments,
   listCaseTypes,
   listCasesForLawyer,
@@ -76,6 +77,14 @@ export async function getDashboardStats(req, res) {
 export async function getRecentActivity(req, res) {
   const activities = await getLawyerRecentActivity({ lawyerUserId: req.user.sub });
   return res.status(200).json({ activities });
+}
+
+// Lawyer "Returned Cases" page — the lawyer's registrar-returned cases with
+// the return reason, client info, document count, and fee/paid, scoped to
+// req.user.sub. Returns { cases: [...] }.
+export async function getReturnedCases(req, res) {
+  const cases = await getReturnedCasesForLawyer({ lawyerUserId: req.user.sub });
+  return res.status(200).json({ cases });
 }
 
 export async function listMySignedCases(req, res) {

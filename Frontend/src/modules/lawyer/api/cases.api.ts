@@ -131,6 +131,26 @@ export type LawyerActivityItem = {
   timestamp: string;
 };
 
+// A registrar-returned case as shown on the lawyer "Returned Cases" page.
+// caseFee/paidAmount are null when the case has no fee agreement (the page
+// hides the fee block then). No "progress" field — that has no backend.
+export type ReturnedCase = {
+  id: string;
+  title: string;
+  description: string | null;
+  caseTypeName: string;
+  category: CaseCategory;
+  reviewRemarks: string | null;
+  reviewedAt: string | null;
+  submittedAt: string | null;
+  clientName: string;
+  clientEmail: string | null;
+  clientPhone: string | null;
+  documentCount: number;
+  caseFee: number | null;
+  paidAmount: number | null;
+};
+
 // Relative API path that streams the generated .docx for a given
 // case_types.code. Building it here (not inline at call-sites) keeps the
 // path in one place and lets the apiClient interceptor attach auth headers
@@ -183,6 +203,16 @@ export const casesApi = {
       "/cases/recent-activity"
     );
     return data.activities;
+  },
+
+  // The lawyer's registrar-returned cases (status='returned') with the return
+  // reason, client info, document count, and fee/paid — for the Returned
+  // Cases page. Scoped server-side to the authenticated lawyer.
+  getReturnedCases: async (): Promise<ReturnedCase[]> => {
+    const { data } = await apiClient.get<{ cases: ReturnedCase[] }>(
+      "/cases/returned"
+    );
+    return data.cases;
   },
 
   // Only cases where the PDF compile has produced a downloadable

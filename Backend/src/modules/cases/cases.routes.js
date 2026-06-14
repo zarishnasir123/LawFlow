@@ -15,6 +15,7 @@ import {
   getCaseTypes,
   getMyCase,
   getRecentActivity,
+  getReturnedCases,
   listMyCases,
   listMySignedCases,
   patchMyCase,
@@ -98,6 +99,17 @@ router.get(
   authenticate,
   authorizeRoles("lawyer"),
   asyncHandler(getRecentActivity)
+);
+
+// Lawyer "Returned Cases" page — registrar-returned cases with the return
+// reason, client info, document count, and fee/paid. Scoped to req.user.sub.
+// Placed before `/:caseId` (like the other lawyer-scoped list routes) so
+// "returned" isn't captured as a caseId.
+router.get(
+  "/returned",
+  authenticate,
+  authorizeRoles("lawyer"),
+  asyncHandler(getReturnedCases)
 );
 
 router.get(

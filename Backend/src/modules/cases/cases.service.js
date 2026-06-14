@@ -509,6 +509,60 @@ export async function getLawyerRecentActivity({ lawyerUserId }) {
   }));
 }
 
+// Lawyer "Returned Cases" page data — the lawyer's cases the registrar sent
+// back (status='returned'), newest-decision first, enriched with the return
+// reason, client info, attachment count, and the case fee/paid from the
+// payments tables. There is NO "progress" concept in the system, so none is
+// returned. caseFee is null when the case has no fee agreement; paidAmount is
+// null in that case too (the page hides the fee/paid block). Scoped to the
+// lawyer; parameterised SQL only.
+export async function getReturnedCasesForLawyer({ lawyerUserId }) {
+  const result = await pool.query(
+    `SELECT
+       c.id,
+       c.title,
+       c.description,
+       ct.display_name AS case_type_name,
+       ct.category     AS category,
+       c.review_remarks,
+       c.reviewed_at,
+       c.submitted_at,
+       c.client_name,
+       c.client_email,
+       c.client_phone,
+       (SELECT COUNT(*) FROM case_attachments ca WHERE ca.case_id = c.id)::int
+         AS document_count,
+       ag.agreed_total_amount::float AS case_fee,
+       (SELECT COALESCE(SUM(pt.amount), 0)::float
+          FROM payment_transactions pt
+         WHERE pt.case_id = c.id AND pt.status = 'success') AS paid_amount
+     FROM cases c
+     JOIN case_types ct ON ct.id = c.case_type_id
+     LEFT JOIN agreements ag ON ag.case_id = c.id
+     WHERE c.lawyer_user_id = $1
+       AND c.status = 'returned'
+     ORDER BY c.reviewed_at DESC NULLS LAST`,
+    [lawyerUserId]
+  );
+
+  return result.rows.map((row) => ({
+    id: row.id,
+    title: row.title,
+    description: row.description,
+    caseTypeName: row.case_type_name,
+    category: row.category,
+    reviewRemarks: row.review_remarks,
+    reviewedAt: row.reviewed_at,
+    submittedAt: row.submitted_at,
+    clientName: row.client_name,
+    clientEmail: row.client_email,
+    clientPhone: row.client_phone,
+    documentCount: row.document_count,
+    caseFee: row.case_fee,
+    paidAmount: row.case_fee === null ? null : row.paid_amount
+  }));
+}
+
 export async function getCaseForLawyer({ caseId, lawyerUserId }) {
   const result = await pool.query(
     `${selectCaseWithType()}
