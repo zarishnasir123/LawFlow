@@ -1,13 +1,5 @@
 import { useMemo, useRef, useState } from "react";
-import {
-  Plus,
-  Search,
-  MessageSquare,
-  Pin,
-  PinOff,
-  Pencil,
-  Trash2,
-} from "lucide-react";
+import { SquarePen, Search, MessageCircle, Pin, PinOff, Pencil, Trash2 } from "lucide-react";
 
 import type { AiChatSession } from "../data/aiGuidance";
 import { formatDate } from "../../../shared/utils/formatDate";
@@ -25,7 +17,6 @@ type AiChatSidebarProps = {
 
 const DATE_BUCKET_ORDER = ["Today", "Yesterday", "Previous 7 Days", "Older"] as const;
 
-// Which date bucket an updatedAt falls into (used for the unpinned groups).
 function dateBucket(iso: string): (typeof DATE_BUCKET_ORDER)[number] {
   const now = new Date();
   const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
@@ -55,7 +46,6 @@ export default function AiChatSidebar({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
-  // Set when Escape cancels a rename, so the input's blur doesn't also commit it.
   const skipBlur = useRef(false);
 
   const startEdit = (s: AiChatSession) => {
@@ -78,8 +68,6 @@ export default function AiChatSidebar({
     setEditingId(null);
   };
 
-  // Filter by title, then split pinned vs. date-bucketed groups. Memoized so the
-  // grouping only recomputes when the list or search changes.
   const groups = useMemo(() => {
     const q = search.trim().toLowerCase();
     const filtered = q
@@ -103,7 +91,7 @@ export default function AiChatSidebar({
 
     if (s.id === editingId) {
       return (
-        <div key={s.id} className="px-2 py-2.5 border-b border-gray-200">
+        <div key={s.id} className="px-2 py-1.5">
           <input
             autoFocus
             value={draft}
@@ -125,7 +113,7 @@ export default function AiChatSidebar({
               commitEdit();
             }}
             maxLength={120}
-            className="w-full rounded-md border-2 border-[#01411C] px-2 py-1 text-sm outline-none"
+            className="w-full rounded-lg border-2 border-[#01411C] px-2 py-1 text-sm outline-none"
           />
         </div>
       );
@@ -135,7 +123,7 @@ export default function AiChatSidebar({
       return (
         <div
           key={s.id}
-          className="flex items-center gap-2 border-b border-gray-200 bg-red-50 px-3 py-2.5"
+          className="mx-1.5 my-0.5 flex items-center gap-2 rounded-lg bg-red-50 px-2.5 py-2"
         >
           <span className="min-w-0 flex-1 truncate text-sm text-red-800">
             Delete “{s.title}”?
@@ -164,8 +152,8 @@ export default function AiChatSidebar({
     return (
       <div
         key={s.id}
-        className={`group flex items-center gap-1 border-b border-gray-200 px-2 py-2.5 transition ${
-          active ? "bg-green-50/80 border-l-4 border-l-[#01411C]" : "hover:bg-green-50/40"
+        className={`group mx-1.5 my-0.5 flex items-center gap-1 rounded-lg px-2 py-1.5 transition ${
+          active ? "bg-green-50 ring-1 ring-[#01411C]/20" : "hover:bg-gray-100"
         }`}
       >
         <button
@@ -176,13 +164,13 @@ export default function AiChatSidebar({
           {s.pinned ? (
             <Pin className="h-4 w-4 flex-shrink-0 fill-[#01411C] text-[#01411C]" />
           ) : (
-            <MessageSquare
+            <MessageCircle
               className={`h-4 w-4 flex-shrink-0 ${active ? "text-[#01411C]" : "text-gray-400"}`}
             />
           )}
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-medium text-gray-900">{s.title}</p>
-            <p className="text-xs text-gray-500">{formatDate(s.updatedAt, "relative")}</p>
+            <p className="text-[11px] text-gray-500">{formatDate(s.updatedAt, "relative")}</p>
           </div>
         </button>
 
@@ -190,7 +178,7 @@ export default function AiChatSidebar({
           <button
             type="button"
             onClick={() => onTogglePin(s.id, !s.pinned)}
-            className="rounded-md p-1.5 text-gray-400 hover:bg-gray-100 hover:text-[#01411C]"
+            className="rounded-md p-1.5 text-gray-400 hover:bg-white hover:text-[#01411C]"
             aria-label={s.pinned ? "Unpin conversation" : "Pin conversation"}
             title={s.pinned ? "Unpin" : "Pin"}
           >
@@ -199,7 +187,7 @@ export default function AiChatSidebar({
           <button
             type="button"
             onClick={() => startEdit(s)}
-            className="rounded-md p-1.5 text-gray-400 hover:bg-gray-100 hover:text-[#01411C]"
+            className="rounded-md p-1.5 text-gray-400 hover:bg-white hover:text-[#01411C]"
             aria-label="Rename conversation"
             title="Rename"
           >
@@ -208,7 +196,7 @@ export default function AiChatSidebar({
           <button
             type="button"
             onClick={() => setConfirmingDeleteId(s.id)}
-            className="rounded-md p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-600"
+            className="rounded-md p-1.5 text-gray-400 hover:bg-white hover:text-red-600"
             aria-label="Delete conversation"
             title="Delete"
           >
@@ -220,14 +208,14 @@ export default function AiChatSidebar({
   };
 
   return (
-    <aside className="flex w-full sm:w-72 lg:w-80 flex-shrink-0 flex-col overflow-hidden rounded-xl border-2 border-gray-300 bg-white shadow-sm">
-      <div className="space-y-3 border-b-2 border-gray-300 bg-gradient-to-r from-gray-50 to-white px-4 py-4">
+    <aside className="flex w-full sm:w-72 lg:w-80 flex-shrink-0 flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+      <div className="space-y-2.5 border-b border-gray-100 px-3 py-3">
         <button
           type="button"
           onClick={onNewChat}
-          className="flex w-full items-center justify-center gap-2 rounded-lg bg-[#01411C] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#013317]"
+          className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#01411C] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#013317]"
         >
-          <Plus className="h-4 w-4" />
+          <SquarePen className="h-4 w-4" />
           New chat
         </button>
 
@@ -237,12 +225,12 @@ export default function AiChatSidebar({
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search conversations…"
-            className="w-full rounded-lg border-2 border-gray-300 bg-white py-2 pl-9 pr-3 text-sm outline-none focus:border-[#01411C] focus:ring-2 focus:ring-[#01411C]/20"
+            className="w-full rounded-xl border border-gray-300 bg-gray-50 py-2 pl-9 pr-3 text-sm outline-none transition focus:border-[#01411C] focus:bg-white focus:ring-2 focus:ring-[#01411C]/15"
           />
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto py-1">
         {loading ? (
           <div className="p-4 text-center text-sm text-gray-500">Loading conversations…</div>
         ) : sessions.length === 0 ? (
@@ -256,7 +244,7 @@ export default function AiChatSidebar({
         ) : (
           groups.map((group) => (
             <div key={group.label}>
-              <p className="px-3 pt-3 pb-1 text-xs font-semibold uppercase tracking-wide text-gray-400">
+              <p className="px-3 pt-2.5 pb-1 text-[11px] font-semibold uppercase tracking-wide text-gray-400">
                 {group.label}
               </p>
               {group.items.map(renderRow)}
