@@ -3,10 +3,11 @@ import type { ReactNode } from "react";
 import axios from "axios";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Send,
+  ArrowUp,
+  Scale,
+  Sparkles,
   Lightbulb,
   AlertCircle,
-  Sparkles,
   ArrowUpRight,
   Copy,
   Check,
@@ -24,6 +25,28 @@ import {
 } from "../api";
 import type { AiChatMessage } from "../data/aiGuidance";
 import { formatDate } from "../../../shared/utils/formatDate";
+
+// The assistant's avatar: a Scale of Justice (legal) on a gradient circle, with
+// a small Sparkles badge as the "AI" hint. Used in the header, each answer, the
+// typing indicator, and the welcome hero.
+function AiAvatar({ size = "sm" }: { size?: "sm" | "md" | "lg" }) {
+  const box = size === "lg" ? "h-14 w-14" : size === "md" ? "h-8 w-8" : "h-7 w-7";
+  const main = size === "lg" ? "h-7 w-7" : "h-4 w-4";
+  const badge = size === "lg" ? "h-5 w-5" : "h-3.5 w-3.5";
+  const spark = size === "lg" ? "h-3 w-3" : "h-2 w-2";
+  return (
+    <div className={`relative shrink-0 ${box}`}>
+      <div className="flex h-full w-full items-center justify-center rounded-full bg-gradient-to-br from-[#01411C] to-[#0b6e34] text-white">
+        <Scale className={main} />
+      </div>
+      <span
+        className={`absolute -bottom-0.5 -right-0.5 flex items-center justify-center rounded-full bg-amber-400 text-amber-900 ring-2 ring-white ${badge}`}
+      >
+        <Sparkles className={spark} />
+      </span>
+    </div>
+  );
+}
 
 // Minimal, dependency-free renderer for the assistant's replies. The model
 // returns light Markdown (**bold**, "* " / "- " bullets); without this the raw
@@ -70,7 +93,6 @@ export default function AiLegalGuidance() {
   const [loadingSession, setLoadingSession] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
-  // Sidebar conversation list (server state).
   const sessionsQuery = useQuery({
     queryKey: ["lawyer", "ai-sessions"],
     queryFn: listAiSessions,
@@ -201,7 +223,7 @@ export default function AiLegalGuidance() {
     <LawyerLayout brandTitle="LawFlow" brandSubtitle="AI Legal Assistant">
       {/* h-[calc(100vh-130px)] keeps the page within the viewport so the shared
           navbar stays put and only the inner panes scroll (mirrors Messages.tsx). */}
-      <div className="flex gap-4 h-[calc(100vh-130px)] lg:gap-5">
+      <div className="flex gap-3 h-[calc(100vh-130px)] lg:gap-4">
         <div className="hidden sm:flex">
           <AiChatSidebar
             sessions={sessionsQuery.data ?? []}
@@ -218,73 +240,70 @@ export default function AiLegalGuidance() {
         </div>
 
         {/* Chat pane */}
-        <div className="flex flex-1 flex-col overflow-hidden rounded-xl border-2 border-gray-300 bg-white shadow-sm">
+        <div className="flex flex-1 flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
           {/* Pane header — assistant identity + active conversation title */}
-          <div className="flex flex-shrink-0 items-center gap-3 border-b border-gray-200 bg-white px-4 py-3 sm:px-6">
-            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-purple-600 text-white">
-              <Lightbulb className="h-5 w-5" />
-            </div>
+          <div className="flex flex-shrink-0 items-center gap-2.5 border-b border-gray-100 bg-white px-4 py-2.5">
+            <AiAvatar size="md" />
             <div className="min-w-0">
               <p className="truncate text-sm font-semibold text-gray-900">{activeTitle}</p>
-              <p className="text-xs text-gray-500">AI Legal Assistant · Pakistani civil &amp; family law</p>
+              <p className="text-[11px] text-gray-500">
+                AI Legal Assistant · Pakistani civil &amp; family law
+              </p>
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto bg-gray-50">
-            <div className="mx-auto h-full w-full max-w-3xl px-4 sm:px-6 py-6">
+          <div className="flex-1 overflow-y-auto bg-gray-50/70">
+            <div className="mx-auto h-full w-full max-w-3xl px-4 sm:px-6 py-5">
               {loadingSession ? (
                 <div className="py-10 text-center text-sm text-gray-500">
                   Loading conversation…
                 </div>
               ) : showHero ? (
                 <div className="flex h-full flex-col items-center justify-center px-6 text-center">
-                  <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-purple-100">
-                    <Lightbulb className="h-8 w-8 text-purple-600" />
+                  <div className="mb-4">
+                    <AiAvatar size="lg" />
                   </div>
-                  <h2 className="text-xl font-semibold text-gray-900">
+                  <h2 className="text-lg font-semibold text-gray-900">
                     How can I help with your case?
                   </h2>
-                  <p className="mt-2 max-w-md text-sm text-gray-500">
+                  <p className="mt-1.5 max-w-md text-sm text-gray-500">
                     Ask about a civil or family suit — choosing the right template, required
                     documents, procedure, or drafting. Grounded in Pakistani law.
                   </p>
                 </div>
               ) : (
-                <div className="space-y-5">
+                <div className="space-y-3">
                   {messages.map((m) => {
                     const isError = m.kind === "error";
                     return (
                       <div
                         key={m.id}
-                        className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}
+                        className={`flex items-end gap-2.5 ${
+                          m.role === "user" ? "justify-end" : "justify-start"
+                        }`}
                       >
-                        {m.role === "ai" && (
-                          <div
-                            className={`w-8 h-8 rounded-full flex items-center justify-center text-white flex-shrink-0 mr-3 ${
-                              isError ? "bg-amber-500" : "bg-purple-600"
-                            }`}
-                          >
-                            {isError ? (
-                              <AlertCircle className="w-5 h-5" />
-                            ) : (
-                              <Lightbulb className="w-5 h-5" />
-                            )}
-                          </div>
-                        )}
+                        {m.role === "ai" &&
+                          (isError ? (
+                            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-amber-500 text-white">
+                              <AlertCircle className="h-4 w-4" />
+                            </div>
+                          ) : (
+                            <AiAvatar size="sm" />
+                          ))}
 
                         <div
-                          className={`max-w-2xl rounded-2xl px-4 py-3 shadow-sm ${
+                          className={`max-w-2xl rounded-2xl px-3.5 py-2.5 ${
                             m.role === "user"
-                              ? "bg-[#01411C] text-white rounded-br-none"
+                              ? "bg-[#01411C] text-white shadow-sm"
                               : isError
-                              ? "bg-amber-50 text-amber-900 border border-amber-200 rounded-bl-none"
-                              : "bg-white text-gray-900 border border-gray-200 rounded-bl-none"
+                              ? "border border-amber-200 bg-amber-50 text-amber-900"
+                              : "border border-gray-200/80 bg-white text-gray-900 shadow-[0_1px_3px_rgba(16,24,40,0.06)]"
                           }`}
                         >
-                          <p className="text-sm whitespace-pre-line leading-relaxed">
+                          <p className="whitespace-pre-line text-sm leading-relaxed">
                             {m.role === "ai" && !isError ? renderRichText(m.text) : m.text}
                           </p>
-                          <div className="mt-2 flex items-center gap-2">
+                          <div className="mt-1.5 flex items-center gap-2">
                             <span
                               className={`text-[11px] ${
                                 m.role === "user"
@@ -325,10 +344,10 @@ export default function AiLegalGuidance() {
                             <img
                               src={currentUser.avatarUrl}
                               alt={fullName || "You"}
-                              className="w-8 h-8 rounded-full object-cover flex-shrink-0 ml-3"
+                              className="h-7 w-7 shrink-0 rounded-full object-cover"
                             />
                           ) : (
-                            <div className="w-8 h-8 rounded-full bg-[#01411C] flex items-center justify-center text-white text-xs font-bold flex-shrink-0 ml-3">
+                            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#01411C] text-[11px] font-bold text-white">
                               {userInitial}
                             </div>
                           ))}
@@ -337,24 +356,22 @@ export default function AiLegalGuidance() {
                   })}
 
                   {sending && (
-                    <div className="flex justify-start">
-                      <div className="w-8 h-8 rounded-full bg-purple-600 flex items-center justify-center text-white flex-shrink-0 mr-3">
-                        <Lightbulb className="w-5 h-5" />
-                      </div>
-                      <div className="rounded-2xl rounded-bl-none px-4 py-3 bg-white border border-gray-200 shadow-sm">
+                    <div className="flex items-end gap-2.5">
+                      <AiAvatar size="sm" />
+                      <div className="rounded-2xl border border-gray-200/80 bg-white px-3.5 py-3 shadow-[0_1px_3px_rgba(16,24,40,0.06)]">
                         <span className="flex items-center gap-1">
-                          <span className="w-2 h-2 rounded-full bg-purple-400 animate-bounce [animation-delay:-0.3s]" />
-                          <span className="w-2 h-2 rounded-full bg-purple-400 animate-bounce [animation-delay:-0.15s]" />
-                          <span className="w-2 h-2 rounded-full bg-purple-400 animate-bounce" />
+                          <span className="h-2 w-2 rounded-full bg-[#01411C]/60 animate-bounce [animation-delay:-0.3s]" />
+                          <span className="h-2 w-2 rounded-full bg-[#01411C]/60 animate-bounce [animation-delay:-0.15s]" />
+                          <span className="h-2 w-2 rounded-full bg-[#01411C]/60 animate-bounce" />
                         </span>
                       </div>
                     </div>
                   )}
 
                   {!sending && suggestions.length > 0 && (
-                    <div className="pl-11 pt-1">
-                      <div className="flex items-center gap-1.5 mb-2 text-xs font-medium text-gray-500">
-                        <Sparkles className="w-3.5 h-3.5 text-purple-500" />
+                    <div className="pl-[38px] pt-0.5">
+                      <div className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-gray-500">
+                        <Lightbulb className="h-3.5 w-3.5 text-[#01411C]" />
                         Suggested follow-ups
                       </div>
                       <div className="flex flex-wrap gap-2">
@@ -363,10 +380,10 @@ export default function AiLegalGuidance() {
                             key={s}
                             type="button"
                             onClick={() => send(s)}
-                            className="group inline-flex items-center gap-1.5 rounded-full border border-purple-200 bg-white px-3.5 py-2 text-left text-sm text-purple-700 hover:bg-purple-50 hover:border-purple-300 transition-colors"
+                            className="group inline-flex items-center gap-1.5 rounded-full border border-[#01411C]/25 bg-white px-3 py-1.5 text-left text-sm text-[#01411C] transition-colors hover:border-[#01411C]/40 hover:bg-green-50"
                           >
                             {s}
-                            <ArrowUpRight className="w-3.5 h-3.5 opacity-50 group-hover:opacity-100" />
+                            <ArrowUpRight className="h-3.5 w-3.5 opacity-50 group-hover:opacity-100" />
                           </button>
                         ))}
                       </div>
@@ -379,39 +396,37 @@ export default function AiLegalGuidance() {
             </div>
           </div>
 
-          {/* Composer */}
-          <div className="flex-shrink-0 border-t border-gray-200 bg-white">
-            <div className="mx-auto w-full max-w-3xl px-4 sm:px-6 py-3">
-              <div className="flex items-center gap-2 sm:gap-3">
-                <input
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") send();
-                  }}
-                  disabled={sending || loadingSession}
-                  placeholder={
-                    sending
-                      ? "Waiting for the assistant…"
-                      : "Ask about your civil or family case (documents, procedure, drafting)…"
-                  }
-                  className="flex-1 rounded-xl border-2 border-gray-300 bg-white px-4 py-3 text-sm outline-none focus:border-[#01411C] focus:ring-2 focus:ring-[#01411C]/20 transition-colors disabled:bg-gray-100 disabled:cursor-not-allowed"
-                />
+          {/* Composer — single rounded pill wrapping input + send */}
+          <div className="flex-shrink-0 border-t border-gray-100 bg-white px-4 py-3 sm:px-6">
+            <div className="mx-auto flex w-full max-w-3xl items-center gap-2 rounded-2xl border border-gray-300 bg-white px-2 py-1.5 shadow-sm transition focus-within:border-[#01411C] focus-within:ring-2 focus-within:ring-[#01411C]/15">
+              <input
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") send();
+                }}
+                disabled={sending || loadingSession}
+                placeholder={
+                  sending
+                    ? "Waiting for the assistant…"
+                    : "Ask about your civil or family case…"
+                }
+                className="flex-1 bg-transparent px-2 py-2 text-sm outline-none disabled:cursor-not-allowed"
+              />
 
-                <button
-                  type="button"
-                  onClick={() => send()}
-                  disabled={!canSend}
-                  className={`inline-flex items-center justify-center rounded-xl px-4 py-3 text-white transition flex-shrink-0 ${
-                    canSend
-                      ? "bg-purple-600 hover:bg-purple-700"
-                      : "bg-purple-300 cursor-not-allowed"
-                  }`}
-                  aria-label="Send"
-                >
-                  <Send className="h-5 w-5" />
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={() => send()}
+                disabled={!canSend}
+                className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full text-white transition ${
+                  canSend
+                    ? "bg-gradient-to-br from-[#01411C] to-[#0b6e34] hover:opacity-90"
+                    : "bg-gray-300 cursor-not-allowed"
+                }`}
+                aria-label="Send"
+              >
+                <ArrowUp className="h-5 w-5" />
+              </button>
             </div>
           </div>
         </div>
