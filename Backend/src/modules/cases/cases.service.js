@@ -5,6 +5,7 @@ import { promises as fs } from "node:fs";
 import { pool } from "../../config/db.js";
 import { ApiError } from "../../utils/apiError.js";
 import { isSupportedTehsil } from "../../utils/location.js";
+import { safeRecordCaseEvent } from "./caseEvents.service.js";
 import {
   deleteCaseAttachment as deleteCaseAttachmentObject,
   deleteSignedCasePdf,
@@ -292,6 +293,21 @@ export async function createCase({
     `${selectCaseWithType()} WHERE cases.id = $1`,
     [insertResult.rows[0].id]
   );
+
+  // Best-effort audit event AFTER the insert has committed. Never throws
+  // out here — a failed event write must not undo a successful create.
+  await safeRecordCaseEvent({
+    caseId: insertResult.rows[0].id,
+    eventType: "created",
+    actorUserId: lawyerUserId,
+    actorRole: "lawyer",
+    payload: {
+      title,
+      caseType: caseTypeId,
+      assignedTehsil: assignedTehsil || null,
+      clientName
+    }
+  });
 
   return mapCase(created.rows[0]);
 }
@@ -618,6 +634,23 @@ export async function submitCase({ caseId, lawyerUserId }) {
     [caseId, lawyerUserId]
   );
 
+  // Best-effort audit event AFTER the status=submitted UPDATE commits. The
+  // CURRENT status (captured above, before the UPDATE) decides whether this
+  // is a first submission (draft -> submitted) or a resubmission of a case
+  // the registrar bounced back (returned -> submitted).
+  const isResubmit = status === "returned";
+  await safeRecordCaseEvent({
+    caseId,
+    eventType: isResubmit ? "resubmitted" : "submitted",
+    actorUserId: lawyerUserId,
+    actorRole: "lawyer",
+    payload: {
+      fromStatus: isResubmit ? "returned" : "draft",
+      toStatus: "submitted",
+      assignedTehsil: assigned_tehsil
+    }
+  });
+
   return getCaseForLawyer({ caseId, lawyerUserId });
 }
 
@@ -649,12 +682,14 @@ export async function updateCase({ caseId, lawyerUserId, updates }) {
 
   const setExpressions = [];
   const values = [];
+  const changedFields = [];
   let paramIndex = 1;
 
   for (const [key, column] of Object.entries(allowed)) {
     if (updates[key] === undefined) continue;
     setExpressions.push(`${column} = $${paramIndex++}`);
     values.push(updates[key] === "" ? null : updates[key]);
+    changedFields.push(key);
   }
 
   if (setExpressions.length === 0) {
@@ -681,6 +716,17 @@ export async function updateCase({ caseId, lawyerUserId, updates }) {
     // already been submitted/returned/accepted. Don't leak which.
     throw new ApiError(404, "Case not found or no longer editable");
   }
+
+  // Best-effort audit event AFTER the guarded UPDATE succeeds. Record only
+  // the KEYS that were actually applied (never the values — they can carry
+  // client PII). Never throws out here.
+  await safeRecordCaseEvent({
+    caseId,
+    eventType: "edited",
+    actorUserId: lawyerUserId,
+    actorRole: "lawyer",
+    payload: { changedFields }
+  });
 
   return getCaseForLawyer({ caseId, lawyerUserId });
 }

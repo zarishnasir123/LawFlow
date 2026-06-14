@@ -21,6 +21,7 @@ DROP TABLE IF EXISTS installments                   CASCADE;
 DROP TABLE IF EXISTS payment_plans                  CASCADE;
 DROP TABLE IF EXISTS agreements                     CASCADE;
 DROP TABLE IF EXISTS lawyer_service_charges         CASCADE;
+DROP TABLE IF EXISTS case_events                    CASCADE;
 DROP TABLE IF EXISTS signature_requests             CASCADE;
 DROP TABLE IF EXISTS case_attachments               CASCADE;
 DROP TABLE IF EXISTS cases                          CASCADE;
@@ -589,6 +590,55 @@ CREATE TABLE signature_requests (
 );
 
 -- =====================================================================
+-- Case events: append-only audit trail of a case's lifecycle.
+--
+-- One row per meaningful thing that happened to a case — created,
+-- submitted/resubmitted, returned, accepted, the two signing events,
+-- the signed-PDF compile, and lawyer edits. Written BEST-EFFORT by the
+-- owning modules AFTER their primary write commits (a failed event
+-- write must never break the underlying action), so this table is a
+-- read-time convenience for the admin case-traceability timeline, never
+-- a source of truth the app branches on.
+--
+-- Append-only by convention: nothing UPDATEs or DELETEs a row except the
+-- ON DELETE CASCADE from cases(id) (deleting a case discards its trail).
+-- actor_user_id ON DELETE SET NULL so removing a user keeps the event but
+-- forgets who. payload is a free-form JSONB envelope whose keys vary by
+-- event_type (e.g. returned carries reviewRemarks; edited carries
+-- changedFields). Signing events (client_signed / lawyer_signed) are NOT
+-- written here by the app — they are derived at read-time from
+-- signature_requests — but the CHECK still allows them for completeness.
+-- =====================================================================
+CREATE TABLE case_events (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  case_id       UUID NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
+
+  event_type    VARCHAR(40) NOT NULL
+                CHECK (event_type IN (
+                  'created',
+                  'submitted',
+                  'resubmitted',
+                  'returned',
+                  'accepted',
+                  'client_signed',
+                  'lawyer_signed',
+                  'signed_pdf_compiled',
+                  'edited',
+                  'deleted'
+                )),
+
+  -- Who did it. NULL after the actor's user row is deleted (SET NULL),
+  -- or when the event has no single human actor.
+  actor_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  actor_role    VARCHAR(20),
+
+  -- Free-form per-event detail. Shape depends on event_type.
+  payload       JSONB NOT NULL DEFAULT '{}'::jsonb,
+
+  created_at    TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+-- =====================================================================
 -- Payment Module: Service Charges, Agreements, Payment Plans, Installments
 -- =====================================================================
 CREATE TABLE lawyer_service_charges (
@@ -764,6 +814,15 @@ CREATE INDEX idx_signature_requests_expires_at
   ON signature_requests(expires_at)
   WHERE status = 'pending';
 
+-- Case events: the admin timeline reads "all events for one case, oldest
+-- first", so a (case_id, created_at ASC) composite covers both the scope
+-- and the ordering in one index scan. The event_type index supports any
+-- future "all rows of type X" filtering.
+CREATE INDEX idx_case_events_case_id_created_at
+  ON case_events(case_id, created_at ASC);
+CREATE INDEX idx_case_events_event_type
+  ON case_events(event_type);
+
 -- Payment indexes
 CREATE INDEX idx_lawyer_service_charges_lawyer_profile_id
   ON lawyer_service_charges(lawyer_profile_id);
@@ -815,6 +874,7 @@ ALTER TABLE lawyer_rejection_history       ENABLE ROW LEVEL SECURITY;
 ALTER TABLE case_types                     ENABLE ROW LEVEL SECURITY;
 ALTER TABLE cases                          ENABLE ROW LEVEL SECURITY;
 ALTER TABLE signature_requests             ENABLE ROW LEVEL SECURITY;
+ALTER TABLE case_events                    ENABLE ROW LEVEL SECURITY;
 ALTER TABLE lawyer_service_charges         ENABLE ROW LEVEL SECURITY;
 ALTER TABLE agreements                     ENABLE ROW LEVEL SECURITY;
 ALTER TABLE payment_plans                  ENABLE ROW LEVEL SECURITY;
