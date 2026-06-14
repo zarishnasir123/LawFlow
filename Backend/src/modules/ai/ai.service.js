@@ -124,6 +124,32 @@ export async function askLegalGuidance({ prompt, history = [] }) {
   return parseFollowups(raw);
 }
 
+// Short, clean sidebar title generated from the lawyer's first message — far
+// nicer than the raw prompt text. Best-effort: any failure (LLM down, rate
+// limit) silently falls back to the truncated-prompt heuristic, so titling can
+// never break starting a conversation.
+const TITLE_SYSTEM_INSTRUCTION = `You write a very short title (3 to 6 words) summarizing a lawyer's legal question for a chat sidebar. Use Title Case. No surrounding quotes, no trailing punctuation, no preamble. Reply with ONLY the title.`;
+
+export async function generateSessionTitle(userText) {
+  try {
+    const generate = resolveGenerator();
+    const raw = await generate({
+      systemInstruction: TITLE_SYSTEM_INSTRUCTION,
+      messages: [{ role: "user", text: userText.trim() }],
+      temperature: 0.2,
+      maxOutputTokens: 24
+    });
+    const cleaned = raw
+      .replace(/[\r\n]+/g, " ")
+      .replace(/^["'\s]+|["'\s.]+$/g, "")
+      .trim();
+    if (cleaned) return cleaned.length > 60 ? cleaned.slice(0, 60) : cleaned;
+  } catch {
+    // non-fatal — fall through to the heuristic title
+  }
+  return deriveTitle(userText);
+}
+
 // =====================================================================
 // Conversation history (ai_chat_sessions + ai_chat_messages)
 //
@@ -136,6 +162,7 @@ function mapSession(row) {
   return {
     id: row.id,
     title: row.title,
+    pinned: row.pinned,
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
@@ -157,13 +184,13 @@ function deriveTitle(text) {
   return oneLine.length > 60 ? `${oneLine.slice(0, 60)}…` : oneLine;
 }
 
-// Sidebar list: the lawyer's sessions, most recently used first.
+// Sidebar list: the lawyer's sessions, pinned first, then most recently used.
 export async function listSessions(userId) {
   const result = await pool.query(
-    `SELECT id, title, created_at, updated_at
+    `SELECT id, title, pinned, created_at, updated_at
        FROM ai_chat_sessions
       WHERE user_id = $1
-      ORDER BY updated_at DESC`,
+      ORDER BY pinned DESC, updated_at DESC`,
     [userId]
   );
   return result.rows.map(mapSession);
@@ -173,7 +200,7 @@ export async function listSessions(userId) {
 // exist OR isn't owned by the caller — never leak another user's session.
 export async function getSessionWithMessages(userId, sessionId) {
   const sessionResult = await pool.query(
-    `SELECT id, title, created_at, updated_at
+    `SELECT id, title, pinned, created_at, updated_at
        FROM ai_chat_sessions
       WHERE id = $1 AND user_id = $2`,
     [sessionId, userId]
@@ -225,11 +252,46 @@ export async function deleteSession(userId, sessionId) {
   }
 }
 
+// Rename and/or pin a conversation the caller owns. Only the provided fields are
+// updated; updated_at is deliberately NOT touched so renaming/pinning doesn't
+// reshuffle the recency order. The SET fragments are fixed identifiers (not user
+// input); all values are parameterized. 404 if the session isn't theirs.
+export async function updateSession(userId, sessionId, { title, pinned }) {
+  const sets = [];
+  const values = [];
+  let i = 1;
+
+  if (title !== undefined) {
+    sets.push(`title = $${i++}`);
+    values.push(title);
+  }
+  if (pinned !== undefined) {
+    sets.push(`pinned = $${i++}`);
+    values.push(pinned);
+  }
+  if (sets.length === 0) {
+    throw new ApiError(400, "Nothing to update");
+  }
+
+  values.push(sessionId, userId);
+  const result = await pool.query(
+    `UPDATE ai_chat_sessions SET ${sets.join(", ")}
+      WHERE id = $${i++} AND user_id = $${i}
+      RETURNING id, title, pinned, created_at, updated_at`,
+    values
+  );
+
+  if (!result.rows[0]) {
+    throw new ApiError(404, "Conversation not found");
+  }
+  return mapSession(result.rows[0]);
+}
+
 // Persist one chat turn (the user prompt + the AI reply) in a single
 // transaction. Creates the session if sessionId is null (titled from the
 // prompt); otherwise verifies ownership and bumps updated_at so the session
 // rises to the top of the sidebar. Returns the resolved { sessionId, title }.
-export async function appendTurn({ userId, sessionId, userText, aiText }) {
+export async function appendTurn({ userId, sessionId, userText, aiText, title: titleOverride }) {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
@@ -247,7 +309,7 @@ export async function appendTurn({ userId, sessionId, userText, aiText }) {
       }
       title = owned.rows[0].title;
     } else {
-      title = deriveTitle(userText);
+      title = titleOverride || deriveTitle(userText);
       const created = await client.query(
         `INSERT INTO ai_chat_sessions (user_id, title) VALUES ($1, $2) RETURNING id`,
         [userId, title]

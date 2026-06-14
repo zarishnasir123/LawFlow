@@ -1,4 +1,5 @@
 import { ApiError } from "../utils/apiError.js";
+import { postJsonWithRetry } from "./llmHttp.js";
 
 // Reusable Groq client for LawFlow. Mirrors gemini.service.js so the two are
 // interchangeable: same generate* signature, same "is it configured?" pattern,
@@ -76,21 +77,15 @@ export async function generateGroqText({
     max_tokens: maxOutputTokens
   };
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-
-  try {
-    const res = await fetch(GROQ_CHAT_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${getApiKey()}`
-      },
-      body: JSON.stringify(body),
-      signal: controller.signal
-    });
-
-    if (!res.ok) {
+  // postJsonWithRetry handles the per-attempt timeout, transient-failure retry,
+  // and maps 429/timeout/network errors to clean ApiErrors.
+  const data = await postJsonWithRetry({
+    url: GROQ_CHAT_URL,
+    headers: { Authorization: `Bearer ${getApiKey()}` },
+    body,
+    timeoutMs,
+    label: "groq",
+    onUpstreamError: async (res) => {
       // Log the upstream error for our own diagnostics only — never forward
       // Groq's raw payload (or our key) to the client.
       let upstreamType = "";
@@ -101,29 +96,13 @@ export async function generateGroqText({
         // body wasn't JSON; ignore
       }
       console.error(`[groq] upstream error ${res.status} ${upstreamType}`);
-
-      if (res.status === 429) {
-        throw new ApiError(429, "The assistant is busy right now. Please try again in a moment.");
-      }
-      throw new ApiError(502, "Could not reach the AI assistant service.");
     }
+  });
 
-    const data = await res.json();
-    const text = data?.choices?.[0]?.message?.content;
-
-    if (typeof text === "string" && text.trim()) {
-      return text.trim();
-    }
-
-    throw new ApiError(502, "The assistant returned an empty response. Please try again.");
-  } catch (err) {
-    if (err instanceof ApiError) throw err;
-    if (err?.name === "AbortError") {
-      throw new ApiError(504, "The assistant took too long to respond. Please try again.");
-    }
-    console.error("[groq] request failed", err?.message);
-    throw new ApiError(502, "Could not reach the AI assistant service.");
-  } finally {
-    clearTimeout(timer);
+  const text = data?.choices?.[0]?.message?.content;
+  if (typeof text === "string" && text.trim()) {
+    return text.trim();
   }
+
+  throw new ApiError(502, "The assistant returned an empty response. Please try again.");
 }

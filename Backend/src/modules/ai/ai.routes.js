@@ -9,10 +9,15 @@ import { aiGuidanceLimiter } from "../../middleware/rateLimiter.js";
 import {
   getSession,
   getSessions,
+  patchSession,
   postLegalGuidance,
   removeSession
 } from "./ai.controller.js";
-import { aiGuidanceValidator, sessionIdParamValidator } from "./ai.validators.js";
+import {
+  aiGuidanceValidator,
+  sessionIdParamValidator,
+  sessionUpdateValidator
+} from "./ai.validators.js";
 
 const router = Router();
 
@@ -28,6 +33,13 @@ router.get(
   sessionIdParamValidator,
   validateRequest,
   asyncHandler(getSession)
+);
+
+router.patch(
+  "/sessions/:sessionId",
+  sessionUpdateValidator,
+  validateRequest,
+  asyncHandler(patchSession)
 );
 
 router.delete(

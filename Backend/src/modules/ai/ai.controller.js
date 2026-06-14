@@ -2,9 +2,11 @@ import {
   askLegalGuidance,
   appendTurn,
   deleteSession,
+  generateSessionTitle,
   getRecentMessagesForContext,
   getSessionWithMessages,
-  listSessions
+  listSessions,
+  updateSession
 } from "./ai.service.js";
 
 // GET /api/ai/sessions — the lawyer's conversations for the sidebar,
@@ -18,6 +20,17 @@ export async function getSessions(req, res) {
 // Ownership is enforced in the service (404 if not the caller's).
 export async function getSession(req, res) {
   const session = await getSessionWithMessages(req.user.sub, req.params.sessionId);
+  return res.status(200).json({ session });
+}
+
+// PATCH /api/ai/sessions/:sessionId — rename and/or pin a conversation.
+// Body carries any of { title, pinned }. Ownership enforced in the service.
+export async function patchSession(req, res) {
+  const { title, pinned } = req.body;
+  const session = await updateSession(req.user.sub, req.params.sessionId, {
+    title: title === undefined ? undefined : title.trim(),
+    pinned
+  });
   return res.status(200).json({ session });
 }
 
@@ -45,13 +58,20 @@ export async function postLegalGuidance(req, res) {
     history = await getRecentMessagesForContext(sessionId);
   }
 
-  const { reply, suggestions } = await askLegalGuidance({ prompt, history });
+  // For a brand-new conversation, generate a clean sidebar title in parallel
+  // with the answer (the title only needs the prompt). Existing sessions keep
+  // their current title.
+  const [{ reply, suggestions }, generatedTitle] = await Promise.all([
+    askLegalGuidance({ prompt, history }),
+    sessionId ? Promise.resolve(undefined) : generateSessionTitle(prompt)
+  ]);
 
   const { sessionId: resolvedSessionId, title } = await appendTurn({
     userId,
     sessionId: sessionId || null,
     userText: prompt,
-    aiText: reply
+    aiText: reply,
+    title: generatedTitle
   });
 
   return res.status(200).json({

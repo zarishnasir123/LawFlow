@@ -16,6 +16,7 @@ export type AiChatMessage = {
 export type AiChatSession = {
   id: string;
   title: string;
+  pinned: boolean;
   createdAt: string;
   updatedAt: string;
 };

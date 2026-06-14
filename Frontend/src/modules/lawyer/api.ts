@@ -170,6 +170,18 @@ export async function deleteAiSession(sessionId: string): Promise<void> {
   await apiClient.delete(`/ai/sessions/${sessionId}`);
 }
 
+// Rename and/or pin a conversation. Pass any subset of { title, pinned }.
+export async function updateAiSession(
+  sessionId: string,
+  patch: { title?: string; pinned?: boolean }
+): Promise<AiChatSession> {
+  const { data } = await apiClient.patch<{ session: AiChatSession }>(
+    `/ai/sessions/${sessionId}`,
+    patch
+  );
+  return data.session;
+}
+
 import type { ChatMessage, LawyerChatThread, SendMessagePayload } from "../../types/chat";
 import { mockMessagesByThread, mockThreads } from "./data/chat.mock";
 

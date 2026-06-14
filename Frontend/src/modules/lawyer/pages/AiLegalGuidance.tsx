@@ -2,7 +2,15 @@ import { useState, useRef, useEffect, Fragment } from "react";
 import type { ReactNode } from "react";
 import axios from "axios";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Send, Lightbulb, AlertCircle, Sparkles, ArrowUpRight } from "lucide-react";
+import {
+  Send,
+  Lightbulb,
+  AlertCircle,
+  Sparkles,
+  ArrowUpRight,
+  Copy,
+  Check,
+} from "lucide-react";
 
 import LawyerLayout from "../components/LawyerLayout";
 import AiChatSidebar from "../components/AiChatSidebar";
@@ -12,6 +20,7 @@ import {
   deleteAiSession,
   getAiSession,
   listAiSessions,
+  updateAiSession,
 } from "../api";
 import {
   type AiChatMessage,
@@ -72,6 +81,18 @@ export default function AiLegalGuidance() {
   );
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [loadingSession, setLoadingSession] = useState(false);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  // Copy an answer to the clipboard, with a brief "copied" check on that bubble.
+  const copyMessage = async (m: AiChatMessage) => {
+    try {
+      await navigator.clipboard.writeText(m.text);
+      setCopiedId(m.id);
+      setTimeout(() => setCopiedId((cur) => (cur === m.id ? null : cur)), 1500);
+    } catch {
+      // clipboard unavailable (e.g. insecure context) — silently ignore
+    }
+  };
 
   // Sidebar conversation list (server state).
   const sessionsQuery = useQuery({
@@ -109,6 +130,15 @@ export default function AiLegalGuidance() {
     onSuccess: (_data, sessionId) => {
       queryClient.invalidateQueries({ queryKey: ["lawyer", "ai-sessions"] });
       if (sessionId === selectedSessionId) startNewChat();
+    },
+  });
+
+  // Rename / pin — refresh the sidebar so the title + pinned-first order update.
+  const updateMutation = useMutation({
+    mutationFn: (vars: { sessionId: string; patch: { title?: string; pinned?: boolean } }) =>
+      updateAiSession(vars.sessionId, vars.patch),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["lawyer", "ai-sessions"] });
     },
   });
 
@@ -199,6 +229,10 @@ export default function AiLegalGuidance() {
             onNewChat={startNewChat}
             onSelect={selectSession}
             onDelete={(id) => deleteMutation.mutate(id)}
+            onRename={(id, title) => updateMutation.mutate({ sessionId: id, patch: { title } })}
+            onTogglePin={(id, pinned) =>
+              updateMutation.mutate({ sessionId: id, patch: { pinned } })
+            }
           />
         </div>
 
@@ -253,17 +287,40 @@ export default function AiLegalGuidance() {
                           <p className="text-sm whitespace-pre-line leading-relaxed">
                             {m.role === "ai" && !isError ? renderRichText(m.text) : m.text}
                           </p>
-                          <p
-                            className={`text-[11px] mt-2 ${
-                              m.role === "user"
-                                ? "text-white/70"
-                                : isError
-                                ? "text-amber-700/80"
-                                : "text-gray-400"
-                            }`}
-                          >
-                            {m.time}
-                          </p>
+                          <div className="mt-2 flex items-center gap-2">
+                            <span
+                              className={`text-[11px] ${
+                                m.role === "user"
+                                  ? "text-white/70"
+                                  : isError
+                                  ? "text-amber-700/80"
+                                  : "text-gray-400"
+                              }`}
+                            >
+                              {m.time}
+                            </span>
+                            {m.role === "ai" && !isError && m.kind !== "intro" && (
+                              <button
+                                type="button"
+                                onClick={() => copyMessage(m)}
+                                className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] text-gray-400 transition hover:bg-gray-100 hover:text-gray-600"
+                                aria-label="Copy answer"
+                                title="Copy answer"
+                              >
+                                {copiedId === m.id ? (
+                                  <>
+                                    <Check className="h-3.5 w-3.5 text-green-600" />
+                                    Copied
+                                  </>
+                                ) : (
+                                  <>
+                                    <Copy className="h-3.5 w-3.5" />
+                                    Copy
+                                  </>
+                                )}
+                              </button>
+                            )}
+                          </div>
                         </div>
 
                         {m.role === "user" && (
