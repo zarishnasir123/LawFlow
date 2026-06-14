@@ -1,5 +1,7 @@
-import { useState, useRef, useEffect } from "react";
-import { Send, Lightbulb } from "lucide-react";
+import { useState, useRef, useEffect, Fragment } from "react";
+import type { ReactNode } from "react";
+import axios from "axios";
+import { Send, Lightbulb, AlertCircle } from "lucide-react";
 
 import LawyerLayout from "../components/LawyerLayout";
 import { useLoginStore } from "../../auth/store";
@@ -8,8 +10,23 @@ import {
   type AiChatMessage,
   aiGuidanceQuickSuggestions,
   getInitialAiGuidanceMessages,
-} from "../data/aiGuidance.mock.ts";
+} from "../data/aiGuidance";
 import { formatDate } from "../../../shared/utils/formatDate";
+
+// Minimal, dependency-free renderer for the assistant's replies. Gemini returns
+// light Markdown (**bold**, "* " / "- " bullets); without this the raw markers
+// show literally. We only handle bold + bullet normalization and keep newlines
+// via CSS `whitespace-pre-line`. No HTML is interpreted, so there's no XSS risk.
+function renderRichText(text: string): ReactNode {
+  const normalized = text.replace(/^[ \t]*[*-][ \t]+/gm, "• ");
+  return normalized.split(/\*\*(.+?)\*\*/g).map((segment, i) =>
+    i % 2 === 1 ? (
+      <strong key={i}>{segment}</strong>
+    ) : (
+      <Fragment key={i}>{segment}</Fragment>
+    )
+  );
+}
 
 export default function AiLegalGuidance() {
   const email = useLoginStore((state) => state.email);
@@ -52,19 +69,43 @@ export default function AiLegalGuidance() {
       kind: "message",
     };
 
+    // Prior turns become context for the backend so follow-up questions keep
+    // their thread. `messages` here is the conversation before this new prompt.
+    const history = messages.map((m) => ({ role: m.role, text: m.text }));
+
     setMessages((prev) => [...prev, userMsg]);
     setInput("");
     setLoading(true);
 
     try {
-      const aiMsg = await askAiLegalGuidance(prompt);
+      const aiMsg = await askAiLegalGuidance(prompt, history);
       setMessages((prev) => [...prev, aiMsg]);
+    } catch (err) {
+      // Show the backend's real reason (e.g. "AI assistant is not configured",
+      // "The assistant is busy right now") instead of a generic message — it
+      // tells the lawyer whether to retry or whether setup is incomplete.
+      const serverMessage =
+        (axios.isAxiosError(err) &&
+          (err.response?.data as { message?: string } | undefined)?.message) ||
+        "Couldn't reach the assistant. Check your connection and try again.";
+
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `ai-err-${Date.now()}`,
+          role: "ai",
+          text: serverMessage,
+          time: formatDate(new Date(), "time"),
+          kind: "error",
+        },
+      ]);
     } finally {
       setLoading(false);
     }
   };
 
-  const showSuggestions = messages.length === 2;
+  // Show the starter prompts until the lawyer sends their first message.
+  const showSuggestions = !messages.some((m) => m.role === "user");
 
   return (
     <LawyerLayout
@@ -76,22 +117,34 @@ export default function AiLegalGuidance() {
         <div className="flex-1 overflow-y-auto scrollbar-hide" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
           <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
             <div className="space-y-4">
-              {messages.map((m) => (
+              {messages.map((m) => {
+                const isError = m.kind === "error";
+                return (
                 <div
                   key={m.id}
                   className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}
                 >
                   {m.role === "ai" && (
-                    <div className="w-8 h-8 rounded-full bg-purple-600 flex items-center justify-center text-white text-xs font-bold flex-shrink-0 mr-3">
-                      <Lightbulb className="w-5 h-5" />
+                    <div
+                      className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0 mr-3 ${
+                        isError ? "bg-amber-500" : "bg-purple-600"
+                      }`}
+                    >
+                      {isError ? (
+                        <AlertCircle className="w-5 h-5" />
+                      ) : (
+                        <Lightbulb className="w-5 h-5" />
+                      )}
                     </div>
                   )}
-                  
+
                   <div>
                     <div
                       className={`max-w-xl rounded-2xl p-4 ${
                         m.role === "user"
                           ? "bg-[#01411C] text-white rounded-br-none"
+                          : isError
+                          ? "bg-amber-50 text-amber-900 border-l-4 border-amber-500 rounded-bl-none"
                           : "bg-purple-100 text-gray-900 border-l-4 border-purple-600 rounded-bl-none"
                       }`}
                     >
@@ -101,8 +154,20 @@ export default function AiLegalGuidance() {
                         </div>
                       )}
 
-                      <p className="text-sm whitespace-pre-line leading-relaxed">{m.text}</p>
-                      <p className={`text-xs mt-2 ${m.role === "user" ? "text-white opacity-70" : "text-purple-700 opacity-75"}`}>{m.time}</p>
+                      <p className="text-sm whitespace-pre-line leading-relaxed">
+                        {m.role === "ai" && !isError ? renderRichText(m.text) : m.text}
+                      </p>
+                      <p
+                        className={`text-xs mt-2 ${
+                          m.role === "user"
+                            ? "text-white opacity-70"
+                            : isError
+                            ? "text-amber-700 opacity-80"
+                            : "text-purple-700 opacity-75"
+                        }`}
+                      >
+                        {m.time}
+                      </p>
                     </div>
                   </div>
 
@@ -112,12 +177,20 @@ export default function AiLegalGuidance() {
                     </div>
                   )}
                 </div>
-              ))}
+                );
+              })}
 
               {loading && (
                 <div className="flex justify-start">
-                  <div className="max-w-xl rounded-2xl p-4 bg-white border border-gray-200">
-                    <p className="text-sm text-gray-600">AI is thinking…</p>
+                  <div className="w-8 h-8 rounded-full bg-purple-600 flex items-center justify-center text-white flex-shrink-0 mr-3">
+                    <Lightbulb className="w-5 h-5" />
+                  </div>
+                  <div className="rounded-2xl rounded-bl-none p-4 bg-purple-100 border-l-4 border-purple-600">
+                    <span className="flex items-center gap-1">
+                      <span className="w-2 h-2 rounded-full bg-purple-500 animate-bounce [animation-delay:-0.3s]" />
+                      <span className="w-2 h-2 rounded-full bg-purple-500 animate-bounce [animation-delay:-0.15s]" />
+                      <span className="w-2 h-2 rounded-full bg-purple-500 animate-bounce" />
+                    </span>
                   </div>
                 </div>
               )}
@@ -164,8 +237,13 @@ export default function AiLegalGuidance() {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && send()}
-                placeholder="Ask about legal procedures, documents, or case guidance…"
-                className="flex-1 rounded-lg sm:rounded-xl border-2 border-gray-300 bg-white px-3 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm outline-none focus:border-[#01411C] focus:ring-2 focus:ring-[#01411C]/20 transition-colors"
+                disabled={loading}
+                placeholder={
+                  loading
+                    ? "Waiting for the assistant…"
+                    : "Ask about your civil or family case (documents, procedure, drafting)…"
+                }
+                className="flex-1 rounded-lg sm:rounded-xl border-2 border-gray-300 bg-white px-3 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm outline-none focus:border-[#01411C] focus:ring-2 focus:ring-[#01411C]/20 transition-colors disabled:bg-gray-100 disabled:cursor-not-allowed"
               />
 
               <button

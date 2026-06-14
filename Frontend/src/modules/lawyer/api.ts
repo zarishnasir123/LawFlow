@@ -10,8 +10,8 @@ import type {
   RegisterResponse,
   VerificationResponse,
 } from "../auth/types";
-import { generateAiMockResponse } from "./data/aiGuidance.mock";
-import type { AiChatMessage } from "./data/aiGuidance.mock";
+import type { AiChatMessage, AiChatRole } from "./data/aiGuidance";
+import { formatDate } from "../../shared/utils/formatDate";
 
 export async function registerLawyer(
   payload: LawyerRegisterPayload
@@ -112,14 +112,26 @@ export async function uploadLawyerBarLicenseCard(
   return data;
 }
 
-// AI Legal Guidance API
-export async function askAiLegalGuidance(prompt: string): Promise<AiChatMessage> {
-  // TODO: Replace with actual backend API call
-  // const { data } = await apiClient.post<AiChatMessage>("/ai/guidance", { prompt });
-  // return data;
-  
-  // For now, use mock response
-  return generateAiMockResponse(prompt);
+// AI Legal Guidance — calls the backend, which proxies to Google Gemini
+// grounded in LawFlow's case templates. The backend returns plain reply text;
+// we wrap it into a chat message (id + timestamp) for the UI. `history` carries
+// the recent conversation so follow-up questions keep context.
+export async function askAiLegalGuidance(
+  prompt: string,
+  history: { role: AiChatRole; text: string }[] = []
+): Promise<AiChatMessage> {
+  const { data } = await apiClient.post<{ reply: string }>("/ai/guidance", {
+    prompt,
+    history,
+  });
+
+  return {
+    id: `ai-${Date.now()}`,
+    role: "ai",
+    text: data.reply,
+    time: formatDate(new Date(), "time"),
+    kind: "message",
+  };
 }
 
 import type { ChatMessage, LawyerChatThread, SendMessagePayload } from "../../types/chat";
