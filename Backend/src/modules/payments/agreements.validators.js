@@ -60,4 +60,14 @@ export const createPaymentPlanValidator = [
   body("installmentCount")
     .isInt({ min: 1, max: 48 })
     .withMessage("Installment count must be between 1 and 48"),
+  // Optional lawyer-customized schedule: each row may carry a due date. Amounts
+  // are always recomputed server-side, so only the date matters here.
+  body("installments")
+    .optional()
+    .isArray({ max: 48 })
+    .withMessage("Installments must be an array"),
+  body("installments.*.dueDate")
+    .optional()
+    .matches(/^\d{4}-\d{2}-\d{2}$/)
+    .withMessage("Each installment requires a valid due date (YYYY-MM-DD)"),
 ];

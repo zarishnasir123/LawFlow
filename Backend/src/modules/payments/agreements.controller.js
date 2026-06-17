@@ -153,7 +153,7 @@ export async function listLawyerAgreementCasesHandler(req, res) {
 
 export async function createPaymentPlanHandler(req, res) {
   const { caseId } = req.params;
-  const { totalAmount, installmentCount } = req.body;
+  const { totalAmount, installmentCount, installments } = req.body;
   const lawyerUserId = req.user.sub;
 
   try {
@@ -162,6 +162,7 @@ export async function createPaymentPlanHandler(req, res) {
       lawyerUserId,
       totalAmount,
       installmentCount,
+      installments,
     });
 
     const snapshot = await getAgreementSnapshot(

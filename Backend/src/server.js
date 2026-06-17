@@ -3,6 +3,7 @@ import "dotenv/config";
 import app from "./app.js";
 import { pool } from "./config/db.js";
 import { warmEmailTransport } from "./services/email.service.js";
+import { startScheduledJobs } from "./scheduler.js";
 
 const port = process.env.PORT || 5000;
 
@@ -12,6 +13,9 @@ async function startServer() {
 
   app.listen(port, () => {
     console.log(`LawFlow backend running on port ${port}`);
+
+    // Background jobs (overdue payment reminders, etc.).
+    startScheduledJobs();
 
     // Enable this temporarily when debugging SMTP setup.
     // const emailConfig = getEmailDeliveryConfig();

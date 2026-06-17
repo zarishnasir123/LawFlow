@@ -17,6 +17,8 @@ CREATE EXTENSION IF NOT EXISTS "citext";
 DROP TABLE IF EXISTS ai_chat_messages               CASCADE;
 DROP TABLE IF EXISTS ai_chat_sessions               CASCADE;
 DROP TABLE IF EXISTS notifications                  CASCADE;
+DROP TABLE IF EXISTS platform_settings              CASCADE;
+DROP TABLE IF EXISTS payouts                         CASCADE;
 DROP TABLE IF EXISTS payment_receipts               CASCADE;
 DROP TABLE IF EXISTS payment_transactions           CASCADE;
 DROP TABLE IF EXISTS installments                   CASCADE;
@@ -740,6 +742,11 @@ CREATE TABLE installments (
   -- installment. Provider-neutral name so the column survives a gateway change.
   gateway_checkout_token VARCHAR(255),
 
+  -- When we last emailed an overdue reminder for this installment. NULL = never
+  -- reminded. The scheduler uses this to space recurring overdue reminders and
+  -- to avoid sending duplicates (see overdueReminders.service.js).
+  last_overdue_reminder_at TIMESTAMP,
+
   created_at TIMESTAMP NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
@@ -764,6 +771,13 @@ CREATE TABLE payment_transactions (
   gateway_checkout_token VARCHAR(255),
   gateway_reference VARCHAR(255),
 
+  -- Marketplace split, snapshotted at record time so historical rows stay
+  -- accurate if the platform commission rate later changes. commission_rate is
+  -- a percentage (e.g. 10.00); platform_fee_amount + lawyer_net_amount = amount.
+  commission_rate     NUMERIC(5, 2),
+  platform_fee_amount NUMERIC(12, 2),
+  lawyer_net_amount   NUMERIC(12, 2),
+
   created_at TIMESTAMP NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
 
@@ -787,6 +801,53 @@ CREATE TABLE payment_receipts (
 
   issued_at TIMESTAMP NOT NULL DEFAULT NOW(),
   created_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+-- =====================================================================
+-- Platform settings (singleton row, id pinned to 1). Holds the marketplace
+-- commission rate the platform keeps from each client payment.
+-- =====================================================================
+CREATE TABLE platform_settings (
+  id              SMALLINT PRIMARY KEY DEFAULT 1,
+  commission_rate NUMERIC(5, 2) NOT NULL DEFAULT 10.00,
+  updated_at      TIMESTAMP NOT NULL DEFAULT NOW(),
+  CONSTRAINT platform_settings_singleton CHECK (id = 1),
+  -- A commission rate outside 0–100% would corrupt the payment split.
+  CONSTRAINT platform_settings_rate_range CHECK (commission_rate >= 0 AND commission_rate <= 100)
+);
+
+INSERT INTO platform_settings (id, commission_rate) VALUES (1, 10.00);
+
+-- =====================================================================
+-- Payouts: the platform settling a lawyer's accumulated net earnings to their
+-- bank account. One row per payout. A lawyer's available balance is DERIVED
+-- (sum of lawyer_net_amount from successful transactions) minus payouts that
+-- are not cancelled/failed. Bank details are snapshotted from lawyer_profiles
+-- at request time so a later profile edit doesn't rewrite history.
+-- =====================================================================
+CREATE TABLE payouts (
+  id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  lawyer_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+
+  amount   NUMERIC(12, 2) NOT NULL,
+  currency VARCHAR(3) NOT NULL DEFAULT 'PKR',
+  status   VARCHAR(20) NOT NULL DEFAULT 'requested'
+    CHECK (status IN ('requested', 'processing', 'paid', 'failed', 'cancelled')),
+
+  -- Snapshot of the destination bank account at request time.
+  payout_account_title  VARCHAR(150),
+  payout_account_number VARCHAR(50),
+  payout_bank_name      VARCHAR(150),
+
+  -- Filled when the admin marks the payout paid/failed.
+  reference             VARCHAR(255),
+  note                  TEXT,
+  processed_by_admin_id UUID REFERENCES users(id) ON DELETE SET NULL,
+
+  requested_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  processed_at TIMESTAMP,
+  created_at   TIMESTAMP NOT NULL DEFAULT NOW(),
+  updated_at   TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
 -- =====================================================================
@@ -876,6 +937,10 @@ CREATE INDEX idx_installments_payment_plan_id ON installments(payment_plan_id);
 CREATE INDEX idx_installments_agreement_id ON installments(agreement_id);
 CREATE INDEX idx_installments_status ON installments(status);
 CREATE INDEX idx_installments_due_date ON installments(due_date);
+-- A Safepay checkout tracker belongs to exactly one installment; enforce it so a
+-- token can never resolve to two installments (defense-in-depth for recording).
+CREATE UNIQUE INDEX uq_installments_gateway_token
+  ON installments(gateway_checkout_token) WHERE gateway_checkout_token IS NOT NULL;
 
 CREATE INDEX idx_payment_transactions_case_id
   ON payment_transactions(case_id, created_at DESC);
@@ -889,6 +954,10 @@ CREATE INDEX idx_payment_transactions_installment_id
 CREATE INDEX idx_payment_receipts_case_id ON payment_receipts(case_id);
 CREATE INDEX idx_payment_receipts_client_user_id ON payment_receipts(client_user_id);
 CREATE INDEX idx_payment_receipts_lawyer_user_id ON payment_receipts(lawyer_user_id);
+
+-- Payout queue + a lawyer's own payout history, newest first.
+CREATE INDEX idx_payouts_lawyer_status
+  ON payouts(lawyer_user_id, status, created_at DESC);
 
 -- =====================================================================
 -- Row Level Security: deny by default on every table.
@@ -920,6 +989,8 @@ ALTER TABLE payment_plans                  ENABLE ROW LEVEL SECURITY;
 ALTER TABLE installments                   ENABLE ROW LEVEL SECURITY;
 ALTER TABLE payment_transactions           ENABLE ROW LEVEL SECURITY;
 ALTER TABLE payment_receipts               ENABLE ROW LEVEL SECURITY;
+ALTER TABLE platform_settings              ENABLE ROW LEVEL SECURITY;
+ALTER TABLE payouts                        ENABLE ROW LEVEL SECURITY;
 ALTER TABLE notifications                  ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ai_chat_sessions               ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ai_chat_messages               ENABLE ROW LEVEL SECURITY;
