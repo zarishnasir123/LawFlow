@@ -587,6 +587,68 @@ export function queueAccountDeactivatedEmail(params) {
   );
 }
 
+// --- Overdue installment reminders (sent by the scheduler, to client + lawyer) ---
+
+export function sendInstallmentOverdueClientEmail({
+  email,
+  firstName,
+  caseTitle,
+  installmentLabel,
+  amount,
+  dueDateLabel,
+  daysOverdue,
+  paymentsUrl,
+}) {
+  const days = Number.isFinite(daysOverdue) ? Math.max(0, daysOverdue) : 0;
+  return send(email, `Payment overdue: ${installmentLabel} for "${caseTitle}"`, "installmentOverdueClient", {
+    firstName: firstName || "there",
+    caseTitle,
+    installmentLabel,
+    amount: Number(amount || 0).toLocaleString(),
+    dueDateLabel,
+    daysOverdue: days,
+    daysOverdueSuffix: days === 1 ? "" : "s",
+    paymentsUrl: paymentsUrl || `${getFrontendUrl()}/login`,
+  });
+}
+
+export function queueInstallmentOverdueClientEmail(params) {
+  return queueEmailTask("installment-overdue-client", () =>
+    sendInstallmentOverdueClientEmail(params)
+  );
+}
+
+export function sendInstallmentOverdueLawyerEmail({
+  email,
+  firstName,
+  clientName,
+  caseTitle,
+  installmentLabel,
+  amount,
+  dueDateLabel,
+  daysOverdue,
+  paymentsUrl,
+}) {
+  const days = Number.isFinite(daysOverdue) ? Math.max(0, daysOverdue) : 0;
+  return send(email, `Client payment overdue on "${caseTitle}"`, "installmentOverdueLawyer", {
+    firstName: firstName || "Counsel",
+    clientName: clientName || "Your client",
+    caseTitle,
+    installmentLabel,
+    amount: Number(amount || 0).toLocaleString(),
+    dueDateLabel,
+    daysOverdue: days,
+    daysOverdueSuffix: days === 1 ? "" : "s",
+    paymentsUrl: paymentsUrl || `${getFrontendUrl()}/login`,
+  });
+}
+
+export function queueInstallmentOverdueLawyerEmail(params) {
+  return queueEmailTask("installment-overdue-lawyer", () =>
+    sendInstallmentOverdueLawyerEmail(params)
+  );
+}
+
 export async function warmEmailTransport() {
   preloadEmailTemplates(["verificationOtp"]);
 

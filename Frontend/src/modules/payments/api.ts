@@ -115,7 +115,13 @@ export const getLawyerCaseAgreementContext = getLawyerCasePaymentContext;
 
 export const createPaymentPlan = async (
   caseId: string,
-  payload: { totalAmount: number; installmentCount: number }
+  payload: {
+    totalAmount: number;
+    installmentCount: number;
+    // Optional lawyer-customized due dates (one per installment, YYYY-MM-DD).
+    // Amounts stay system-computed; only the dates are honoured.
+    installments?: { dueDate: string }[];
+  }
 ) => {
   const { data } = await apiClient.post(
     `/payments/lawyer/cases/${caseId}/payment-plan`,
@@ -182,6 +188,24 @@ export const createCheckoutSession = async (installmentData: {
     installmentData
   );
   return data.data as { sessionId: string; sessionUrl: string };
+};
+
+// Called after Safepay redirects the browser back to the app. Safepay's hosted
+// checkout appends `order_id` (our installment id) to the return URL; the
+// backend looks up that installment's tracker and asks Safepay (server-to-
+// server) whether it was actually paid, then records it. A `tracker` may be
+// passed instead for the older signed-redirect flow.
+export const confirmPayment = async (payload: {
+  orderId?: string;
+  tracker?: string;
+  reference?: string | null;
+}) => {
+  const { data } = await apiClient.post("/payments/confirm", payload);
+  return data as {
+    recorded: boolean;
+    duplicate: boolean;
+    pending?: boolean;
+  };
 };
 
 export const getPaymentTransactions = async (caseId?: string) => {

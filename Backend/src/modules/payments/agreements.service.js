@@ -24,7 +24,9 @@ function mapInstallment(row) {
 export function buildEqualMonthlyInstallments(totalAmount, installmentCount) {
   const total = roundMoney(totalAmount);
   const count = Math.max(1, Number(installmentCount) || 1);
-  const perInstallment = roundMoney(total / count);
+  // Whole-rupee installments (no paisa). The final installment absorbs any
+  // remainder so the parts still sum exactly to the total.
+  const perInstallment = Math.floor(total / count);
   const rows = [];
   const now = new Date();
   let allocated = 0;
@@ -256,14 +258,17 @@ export async function createAgreementWithInstallments({
   let normalizedInstallments = installments;
   if (!normalizedInstallments?.length) {
     const count = Math.max(1, Number(installmentCount) || 1);
-    const amountEach = roundMoney(installmentTarget / count);
+    // Whole-rupee installments (no paisa); the last absorbs the remainder so
+    // they sum to the target exactly.
+    const amountEach = Math.floor(installmentTarget / count);
     normalizedInstallments = [];
     const now = new Date();
+    let allocated = 0;
     for (let i = 1; i <= count; i += 1) {
-      let dueDate = new Date(now);
-      if (frequency === "monthly") {
-        dueDate = new Date(now.getFullYear(), now.getMonth() + i, now.getDate());
-      } else if (frequency === "quarterly") {
+      const amount = i === count ? roundMoney(installmentTarget - allocated) : amountEach;
+      allocated = roundMoney(allocated + amount);
+      let dueDate;
+      if (frequency === "quarterly") {
         dueDate = new Date(now.getFullYear(), now.getMonth() + i * 3, now.getDate());
       } else if (frequency === "semi_annual") {
         dueDate = new Date(now.getFullYear(), now.getMonth() + i * 6, now.getDate());
@@ -271,7 +276,7 @@ export async function createAgreementWithInstallments({
         dueDate = new Date(now.getFullYear(), now.getMonth() + i, now.getDate());
       }
       normalizedInstallments.push({
-        amount: amountEach,
+        amount,
         dueDate: dueDate.toISOString().slice(0, 10),
       });
     }
@@ -322,26 +327,11 @@ export async function createAgreementWithInstallments({
     const paymentPlan = paymentPlanResult.rows[0];
     const createdInstallments = [];
 
-    if (baseFee > 0) {
-      const baseFeeResult = await client.query(
-        `INSERT INTO installments (
-          payment_plan_id,
-          agreement_id,
-          installment_number,
-          amount,
-          due_date,
-          status
-        )
-        VALUES ($1, $2, 0, $3, CURRENT_DATE, 'pending')
-        RETURNING *`,
-        [
-          paymentPlan.id,
-          agreement.id,
-          baseFee,
-        ]
-      );
-      createdInstallments.push(baseFeeResult.rows[0]);
-    }
+    // NOTE: the lawyer's configured case charge (baseFee) is stored on the
+    // agreement (lawyer_base_fee) for reference ONLY — it is NOT billed as a
+    // separate "Service Charge" installment. The client pays exactly the agreed
+    // installment plan (which already equals the full agreed total). Pre-filling
+    // the plan total from the configured fee happens in the lawyer UI.
 
     for (let i = 0; i < scheduleForInsert.length; i += 1) {
       const inst = scheduleForInsert[i];
@@ -398,9 +388,16 @@ export async function createPaymentPlanForCase({
   lawyerUserId,
   totalAmount,
   installmentCount,
+  installments: providedInstallments,
 }) {
   const total = roundMoney(totalAmount);
-  const count = Math.max(1, Number(installmentCount) || 1);
+  // When the lawyer customizes the schedule, the number of rows they send is
+  // the source of truth for the count; otherwise use the requested count.
+  const hasCustomSchedule =
+    Array.isArray(providedInstallments) && providedInstallments.length > 0;
+  const count = hasCustomSchedule
+    ? providedInstallments.length
+    : Math.max(1, Number(installmentCount) || 1);
 
   if (total <= 0) {
     throw new ApiError(400, "Total amount must be greater than zero");
@@ -440,7 +437,20 @@ export async function createPaymentPlanForCase({
     throw new ApiError(409, "A payment plan already exists for this case");
   }
 
-  const installments = buildEqualMonthlyInstallments(total, count);
+  // Amounts are always system-computed (equal whole-rupee split, last absorbs
+  // the remainder) so the schedule sums to the total exactly — the lawyer only
+  // controls the due dates. Each row defaults to a monthly cadence and is
+  // overridden by the lawyer-chosen date when one was supplied.
+  const baseSchedule = buildEqualMonthlyInstallments(total, count);
+  const installments = baseSchedule.map((row, index) => {
+    const customDueDate = hasCustomSchedule
+      ? providedInstallments[index]?.dueDate
+      : null;
+    return {
+      amount: row.amount,
+      dueDate: customDueDate || row.dueDate,
+    };
+  });
 
   return createAgreementWithInstallments({
     caseId,

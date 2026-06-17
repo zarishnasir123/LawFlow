@@ -11,3 +11,6 @@ tmp/
 *.pem
 *.key
 *.cert
+
+# Local-only Chunk 1 verification script (not for GitHub)
+src/scripts/verifyChunk1.js

@@ -8,6 +8,7 @@ import PaymentSummaryCard from "../components/PaymentSummaryCard";
 import ReceiptsList from "../components/ReceiptsList";
 import TransactionHistoryList from "../components/TransactionHistoryList";
 import {
+  confirmPayment,
   getAgreementsByCase,
   getClientAgreements,
   getPaymentReceipts,
@@ -114,8 +115,13 @@ export default function ClientCasePaymentsPage() {
 
   useEffect(() => {
     const search = new URLSearchParams(window.location.search);
+    // Safepay's hosted checkout returns with `order_id` (our installment id);
+    // the older signed flow used tracker + sig. `payment` is our own legacy flag.
+    const orderId = search.get("order_id");
+    const tracker = search.get("tracker");
+    const reference = search.get("reference");
     const outcome = search.get("payment");
-    if (!outcome) return;
+    if (!orderId && !tracker && !outcome) return;
 
     let cancelled = false;
 
@@ -134,18 +140,11 @@ export default function ClientCasePaymentsPage() {
       }
     };
 
+    const sleep = (ms: number) =>
+      new Promise((resolve) => setTimeout(resolve, ms));
+
     (async () => {
-      if (outcome === "success") {
-        // Safepay's signed return was already verified by the backend, which
-        // recorded the payment + receipt before redirecting here. Just refresh.
-        setConfirmingPayment(true);
-        setFeedback({
-          text: "Payment successful. Your receipt is available below.",
-          tone: "success",
-        });
-        await refreshPaymentData(activeCaseId || selectedCaseId);
-        if (!cancelled) setConfirmingPayment(false);
-      } else if (outcome === "cancel") {
+      if (outcome === "cancel") {
         setFeedback({
           text: "Payment was cancelled. You can try again whenever you're ready.",
           tone: "info",
@@ -155,10 +154,53 @@ export default function ClientCasePaymentsPage() {
           text: "We couldn't confirm your payment. If any amount was deducted, it will reflect shortly.",
           tone: "info",
         });
+      } else if (orderId || tracker) {
+        // Confirm with the backend, which asks Safepay (server-to-server)
+        // whether the payment truly completed, then records it. Retry a few
+        // times in case Safepay is still settling when we land back.
+        setConfirmingPayment(true);
+        const payload = orderId
+          ? { orderId }
+          : { tracker: tracker ?? undefined, reference };
+        let recorded = false;
+        for (let attempt = 0; attempt < 4 && !cancelled; attempt += 1) {
+          try {
+            const result = await confirmPayment(payload);
+            if (result.recorded || result.duplicate) {
+              recorded = true;
+              break;
+            }
+          } catch {
+            // network hiccup — fall through to retry
+          }
+          await sleep(2000);
+        }
+        setFeedback(
+          recorded
+            ? {
+                text: "Payment successful. Your receipt is available below.",
+                tone: "success",
+              }
+            : {
+                text: "We're still confirming your payment. If any amount was deducted, it will reflect here shortly.",
+                tone: "info",
+              }
+        );
+        await refreshPaymentData(activeCaseId || selectedCaseId);
+        if (!cancelled) setConfirmingPayment(false);
+      } else if (outcome === "success") {
+        // Legacy backend-return path (still supported): already recorded server-side.
+        setConfirmingPayment(true);
+        setFeedback({
+          text: "Payment successful. Your receipt is available below.",
+          tone: "success",
+        });
+        await refreshPaymentData(activeCaseId || selectedCaseId);
+        if (!cancelled) setConfirmingPayment(false);
       }
       const url = new URL(window.location.href);
-      ["payment", "session_id", "tracker", "sig", "reference"].forEach((key) =>
-        url.searchParams.delete(key)
+      ["payment", "session_id", "order_id", "tracker", "sig", "reference"].forEach(
+        (key) => url.searchParams.delete(key)
       );
       window.history.replaceState({}, "", `${url.pathname}${url.search}`);
     })();

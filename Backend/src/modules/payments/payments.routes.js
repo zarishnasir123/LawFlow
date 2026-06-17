@@ -3,6 +3,7 @@ import { asyncHandler } from "../../middleware/asyncHandler.js";
 import { authenticate } from "../../middleware/authenticate.js";
 import { authorizeRoles } from "../../middleware/authorizeRoles.js";
 import {
+  confirmPayment,
   createCheckoutSession,
   handleSafepayCancel,
   handleSafepayReturn,
@@ -18,6 +19,11 @@ router.post(
   authorizeRoles("client"),
   asyncHandler(createCheckoutSession)
 );
+
+// The SPA calls this right after Safepay redirects the browser back to the app
+// with the signed tracker + sig. Verifies the signature and records the payment.
+// No auth — trust is the Safepay signature, like the return/webhook paths.
+router.post("/confirm", asyncHandler(confirmPayment));
 
 // Safepay redirects the browser back here after the user pays or cancels. No
 // auth middleware — the request is trusted via Safepay's signature, not the
