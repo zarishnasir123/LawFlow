@@ -221,7 +221,6 @@ CREATE TABLE lawyer_profiles (
   district_bar       VARCHAR(150) NOT NULL,
   bar_license_number VARCHAR(100) UNIQUE NOT NULL,
   experience_years   INTEGER DEFAULT 0,
-  consultation_fee   NUMERIC,
   -- Free-text "About" section the lawyer writes after registration
   -- to introduce themselves to potential clients on the public
   -- directory. Optional: registration never collects it (keeps the

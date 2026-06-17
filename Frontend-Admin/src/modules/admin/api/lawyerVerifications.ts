@@ -31,7 +31,6 @@ export type PendingLawyer = {
   districtBar: string;
   barLicenseNumber: string;
   experienceYears: number | null;
-  consultationFee: number | null;
   cnicMatch: boolean;
   cnicMatchRemarks: string | null;
   verificationStatus: "pending" | "approved" | "rejected" | "suspended";

@@ -297,17 +297,6 @@ export const updateMyProfileValidator = [
     .withMessage("Experience years must be a valid number")
     .toInt(),
 
-  body("consultationFee")
-    .optional({ nullable: true })
-    .isFloat({ min: 0 })
-    .withMessage("Consultation fee must be a valid amount")
-    .toFloat(),
-  body("consultation_fee")
-    .optional({ nullable: true })
-    .isFloat({ min: 0 })
-    .withMessage("Consultation fee must be a valid amount")
-    .toFloat(),
-
   // Short free-text intro shown on the client directory + lawyer
   // profile. Registration never collects this — the field only
   // exists on the Edit Profile form, so it's optional everywhere.
@@ -345,18 +334,6 @@ export const registerLawyerValidator = [
     .isInt({ min: 0, max: 80 })
     .withMessage("Experience years must be a valid number")
     .toInt(),
-
-  body("consultationFee")
-    .optional({ nullable: true })
-    .isFloat({ min: 0 })
-    .withMessage("Consultation fee must be a valid amount")
-    .toFloat(),
-
-  body("consultation_fee")
-    .optional({ nullable: true })
-    .isFloat({ min: 0 })
-    .withMessage("Consultation fee must be a valid amount")
-    .toFloat(),
 
   requireUploadedFile({
     field: "degreeDocument",

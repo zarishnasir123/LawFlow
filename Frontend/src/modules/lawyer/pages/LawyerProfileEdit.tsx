@@ -1,5 +1,5 @@
 import { useNavigate } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Trash2 } from "lucide-react";
 
@@ -52,7 +52,6 @@ interface FormState {
   specialization: string;
   districtBar: string;
   experienceYears: string;
-  consultationFee: string;
   bio: string;
 }
 
@@ -97,14 +96,6 @@ function buildPatch(initial: CurrentUser, form: FormState): UpdateMyProfilePaylo
     }
   }
 
-  const initialFee = initial.consultationFee !== null ? String(initial.consultationFee) : "";
-  if (form.consultationFee !== initialFee) {
-    const n = Number(form.consultationFee);
-    if (Number.isFinite(n) && n >= 0) {
-      patch.consultationFee = n;
-    }
-  }
-
   // Bio: empty string is a legitimate "clear it" signal, so we
   // forward whatever the user typed (including "") whenever it
   // differs from what we loaded. The backend treats "" as NULL.
@@ -114,6 +105,22 @@ function buildPatch(initial: CurrentUser, form: FormState): UpdateMyProfilePaylo
   }
 
   return patch;
+}
+
+// Seed values for the form, derived from the loaded user profile.
+function buildInitialForm(user: CurrentUser): FormState {
+  return {
+    firstName: user.firstName ?? "",
+    lastName: user.lastName ?? "",
+    email: user.email,
+    phone: user.phone ?? "",
+    cnic: user.cnic ?? "",
+    specialization: user.specialization ?? "",
+    districtBar: user.districtBar ?? "",
+    experienceYears:
+      user.experienceYears !== null ? String(user.experienceYears) : "",
+    bio: user.bio ?? "",
+  };
 }
 
 export default function LawyerProfileEdit() {
@@ -131,29 +138,12 @@ export default function LawyerProfileEdit() {
   const [avatarError, setAvatarError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  // Initialize form once when currentUser arrives. The `!form` check
-  // means later refetches don't blow away in-progress edits.
-  useEffect(() => {
-    if (!currentUser || form) return;
-    setForm({
-      firstName: currentUser.firstName ?? "",
-      lastName: currentUser.lastName ?? "",
-      email: currentUser.email,
-      phone: currentUser.phone ?? "",
-      cnic: currentUser.cnic ?? "",
-      specialization: currentUser.specialization ?? "",
-      districtBar: currentUser.districtBar ?? "",
-      experienceYears:
-        currentUser.experienceYears !== null
-          ? String(currentUser.experienceYears)
-          : "",
-      consultationFee:
-        currentUser.consultationFee !== null
-          ? String(currentUser.consultationFee)
-          : "",
-      bio: currentUser.bio ?? "",
-    });
-  }, [currentUser, form]);
+  // Seed the form once from the loaded user — during render rather than in an
+  // effect (react-hooks/set-state-in-effect). The `form === null` guard means
+  // later refetches don't blow away in-progress edits.
+  if (currentUser && form === null) {
+    setForm(buildInitialForm(currentUser));
+  }
 
   const mutation = useMutation({
     mutationFn: authApi.updateMyProfile,
@@ -373,13 +363,6 @@ export default function LawyerProfileEdit() {
                 value={form.experienceYears}
                 type="number"
                 onChange={(v) => handleChange("experienceYears", v)}
-              />
-
-              <EditableField
-                label="Consultation Fee"
-                value={form.consultationFee}
-                type="number"
-                onChange={(v) => handleChange("consultationFee", v)}
               />
             </div>
 

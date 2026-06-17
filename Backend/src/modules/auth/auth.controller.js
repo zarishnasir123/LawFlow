@@ -280,7 +280,6 @@ export async function updateMe(req, res) {
     specialization: req.body.specialization,
     districtBar: req.body.districtBar ?? req.body.district_bar,
     experienceYears: req.body.experienceYears ?? req.body.experience_years,
-    consultationFee: req.body.consultationFee ?? req.body.consultation_fee,
     bio: req.body.bio
   };
 

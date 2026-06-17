@@ -83,20 +83,13 @@ async function mapAuthUser(row) {
     lawyerVerificationStatus: row.lawyer_verification_status || null,
     // Lawyer-specific profile fields, surfaced for the lawyer's
     // own profile + edit pages. All null for non-lawyer roles
-    // (no lawyer_profiles row exists). consultation_fee comes
-    // back from Postgres NUMERIC as a string — coerce to a number
-    // so the frontend can render and round-trip it without an
-    // extra conversion step.
+    // (no lawyer_profiles row exists).
     specialization: row.lawyer_specialization || null,
     districtBar: row.lawyer_district_bar || null,
     barLicenseNumber: row.lawyer_bar_license_number || null,
     experienceYears:
       row.lawyer_experience_years !== null && row.lawyer_experience_years !== undefined
         ? Number(row.lawyer_experience_years)
-        : null,
-    consultationFee:
-      row.lawyer_consultation_fee !== null && row.lawyer_consultation_fee !== undefined
-        ? Number(row.lawyer_consultation_fee)
         : null,
     bio: row.lawyer_bio || null,
     // Registrar-profile fields, surfaced via the same /auth/me JOIN as
@@ -146,9 +139,6 @@ async function mapPendingLawyer(row) {
     districtBar: row.district_bar,
     barLicenseNumber: row.bar_license_number,
     experienceYears: row.experience_years,
-    consultationFee: row.consultation_fee !== null && row.consultation_fee !== undefined
-      ? Number(row.consultation_fee)
-      : null,
     cnicMatch: row.cnic_match,
     cnicMatchRemarks: row.cnic_match_remarks,
     verificationStatus: row.verification_status,
@@ -240,7 +230,6 @@ async function findAuthUserById(userId) {
       lawyer_profiles.district_bar AS lawyer_district_bar,
       lawyer_profiles.bar_license_number AS lawyer_bar_license_number,
       lawyer_profiles.experience_years AS lawyer_experience_years,
-      lawyer_profiles.consultation_fee AS lawyer_consultation_fee,
       lawyer_profiles.bio AS lawyer_bio,
       client_profiles.address AS address,
       client_profiles.city AS city,
@@ -700,7 +689,6 @@ export async function updateCurrentUser({ userId, patch }) {
         : undefined,
     district_bar: patch.districtBar !== undefined ? trim(patch.districtBar) : undefined,
     experience_years: patch.experienceYears !== undefined ? num(patch.experienceYears) : undefined,
-    consultation_fee: patch.consultationFee !== undefined ? num(patch.consultationFee) : undefined,
     // Bio: empty string clears the value (so a lawyer can wipe their
     // about-section); otherwise just trim and keep the user's text.
     bio: patch.bio !== undefined ? (trim(patch.bio) || null) : undefined
@@ -727,7 +715,7 @@ export async function updateCurrentUser({ userId, patch }) {
   // verification_status, cnic_match, verified_by, or verified_at.
   // Those are either UNIQUE-constraint locked or admin-only — see
   // the editable-field table in the plan.
-  const lawyerProfileUpdates = ["specialization", "district_bar", "experience_years", "consultation_fee", "bio"]
+  const lawyerProfileUpdates = ["specialization", "district_bar", "experience_years", "bio"]
     .filter((col) => normalized[col] !== undefined);
 
   // Empty PATCH is a no-op — just return the current state.
@@ -1135,7 +1123,6 @@ async function listLawyerVerificationsByStatus({ statuses, limit, offset }) {
       lawyer_profiles.district_bar,
       lawyer_profiles.bar_license_number,
       lawyer_profiles.experience_years,
-      lawyer_profiles.consultation_fee,
       lawyer_profiles.cnic_match,
       lawyer_profiles.cnic_match_remarks,
       lawyer_profiles.verification_status,

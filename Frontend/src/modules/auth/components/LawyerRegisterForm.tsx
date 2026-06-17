@@ -141,7 +141,6 @@ export default function LawyerRegisterForm() {
       districtBar: values.districtBar,
       barLicenseNumber: values.barLicenseNumber,
       experienceYears: null,
-      consultationFee: null,
       password: values.password,
       confirmPassword: values.confirmPassword,
 
