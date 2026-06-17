@@ -14,7 +14,6 @@ export type DirectoryLawyer = {
   specialization: string | null;
   districtBar: string | null;
   experienceYears: number | null;
-  consultationFee: number | null;
   // Free-text "About" written by the lawyer after registration.
   // Null when they haven't filled it in yet — the UI then renders
   // a generic fallback line instead of an empty section.

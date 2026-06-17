@@ -112,18 +112,6 @@ export default function LawyerCard({
             </div>
           </div>
 
-          {/* Fee badge — top-right. Right-aligned text so multi-card
-              rows line up vertically. */}
-          <div className="text-right">
-            <p className="text-[10px] font-medium uppercase tracking-wider text-gray-400">
-              From
-            </p>
-            <p className="text-base font-semibold text-gray-900">
-              {lawyer.consultationFee !== null && lawyer.consultationFee !== undefined
-                ? `Rs ${lawyer.consultationFee.toLocaleString()}`
-                : "On request"}
-            </p>
-          </div>
         </div>
 
         {/* KPI strip — three facts inline with icons. Inline rather

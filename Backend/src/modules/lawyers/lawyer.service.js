@@ -33,12 +33,6 @@ async function mapDirectoryLawyer(row) {
       row.experience_years !== null && row.experience_years !== undefined
         ? Number(row.experience_years)
         : null,
-    // Postgres NUMERIC comes back as a string — coerce so the
-    // frontend can render and format it without an extra step.
-    consultationFee:
-      row.consultation_fee !== null && row.consultation_fee !== undefined
-        ? Number(row.consultation_fee)
-        : null,
     // Bio is included on both list and detail so the directory card
     // can show a preview snippet later if the design calls for one.
     // Null when the lawyer hasn't filled it in yet.
@@ -96,7 +90,6 @@ export async function listApprovedLawyers({
       lawyer_profiles.specialization,
       lawyer_profiles.district_bar,
       lawyer_profiles.experience_years,
-      lawyer_profiles.consultation_fee,
       lawyer_profiles.bio,
       COUNT(*) OVER () AS total_count
     FROM lawyer_profiles
@@ -150,7 +143,6 @@ export async function getApprovedLawyerById(lawyerProfileId) {
       lawyer_profiles.specialization,
       lawyer_profiles.district_bar,
       lawyer_profiles.experience_years,
-      lawyer_profiles.consultation_fee,
       lawyer_profiles.bio
     FROM lawyer_profiles
     JOIN users ON users.id = lawyer_profiles.user_id

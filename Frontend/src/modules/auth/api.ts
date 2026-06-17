@@ -13,8 +13,8 @@ type ResetPasswordPayload = {
 // only the keys actually included are sent to the backend, and only
 // those columns get updated server-side. Address / city / tehsil
 // write through to client_profiles; specialization / districtBar /
-// experienceYears / consultationFee write through to lawyer_profiles
-// (role-gated server-side); the rest write to users.
+// experienceYears write through to lawyer_profiles (role-gated
+// server-side); the rest write to users.
 //
 // barLicenseNumber is deliberately absent — it's UNIQUE + tied to
 // the lawyer's verification, so changing it would require a re-
@@ -32,7 +32,6 @@ export type UpdateMyProfilePayload = {
   specialization?: "Civil" | "Family";
   districtBar?: string;
   experienceYears?: number;
-  consultationFee?: number;
   // Lawyer's free-text About section. Empty string clears it,
   // non-empty saves a trimmed copy.
   bio?: string;

@@ -35,8 +35,8 @@ function capitalize(value: string | null | undefined): string {
 }
 
 // Render a numeric field as a string. Returns "" when null so the
-// ProfileField doesn't show "null"; renders 0 explicitly so we
-// don't lie about a lawyer who set their consultation fee to free.
+// ProfileField doesn't show "null"; renders 0 explicitly rather than
+// hiding a genuine zero value.
 function num(value: number | null | undefined): string {
   if (value === null || value === undefined) return "";
   return String(value);
@@ -133,7 +133,6 @@ export default function LawyerProfile() {
             <ProfileField label="District Bar" value={currentUser.districtBar ?? ""} />
             <ProfileField label="Bar License Number" value={currentUser.barLicenseNumber ?? ""} />
             <ProfileField label="Experience (years)" value={num(currentUser.experienceYears)} />
-            <ProfileField label="Consultation Fee" value={num(currentUser.consultationFee)} />
           </div>
 
           {/* About — read-only mirror of what clients see in the

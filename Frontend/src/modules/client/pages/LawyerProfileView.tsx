@@ -233,19 +233,6 @@ export default function LawyerProfileView() {
             </div>
 
             <div className="space-y-6">
-              <div className="rounded-2xl border border-emerald-100 bg-white p-5 shadow-sm">
-                <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
-                  Consultation Fee
-                </p>
-                <p className="mt-2 text-2xl font-semibold text-gray-900">
-                  {lawyer.consultationFee !== null && lawyer.consultationFee !== undefined
-                    ? `Rs ${lawyer.consultationFee.toLocaleString()}`
-                    : "Fee on request"}
-                </p>
-                <p className="mt-1 text-xs text-gray-500">
-                  Fee may vary based on case complexity.
-                </p>
-              </div>
 
               {caseCharges?.charges && caseCharges.charges.length > 0 && (
                 <div className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">

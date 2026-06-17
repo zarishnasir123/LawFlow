@@ -117,9 +117,6 @@ async function insertFakeLawyer(client, lawyerRoleId, passwordHash) {
   const specialization = faker.helpers.arrayElement(SPECIALIZATIONS);
   const districtBar = faker.helpers.arrayElement(DISTRICT_BARS);
   const experienceYears = faker.number.int({ min: 1, max: 25 });
-  // Round to the nearest 1000 so the directory doesn't show
-  // awkward numbers like Rs 47,213.
-  const consultationFee = faker.number.int({ min: 5, max: 100 }) * 1000;
   const barLicenseNumber = `${FAKE_LICENSE_PREFIX}${randomUUID().slice(0, 8)}`;
   const bio = fakeBio(specialization);
 
@@ -141,17 +138,16 @@ async function insertFakeLawyer(client, lawyerRoleId, passwordHash) {
   await client.query(
     `INSERT INTO lawyer_profiles (
        user_id, specialization, district_bar, bar_license_number,
-       experience_years, consultation_fee, bio,
+       experience_years, bio,
        cnic_match, verification_status, verified_at
      )
-     VALUES ($1, $2, $3, $4, $5, $6, $7, true, 'approved', NOW())`,
+     VALUES ($1, $2, $3, $4, $5, $6, true, 'approved', NOW())`,
     [
       userId,
       specialization,
       districtBar,
       barLicenseNumber,
       experienceYears,
-      consultationFee,
       bio,
     ]
   );

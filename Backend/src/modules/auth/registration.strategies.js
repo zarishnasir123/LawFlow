@@ -158,7 +158,6 @@ export const registrationStrategies = {
         districtBar: optionalString(getField(payload, "districtBar", "district_bar")),
         barLicenseNumber: optionalString(getField(payload, "barLicenseNumber", "bar_license_number")),
         experienceYears: optionalNumber(getField(payload, "experienceYears", "experience_years"), 0),
-        consultationFee: optionalNumber(getField(payload, "consultationFee", "consultation_fee")),
         degreeDocument: mapDocumentReference(payload, "degreeDocument", [
           "lawDegreeDocUrl",
           "law_degree_doc_url"
@@ -188,12 +187,11 @@ export const registrationStrategies = {
           district_bar,
           bar_license_number,
           experience_years,
-          consultation_fee,
           cnic_match,
           cnic_match_remarks,
           verification_status
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending')
+        VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending')
         RETURNING id, verification_status, cnic_match`,
         [
           userId,
@@ -201,7 +199,6 @@ export const registrationStrategies = {
           profileData.districtBar,
           profileData.barLicenseNumber,
           profileData.experienceYears,
-          profileData.consultationFee,
           cnicMatch,
           cnicMatch
             ? "CNIC matched from license card OCR"

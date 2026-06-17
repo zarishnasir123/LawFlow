@@ -10,7 +10,6 @@ export type RegisterLawyerPayload = {
   districtBar: string;
   barLicenseNumber: string;
   experienceYears?: number | null;
-  consultationFee?: number | null;
   password: string;
   confirmPassword: string;
   degreeDocument: File;
@@ -66,7 +65,6 @@ export async function registerLawyer(payload: RegisterLawyerPayload) {
   formData.append("password", payload.password);
   formData.append("confirmPassword", payload.confirmPassword);
   appendOptional(formData, "experienceYears", payload.experienceYears);
-  appendOptional(formData, "consultationFee", payload.consultationFee);
 
   formData.append("degreeDocument", payload.degreeDocument);
   formData.append("licenseCardFrontImage", payload.licenseCardFrontImage);
