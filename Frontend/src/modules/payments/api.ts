@@ -315,6 +315,11 @@ export type LawyerPayout = {
   bankName: string | null;
   reference: string | null;
   note: string | null;
+  // Transfer proof the admin recorded when paying (the receipt image itself is
+  // admin-only; the lawyer just sees these typed details + reference).
+  transferDate: string | null;
+  transferBank: string | null;
+  hasReceipt: boolean;
   requestedAt: string;
   processedAt: string | null;
   createdAt: string;

@@ -7,9 +7,9 @@ export type PayoutStatus =
   | "failed"
   | "cancelled";
 
-// The statuses an admin can move a payout TO (everything except the lawyer's
-// starting "requested" state). Mirrors the backend update validator.
-export type PayoutTargetStatus = "processing" | "paid" | "failed" | "cancelled";
+// The statuses an admin sets via the generic PATCH endpoint. "paid" is NOT
+// here — it goes through the dedicated mark-paid endpoint (with transfer proof).
+export type PayoutPatchStatus = "processing" | "failed" | "cancelled";
 
 // One payout row as the admin queue sees it: the payout plus the lawyer it
 // belongs to and who processed it. Bank fields are the snapshot taken when the
@@ -24,6 +24,11 @@ export type AdminPayout = {
   bankName: string | null;
   reference: string | null;
   note: string | null;
+  // Transfer proof (set when marked paid). `hasReceipt` says whether a receipt
+  // image is on file; fetch its URL separately via getPayoutReceiptUrl.
+  transferDate: string | null;
+  transferBank: string | null;
+  hasReceipt: boolean;
   requestedAt: string;
   processedAt: string | null;
   createdAt: string;
@@ -45,11 +50,11 @@ export async function fetchPayouts(
 }
 
 export type UpdatePayoutInput = {
-  status: PayoutTargetStatus;
-  reference?: string;
+  status: PayoutPatchStatus;
   note?: string;
 };
 
+// Move a payout to processing / failed / cancelled (no proof needed).
 export async function updatePayout(
   payoutId: string,
   input: UpdatePayoutInput
@@ -59,4 +64,40 @@ export async function updatePayout(
     input
   );
   return data.data;
+}
+
+export type MarkPaidInput = {
+  reference: string;
+  transferDate: string; // YYYY-MM-DD
+  transferBank: string;
+  note?: string;
+  receipt: File;
+};
+
+// Mark a payout paid with proof: typed transfer details + a receipt file,
+// sent as multipart/form-data.
+export async function markPayoutPaid(
+  payoutId: string,
+  input: MarkPaidInput
+): Promise<AdminPayout> {
+  const form = new FormData();
+  form.append("reference", input.reference);
+  form.append("transferDate", input.transferDate);
+  form.append("transferBank", input.transferBank);
+  if (input.note) form.append("note", input.note);
+  form.append("receipt", input.receipt);
+
+  const { data } = await apiClient.post<{ data: AdminPayout }>(
+    `/admin/payouts/${payoutId}/mark-paid`,
+    form
+  );
+  return data.data;
+}
+
+// Admin-only short-lived signed URL to view a payout's receipt.
+export async function getPayoutReceiptUrl(payoutId: string): Promise<string> {
+  const { data } = await apiClient.get<{ url: string }>(
+    `/admin/payouts/${payoutId}/receipt`
+  );
+  return data.url;
 }

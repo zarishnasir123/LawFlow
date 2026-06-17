@@ -65,6 +65,18 @@ export async function upsertLawyerPayoutAccount(
 
 const round2 = (n) => Math.round(Number(n) * 100) / 100;
 
+// Normalise a DATE column to a plain 'YYYY-MM-DD' string. node-postgres hands
+// back DATE as a JS Date at LOCAL midnight, so we read local parts (not
+// toISOString, which would shift the day in non-UTC zones).
+function toDateString(value) {
+  if (!value) return null;
+  if (typeof value === "string") return value.slice(0, 10);
+  const d = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(d.getTime())) return null;
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
 // Every status a payout row can hold (matches the schema CHECK).
 export const PAYOUT_STATUSES = [
   "requested",
@@ -96,6 +108,12 @@ function mapPayoutRow(row) {
     bankName: row.payout_bank_name,
     reference: row.reference,
     note: row.note,
+    // Proof of the manual bank transfer (set when marked paid). The typed
+    // fields are safe to show the lawyer; the receipt itself is admin-only, so
+    // we only expose whether one exists here — never its path.
+    transferDate: toDateString(row.transfer_date),
+    transferBank: row.transfer_bank,
+    hasReceipt: Boolean(row.receipt_storage_path),
     requestedAt: row.requested_at,
     processedAt: row.processed_at,
     createdAt: row.created_at,
@@ -249,6 +267,13 @@ export async function transitionPayout({
   status,
   reference,
   note,
+  // Transfer-proof fields, only meaningful when status === 'paid'. The
+  // controller enforces which are required (and uploads the receipt first);
+  // the service just stores whatever it's given.
+  transferDate,
+  transferBank,
+  receiptBucket,
+  receiptPath,
 }) {
   if (!PAYOUT_STATUSES.includes(status)) {
     throw new ApiError(400, "Invalid payout status.");
@@ -288,6 +313,10 @@ export async function transitionPayout({
        SET status = $2,
            reference = COALESCE($3, reference),
            note = COALESCE($4, note),
+           transfer_date = COALESCE($7, transfer_date),
+           transfer_bank = COALESCE($8, transfer_bank),
+           receipt_storage_bucket = COALESCE($9, receipt_storage_bucket),
+           receipt_storage_path = COALESCE($10, receipt_storage_path),
            processed_by_admin_id =
              CASE WHEN $5 THEN $6 ELSE processed_by_admin_id END,
            processed_at = CASE WHEN $5 THEN NOW() ELSE processed_at END,
@@ -301,6 +330,10 @@ export async function transitionPayout({
         note ? String(note).trim().slice(0, 2000) : null,
         setsProcessed,
         adminUserId,
+        transferDate || null,
+        transferBank ? String(transferBank).trim().slice(0, 150) : null,
+        receiptBucket || null,
+        receiptPath || null,
       ]
     );
 
@@ -313,4 +346,17 @@ export async function transitionPayout({
   } finally {
     client.release();
   }
+}
+
+// Admin-only: the storage location of a payout's receipt (for minting a signed
+// view URL). Returns null when the payout has no receipt.
+export async function getPayoutReceiptRef(payoutId) {
+  const result = await pool.query(
+    `SELECT receipt_storage_bucket, receipt_storage_path
+     FROM payouts WHERE id = $1`,
+    [payoutId]
+  );
+  const row = result.rows[0];
+  if (!row || !row.receipt_storage_path) return null;
+  return { bucket: row.receipt_storage_bucket, path: row.receipt_storage_path };
 }

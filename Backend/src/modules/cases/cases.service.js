@@ -392,13 +392,13 @@ export async function listSignedCasesForLawyer({ lawyerUserId }) {
 //                        (signature_requests.signer_role='client' AND
 //                        status='signed'). DISTINCT because one case can spawn
 //                        several client signature_request rows.
-//   totalEarnings      — money this lawyer has actually received, summed from
-//                        successful payment_transactions (status='success'),
-//                        scoped by payment_transactions.lawyer_user_id. This is
-//                        the same source the "Payments Received" page uses
-//                        (listLawyerEarnings). Always a number (0 when the
-//                        lawyer has no successful payments), never null here —
-//                        the schema gives a clean lawyer-received column.
+//   totalEarnings      — this lawyer's NET earnings: their share of successful
+//                        payment_transactions after the platform fee
+//                        (SUM(lawyer_net_amount), COALESCE'd to amount for any
+//                        pre-commission rows), scoped by lawyer_user_id. Matches
+//                        the "Payments Received" page's "Your net earnings" so
+//                        the two never disagree. Always a number (0 when the
+//                        lawyer has no successful payments).
 export async function getLawyerDashboardStats({ lawyerUserId }) {
   const [activeCases, pendingSubmissions, clientSigned, totalEarnings] =
     await Promise.all([
@@ -424,7 +424,11 @@ export async function getLawyerDashboardStats({ lawyerUserId }) {
         [lawyerUserId]
       ),
       pool.query(
-        `SELECT COALESCE(SUM(amount), 0)::float AS total
+        // The lawyer's NET earnings — their share after the platform fee, not
+        // the gross collected. COALESCE so pre-commission rows (no split
+        // snapshot) count their full amount. Matches the Earnings page's
+        // "Your net earnings" so the dashboard and that page never disagree.
+        `SELECT COALESCE(SUM(COALESCE(lawyer_net_amount, amount)), 0)::float AS total
          FROM payment_transactions
          WHERE lawyer_user_id = $1 AND status = 'success'`,
         [lawyerUserId]

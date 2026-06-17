@@ -3,8 +3,14 @@ import { getAdminCaseDetail, listAdminCases } from "./adminCases.service.js";
 import {
   listPayoutsForAdmin,
   transitionPayout,
+  getPayoutReceiptRef,
 } from "../payments/payouts.service.js";
 import { createNotification } from "../notifications/notifications.service.js";
+import {
+  uploadPayoutReceipt as uploadPayoutReceiptObject,
+  getPayoutReceiptSignedUrl,
+  deletePayoutReceipt,
+} from "../../services/storage.service.js";
 import { ApiError } from "../../utils/apiError.js";
 
 // GET /api/admin/dashboard-stats
@@ -66,31 +72,20 @@ export async function listPayoutsHandler(req, res) {
 }
 
 // PATCH /api/admin/payouts/:payoutId
-// Admin moves a payout along its lifecycle (processing | paid | failed |
-// cancelled). Marking paid requires a bank reference. The transition + ledger
-// effects are validated in the service; here we additionally notify the lawyer
-// (best-effort) when their money lands or a payout fails.
+// Moves a payout to processing | failed | cancelled. (Marking PAID goes through
+// the dedicated multipart endpoint below, which also captures transfer proof.)
+// Notifies the lawyer best-effort when a payout fails (money released).
 export async function updatePayoutHandler(req, res) {
-  const { status, reference, note } = req.body;
+  const { status, note } = req.body;
   const payout = await transitionPayout({
     payoutId: req.params.payoutId,
     adminUserId: req.user.sub,
     status,
-    reference,
     note,
   });
 
   try {
-    if (status === "paid") {
-      await createNotification({
-        userId: payout.lawyerUserId,
-        type: "payout_paid",
-        title: "You've been paid",
-        message: `Your payout of Rs ${payout.amount.toLocaleString()} has been sent to your bank account${
-          payout.reference ? ` (ref: ${payout.reference})` : ""
-        }.`,
-      });
-    } else if (status === "failed") {
+    if (status === "failed") {
       await createNotification({
         userId: payout.lawyerUserId,
         type: "payout_failed",
@@ -108,4 +103,79 @@ export async function updatePayoutHandler(req, res) {
   }
 
   return res.status(200).json({ message: "Payout updated", data: payout });
+}
+
+// POST /api/admin/payouts/:payoutId/mark-paid  (multipart/form-data)
+// Marks a payout paid WITH proof of the manual bank transfer: a reference, the
+// transfer date, the sending bank/method, and an uploaded receipt file. The
+// receipt is uploaded first; if the status transition then fails, we delete the
+// orphaned file. The lawyer is notified (and sees the typed proof, not the
+// receipt image).
+export async function markPayoutPaidHandler(req, res) {
+  const payoutId = req.params.payoutId;
+  const { reference, transferDate, transferBank, note } = req.body;
+
+  if (!req.file) {
+    throw new ApiError(400, "A receipt of the transfer is required.");
+  }
+
+  const uploaded = await uploadPayoutReceiptObject({
+    payoutId,
+    fileBuffer: req.file.buffer,
+    mimeType: req.file.mimetype,
+    originalName: req.file.originalname,
+  });
+
+  let payout;
+  try {
+    payout = await transitionPayout({
+      payoutId,
+      adminUserId: req.user.sub,
+      status: "paid",
+      reference,
+      note,
+      transferDate,
+      transferBank,
+      receiptBucket: uploaded.storageBucket,
+      receiptPath: uploaded.storagePath,
+    });
+  } catch (error) {
+    // The transition failed (e.g. payout not found / already terminal) — don't
+    // leave the just-uploaded receipt orphaned in storage.
+    await deletePayoutReceipt(uploaded.storageBucket, uploaded.storagePath);
+    throw error;
+  }
+
+  try {
+    await createNotification({
+      userId: payout.lawyerUserId,
+      type: "payout_paid",
+      title: "You've been paid",
+      message: `Your payout of Rs ${payout.amount.toLocaleString()} has been sent to your bank account${
+        payout.reference ? ` (ref: ${payout.reference})` : ""
+      }.`,
+    });
+  } catch (notifyErr) {
+    console.error(
+      "Payout paid notification failed:",
+      notifyErr?.message || notifyErr
+    );
+  }
+
+  return res.status(200).json({ message: "Payout marked paid", data: payout });
+}
+
+// GET /api/admin/payouts/:payoutId/receipt
+// Admin-only short-lived signed URL to view a payout's transfer receipt.
+// 404 when the payout has no receipt on file.
+export async function getPayoutReceiptHandler(req, res) {
+  const ref = await getPayoutReceiptRef(req.params.payoutId);
+  if (!ref) {
+    throw new ApiError(404, "No receipt on file for this payout.");
+  }
+  const url = await getPayoutReceiptSignedUrl(ref.bucket, ref.path, 300);
+  if (!url) {
+    throw new ApiError(503, "Receipt storage is not available right now.");
+  }
+  return res.status(200).json({ url });
 }

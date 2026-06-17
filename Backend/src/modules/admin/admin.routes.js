@@ -3,20 +3,24 @@ import { Router } from "express";
 import {
   getAdminCaseDetailHandler,
   getDashboardStatsHandler,
+  getPayoutReceiptHandler,
   getRecentActivityHandler,
   listAdminCasesHandler,
   listPayoutsHandler,
+  markPayoutPaidHandler,
   updatePayoutHandler
 } from "./admin.controller.js";
 import {
   adminCaseIdParamValidator,
   listAdminCasesValidator,
   listPayoutsValidator,
+  markPayoutPaidValidator,
   updatePayoutValidator
 } from "./admin.validators.js";
 import { asyncHandler } from "../../middleware/asyncHandler.js";
 import { authenticate } from "../../middleware/authenticate.js";
 import { authorizeRoles } from "../../middleware/authorizeRoles.js";
+import { uploadPayoutReceipt } from "../../middleware/uploadPayoutReceipt.js";
 import { validateRequest } from "../../middleware/validateRequest.js";
 
 const router = Router();
@@ -54,6 +58,19 @@ router.patch(
   updatePayoutValidator,
   validateRequest,
   asyncHandler(updatePayoutHandler)
+);
+// Mark paid WITH transfer proof — multer parses the multipart body first so the
+// validators can see the text fields; the receipt file is checked in the handler.
+router.post(
+  "/payouts/:payoutId/mark-paid",
+  uploadPayoutReceipt,
+  markPayoutPaidValidator,
+  validateRequest,
+  asyncHandler(markPayoutPaidHandler)
+);
+router.get(
+  "/payouts/:payoutId/receipt",
+  asyncHandler(getPayoutReceiptHandler)
 );
 
 export default router;
