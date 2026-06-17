@@ -1,5 +1,10 @@
 import { getDashboardStats, getRecentActivityFeed } from "./admin.service.js";
 import { getAdminCaseDetail, listAdminCases } from "./adminCases.service.js";
+import { getMoneyOverview } from "./adminMoney.service.js";
+import {
+  getCommissionRateSetting,
+  updateCommissionRate,
+} from "./platformSettings.service.js";
 import {
   listPayoutsForAdmin,
   transitionPayout,
@@ -61,6 +66,28 @@ export async function getAdminCaseDetailHandler(req, res) {
     throw new ApiError(404, "Case not found");
   }
   return res.status(200).json(detail);
+}
+
+// GET /api/admin/commission-rate  → { commissionRate, updatedAt }
+export async function getCommissionRateHandler(req, res) {
+  const data = await getCommissionRateSetting();
+  return res.status(200).json(data);
+}
+
+// PUT /api/admin/commission-rate  { commissionRate } → updates the platform-wide
+// rate. Only affects FUTURE payments (existing rows keep their snapshotted rate).
+export async function updateCommissionRateHandler(req, res) {
+  const data = await updateCommissionRate(req.body.commissionRate);
+  return res.status(200).json({ message: "Commission rate updated", ...data });
+}
+
+// GET /api/admin/money-overview
+// Platform-wide money picture for the admin Finances page: totals (collected,
+// platform fees, paid out, owed), a reconciliation self-check, and a per-lawyer
+// breakdown. Shape: { totals, reconciliation, perLawyer[] }.
+export async function getMoneyOverviewHandler(req, res) {
+  const overview = await getMoneyOverview();
+  return res.status(200).json(overview);
 }
 
 // GET /api/admin/payouts?status=

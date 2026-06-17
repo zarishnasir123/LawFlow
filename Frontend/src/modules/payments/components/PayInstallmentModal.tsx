@@ -164,6 +164,10 @@ export default function PayInstallmentModal({
             <p className="mt-1">
               You will be redirected to Safepay's secure payment page. Your card details are never shared with us.
             </p>
+            <p className="mt-1">
+              This payment is collected by LawFlow for your case; your lawyer
+              receives their share afterwards.
+            </p>
           </div>
         </div>
 

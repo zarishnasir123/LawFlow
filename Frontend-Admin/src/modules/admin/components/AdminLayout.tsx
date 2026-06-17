@@ -11,6 +11,7 @@ import {
   Bell,
   ChevronLeft,
   ChevronRight,
+  CircleDollarSign,
   FileText,
   GitBranch,
   LayoutDashboard,
@@ -25,7 +26,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
-import { useAdminNotificationsStore } from "../store/notifications.store";
+import { useAdminNotificationCount } from "../hooks/useAdminNotificationCount";
 import { usePendingLawyerCount } from "../hooks/usePendingLawyerCount";
 import { useOpenPayoutCount } from "../hooks/useOpenPayoutCount";
 import LogoutConfirmationModal from "./modals/LogoutConfirmationModal";
@@ -58,6 +59,7 @@ const navItems: NavItem[] = [
     matchPrefixes: ["/cases"],
   },
   { to: "/payouts", label: "Payouts", icon: Wallet },
+  { to: "/finances", label: "Finances", icon: CircleDollarSign },
   { to: "/templates", label: "Templates", icon: FileText },
   { to: "/statistics", label: "Statistics", icon: BarChart3 },
   { to: "/notifications", label: "Notifications", icon: Bell },
@@ -101,9 +103,7 @@ export default function AdminLayout() {
   // set-state-in-effect lint and don't re-render twice per navigation.
   const closeMobileDrawer = () => setMobileOpen(false);
 
-  const unreadCount = useAdminNotificationsStore(
-    (state) => state.notifications.filter((item) => !item.isRead).length,
-  );
+  const unreadCount = useAdminNotificationCount();
   const pendingLawyerCount = usePendingLawyerCount();
   const openPayoutCount = useOpenPayoutCount();
 

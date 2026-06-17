@@ -43,11 +43,12 @@ export function getSupabaseStorageConfig() {
   const caseAttachmentBucket =
     process.env.SUPABASE_CASE_ATTACHMENT_BUCKET || "case-attachments";
   // Private bucket for payout transfer receipts (the admin's proof of the
-  // manual bank transfer to a lawyer). Defaults to the case-attachments bucket
-  // so no new bucket has to be created — payout receipts live under a separate
-  // payouts/ path prefix. Override with SUPABASE_PAYOUT_RECEIPT_BUCKET to split.
+  // manual bank transfer to a lawyer). Its own dedicated bucket, separate from
+  // case attachments — different lifecycle and access (admin-only). Each payout
+  // also snapshots the bucket it used in payouts.receipt_storage_bucket, so
+  // changing this only affects future uploads; old receipts stay resolvable.
   const payoutReceiptBucket =
-    process.env.SUPABASE_PAYOUT_RECEIPT_BUCKET || caseAttachmentBucket;
+    process.env.SUPABASE_PAYOUT_RECEIPT_BUCKET || "payout-receipts";
   const previewUrlExpiresIn = Number(process.env.SUPABASE_PREVIEW_URL_EXPIRES_IN || 900);
 
   const issues = [];

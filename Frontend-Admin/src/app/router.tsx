@@ -21,6 +21,7 @@ import AdminRejectionHistoryPage from "../modules/admin/pages/RejectionHistory";
 import AdminCasesPage from "../modules/admin/pages/Cases";
 import AdminCaseDetailPage from "../modules/admin/pages/CaseDetail";
 import AdminPayoutsPage from "../modules/admin/pages/Payouts";
+import AdminFinancesPage from "../modules/admin/pages/Finances";
 import AdminProfilePage from "../modules/admin/pages/Profile";
 import AdminNotificationsPage from "../modules/admin/pages/Notifications";
 
@@ -122,6 +123,12 @@ const payoutsRoute = createRoute({
   component: AdminPayoutsPage,
 });
 
+const financesRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: "finances",
+  component: AdminFinancesPage,
+});
+
 const profileRoute = createRoute({
   getParentRoute: () => adminLayoutRoute,
   path: "profile",
@@ -148,6 +155,7 @@ const routeTree = rootRoute.addChildren([
     casesRoute,
     caseDetailRoute,
     payoutsRoute,
+    financesRoute,
     profileRoute,
     notificationsRoute,
   ]),

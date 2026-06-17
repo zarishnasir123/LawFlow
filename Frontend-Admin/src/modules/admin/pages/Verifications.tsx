@@ -21,7 +21,6 @@ import {
 import RejectLawyerConfirmationModal from "../components/modals/RejectLawyerConfirmationModal";
 import SuspendLawyerConfirmationModal from "../components/modals/SuspendLawyerConfirmationModal";
 import ReinstateLawyerConfirmationModal from "../components/modals/ReinstateLawyerConfirmationModal";
-import { useAdminNotificationsStore } from "../store/notifications.store";
 import {
   fetchActiveLawyers,
   fetchPendingLawyers,
@@ -91,10 +90,6 @@ export default function Verifications() {
   const [pendingSuspension, setPendingSuspension] = useState<PendingLawyer | null>(null);
   const [pendingReinstatement, setPendingReinstatement] = useState<PendingLawyer | null>(null);
 
-  const addLawyerVerificationNotification = useAdminNotificationsStore(
-    (state) => state.addLawyerVerificationNotification,
-  );
-
   const pendingQuery = useQuery({
     queryKey: ["admin", "pending-lawyers"],
     queryFn: () => fetchPendingLawyers({ limit: 50 }),
@@ -108,16 +103,7 @@ export default function Verifications() {
 
   const reviewMutation = useMutation({
     mutationFn: reviewLawyer,
-    onSuccess: (data) => {
-      const fullName =
-        [data.lawyer.firstName, data.lawyer.lastName].filter(Boolean).join(" ") ||
-        data.lawyer.email;
-
-      addLawyerVerificationNotification({
-        lawyerName: fullName,
-        decision: data.lawyer.verificationStatus === "approved" ? "approved" : "returned",
-      });
-
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["admin", "pending-lawyers"] });
       queryClient.invalidateQueries({ queryKey: ["admin", "active-lawyers"] });
       queryClient.invalidateQueries({ queryKey: ["admin", "lawyer-rejections"] });
@@ -147,7 +133,9 @@ export default function Verifications() {
     },
   });
 
-  const lawyers = pendingQuery.data?.items ?? [];
+  // Memoized so its reference is stable across renders (a bare `?? []` makes a
+  // new array every render, which would force filteredLawyers to recompute).
+  const lawyers = useMemo(() => pendingQuery.data?.items ?? [], [pendingQuery.data]);
 
   const filteredLawyers = useMemo(() => {
     const keyword = search.trim().toLowerCase();

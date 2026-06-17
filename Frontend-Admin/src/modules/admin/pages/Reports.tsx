@@ -27,7 +27,6 @@ import {
 } from "recharts";
 
 import StatusToast from "../components/modals/StatusToast";
-import { useAdminNotificationsStore } from "../store/notifications.store";
 import { systemStatisticsByRange } from "../data/systemStatistics.mock";
 import type { StatisticsMetricTone, StatisticsRange } from "../types";
 
@@ -78,21 +77,12 @@ export default function AdminStatisticPage() {
   const [toastOpen, setToastOpen] = useState(false);
   const [selectedRange, setSelectedRange] = useState<StatisticsRange>("month");
 
-  const addSystemStatisticsNotification = useAdminNotificationsStore(
-    (state) => state.addSystemStatisticsNotification,
-  );
-
   const snapshot = useMemo(
     () => systemStatisticsByRange[selectedRange],
     [selectedRange],
   );
 
   const handlePublishStatisticsUpdate = () => {
-    addSystemStatisticsNotification({
-      title: "System statistics summary published",
-      message: `Admin published ${snapshot.rangeLabel.toLowerCase()} analytics update.`,
-      severity: "info",
-    });
     setToastOpen(true);
   };
 
@@ -115,11 +105,6 @@ export default function AdminStatisticPage() {
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
 
-    addSystemStatisticsNotification({
-      title: "System report exported",
-      message: `Admin exported ${snapshot.rangeLabel.toLowerCase()} system statistics report.`,
-      severity: "success",
-    });
     setToastOpen(true);
   };
 
