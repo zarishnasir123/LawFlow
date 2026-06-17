@@ -8,9 +8,12 @@ import {
 import {
   listPayoutsForAdmin,
   transitionPayout,
+  disbursePayout,
   getPayoutReceiptRef,
+  getPayoutLawyerContact,
 } from "../payments/payouts.service.js";
 import { createNotification } from "../notifications/notifications.service.js";
+import { queuePayoutPaidEmail } from "../../services/email.service.js";
 import {
   uploadPayoutReceipt as uploadPayoutReceiptObject,
   getPayoutReceiptSignedUrl,
@@ -132,6 +135,27 @@ export async function updatePayoutHandler(req, res) {
   return res.status(200).json({ message: "Payout updated", data: payout });
 }
 
+// Best-effort: email the lawyer that their payout was paid (mirrors the in-app
+// notification). Fire-and-forget — looks up their address, queues the email, and
+// never throws into the payout flow. Used by both mark-paid and disburse.
+async function emailLawyerPayoutPaid(payout) {
+  try {
+    const contact = await getPayoutLawyerContact(payout.lawyerUserId);
+    if (contact?.email) {
+      queuePayoutPaidEmail({
+        email: contact.email,
+        firstName: contact.firstName,
+        amount: payout.amount,
+        reference: payout.reference,
+        transferDate: payout.transferDate,
+        bankName: payout.bankName,
+      });
+    }
+  } catch (mailErr) {
+    console.error("Payout paid email failed:", mailErr?.message || mailErr);
+  }
+}
+
 // POST /api/admin/payouts/:payoutId/mark-paid  (multipart/form-data)
 // Marks a payout paid WITH proof of the manual bank transfer: a reference, the
 // transfer date, the sending bank/method, and an uploaded receipt file. The
@@ -189,7 +213,41 @@ export async function markPayoutPaidHandler(req, res) {
     );
   }
 
+  await emailLawyerPayoutPaid(payout);
+
   return res.status(200).json({ message: "Payout marked paid", data: payout });
+}
+
+// POST /api/admin/payouts/:payoutId/disburse
+// One-click payout: "sends" the money through the disbursement adapter (a
+// sandbox-simulated rail in this build) and marks the payout paid with the
+// auto-generated reference — no manual proof entry, no receipt upload. The
+// lawyer is notified best-effort (same notification as a manually-paid payout).
+export async function disbursePayoutHandler(req, res) {
+  const payout = await disbursePayout({
+    payoutId: req.params.payoutId,
+    adminUserId: req.user.sub,
+  });
+
+  try {
+    await createNotification({
+      userId: payout.lawyerUserId,
+      type: "payout_paid",
+      title: "You've been paid",
+      message: `Your payout of Rs ${payout.amount.toLocaleString()} has been sent to your bank account${
+        payout.reference ? ` (ref: ${payout.reference})` : ""
+      }.`,
+    });
+  } catch (notifyErr) {
+    console.error(
+      "Payout paid notification failed:",
+      notifyErr?.message || notifyErr
+    );
+  }
+
+  await emailLawyerPayoutPaid(payout);
+
+  return res.status(200).json({ message: "Payout disbursed", data: payout });
 }
 
 // GET /api/admin/payouts/:payoutId/receipt

@@ -1,14 +1,12 @@
 import { useState } from "react";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Banknote, ExternalLink, Loader2, Paperclip, Wallet } from "lucide-react";
+import { Banknote, ExternalLink, Loader2, Send, Wallet } from "lucide-react";
 
 import {
   fetchPayouts,
+  disbursePayout,
   getPayoutReceiptUrl,
-  markPayoutPaid,
   updatePayout,
-  type AdminPayout,
-  type MarkPaidInput,
   type PayoutStatus,
   type UpdatePayoutInput,
 } from "../api/payouts";
@@ -53,26 +51,13 @@ function formatMoney(value: number) {
   return `Rs ${value.toLocaleString()}`;
 }
 
-function todayString() {
-  const d = new Date();
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-}
-
-// Which inline form (if any) is open, and on which payout.
-type ActiveAction = { id: string; type: "paid" | "failed" } | null;
-
 export default function Payouts() {
   const queryClient = useQueryClient();
   const [status, setStatus] = useState<StatusFilter>("all");
-  const [action, setAction] = useState<ActiveAction>(null);
 
-  // Inline-form fields (shared by the paid/failed forms).
-  const [reference, setReference] = useState("");
-  const [transferDate, setTransferDate] = useState("");
-  const [transferBank, setTransferBank] = useState("");
+  // Which payout (if any) has its "mark failed" reason form open, and the note.
+  const [failingId, setFailingId] = useState<string | null>(null);
   const [note, setNote] = useState("");
-  const [receiptFile, setReceiptFile] = useState<File | null>(null);
 
   const [receiptLoadingId, setReceiptLoadingId] = useState<string | null>(null);
   const [toast, setToast] = useState<{
@@ -87,9 +72,16 @@ export default function Payouts() {
     placeholderData: keepPreviousData,
   });
 
+  function resetFailForm() {
+    setFailingId(null);
+    setNote("");
+  }
+
   function onSuccess(title: string, message?: string) {
+    // Invalidating the ["admin", "payouts"] prefix also refreshes the sidebar
+    // Payouts badge (it shares the ["admin", "payouts", "all"] cache).
     queryClient.invalidateQueries({ queryKey: ["admin", "payouts"] });
-    closeAction();
+    resetFailForm();
     setToast({ type: "success", title, message });
   }
 
@@ -101,7 +93,20 @@ export default function Payouts() {
     });
   }
 
-  // processing / failed / cancelled — no proof needed.
+  // One-click payout: "send" via the disbursement adapter and mark it paid.
+  const disburseMutation = useMutation({
+    mutationFn: (id: string) => disbursePayout(id),
+    onSuccess: (updated) =>
+      onSuccess(
+        "Payment sent",
+        `${formatMoney(updated.amount)} sent to ${updated.lawyerName} (ref ${
+          updated.reference ?? "—"
+        }).`
+      ),
+    onError,
+  });
+
+  // Mark a payout failed (money returns to the lawyer's available balance).
   const updateMutation = useMutation({
     mutationFn: ({ id, ...input }: { id: string } & UpdatePayoutInput) =>
       updatePayout(id, input),
@@ -109,64 +114,7 @@ export default function Payouts() {
     onError,
   });
 
-  // paid — with transfer proof (typed fields + receipt file).
-  const markPaidMutation = useMutation({
-    mutationFn: ({ id, ...input }: { id: string } & MarkPaidInput) =>
-      markPayoutPaid(id, input),
-    onSuccess: (updated) =>
-      onSuccess(
-        "Payout marked paid",
-        `${formatMoney(updated.amount)} to ${updated.lawyerName}.`
-      ),
-    onError,
-  });
-
-  const busy = updateMutation.isPending || markPaidMutation.isPending;
-
-  function openAction(id: string, type: "paid" | "failed") {
-    setAction({ id, type });
-    setReference("");
-    setTransferBank("");
-    setNote("");
-    setReceiptFile(null);
-    setTransferDate(type === "paid" ? todayString() : "");
-  }
-
-  function closeAction() {
-    setAction(null);
-    setReference("");
-    setTransferDate("");
-    setTransferBank("");
-    setNote("");
-    setReceiptFile(null);
-  }
-
-  const paidFormReady =
-    Boolean(reference.trim()) &&
-    Boolean(transferDate) &&
-    Boolean(transferBank.trim()) &&
-    Boolean(receiptFile);
-
-  function submitAction(payout: AdminPayout) {
-    if (!action || busy) return;
-    if (action.type === "paid") {
-      if (!paidFormReady || !receiptFile) return;
-      markPaidMutation.mutate({
-        id: payout.id,
-        reference: reference.trim(),
-        transferDate,
-        transferBank: transferBank.trim(),
-        note: note.trim() || undefined,
-        receipt: receiptFile,
-      });
-    } else {
-      updateMutation.mutate({
-        id: payout.id,
-        status: "failed",
-        note: note.trim() || undefined,
-      });
-    }
-  }
+  const busy = disburseMutation.isPending || updateMutation.isPending;
 
   async function viewReceipt(id: string) {
     setReceiptLoadingId(id);
@@ -212,10 +160,12 @@ export default function Payouts() {
               <div>
                 <h1 className="text-2xl font-bold text-[#01411C]">Payouts</h1>
                 <p className="mt-1 max-w-3xl text-sm text-gray-600">
-                  Lawyers withdraw their earnings here. Transfer the amount to the
-                  lawyer's bank account, then mark the payout paid — recording the
-                  reference, date, sending bank, and a receipt of the transfer.
-                  The lawyer is notified automatically.
+                  Lawyers withdraw their earnings here. Click{" "}
+                  <span className="font-semibold">Approve &amp; Send Payment</span> to
+                  send a payout to the lawyer's saved bank account — the reference
+                  is generated automatically and the lawyer is notified. This build
+                  uses a sandbox-simulated payout rail; a licensed bank rail
+                  (RAAST/1Link) plugs into the same step in production.
                 </p>
               </div>
             </div>
@@ -264,7 +214,10 @@ export default function Payouts() {
             {payouts.map((payout) => {
               const actionable =
                 payout.status === "requested" || payout.status === "processing";
-              const isThisActionOpen = action?.id === payout.id;
+              const isFailing = failingId === payout.id;
+              const isDisbursing =
+                disburseMutation.isPending &&
+                disburseMutation.variables === payout.id;
               return (
                 <div
                   key={payout.id}
@@ -316,10 +269,10 @@ export default function Payouts() {
                     </div>
                   </div>
 
-                  {/* Transfer proof once paid */}
+                  {/* Payout details once paid */}
                   {payout.status === "paid" ? (
                     <div className="mt-3 rounded-xl border border-emerald-100 bg-emerald-50/50 p-4 text-sm">
-                      <p className="font-semibold text-emerald-900">Transfer proof</p>
+                      <p className="font-semibold text-emerald-900">Payout details</p>
                       <div className="mt-1 grid gap-x-6 gap-y-1 sm:grid-cols-2">
                         <p className="text-gray-700">
                           <span className="font-medium text-gray-800">Reference:</span>{" "}
@@ -365,101 +318,7 @@ export default function Payouts() {
                   {/* Actions */}
                   {actionable ? (
                     <div className="mt-4 border-t border-gray-100 pt-4">
-                      {isThisActionOpen && action?.type === "paid" ? (
-                        <div className="space-y-3">
-                          <p className="text-sm font-semibold text-gray-800">
-                            Record the transfer ({formatMoney(payout.amount)} to{" "}
-                            {payout.lawyerName})
-                          </p>
-                          <div className="grid gap-3 sm:grid-cols-2">
-                            <div>
-                              <label className="block text-xs font-semibold uppercase tracking-wide text-gray-600">
-                                Transaction ID / reference *
-                              </label>
-                              <input
-                                type="text"
-                                value={reference}
-                                onChange={(e) => setReference(e.target.value)}
-                                placeholder="e.g. IBFT-20260617-0098"
-                                className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#01411C] focus:outline-none focus:ring-1 focus:ring-[#01411C]"
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-xs font-semibold uppercase tracking-wide text-gray-600">
-                                Date of transfer *
-                              </label>
-                              <input
-                                type="date"
-                                value={transferDate}
-                                max={todayString()}
-                                onChange={(e) => setTransferDate(e.target.value)}
-                                className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#01411C] focus:outline-none focus:ring-1 focus:ring-[#01411C]"
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-xs font-semibold uppercase tracking-wide text-gray-600">
-                                Sent from (bank / method) *
-                              </label>
-                              <input
-                                type="text"
-                                value={transferBank}
-                                onChange={(e) => setTransferBank(e.target.value)}
-                                placeholder="e.g. HBL — IBFT"
-                                className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#01411C] focus:outline-none focus:ring-1 focus:ring-[#01411C]"
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-xs font-semibold uppercase tracking-wide text-gray-600">
-                                Receipt (image or PDF) *
-                              </label>
-                              <input
-                                type="file"
-                                accept="image/jpeg,image/png,application/pdf"
-                                onChange={(e) => setReceiptFile(e.target.files?.[0] ?? null)}
-                                className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-1.5 text-sm file:mr-3 file:rounded-md file:border-0 file:bg-[#01411C] file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-white"
-                              />
-                            </div>
-                          </div>
-                          <div>
-                            <label className="block text-xs font-semibold uppercase tracking-wide text-gray-600">
-                              Note (optional)
-                            </label>
-                            <input
-                              type="text"
-                              value={note}
-                              onChange={(e) => setNote(e.target.value)}
-                              placeholder="Anything to record about this payout"
-                              className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#01411C] focus:outline-none focus:ring-1 focus:ring-[#01411C]"
-                            />
-                          </div>
-                          {receiptFile ? (
-                            <p className="flex items-center gap-1.5 text-xs text-gray-500">
-                              <Paperclip className="h-3.5 w-3.5" />
-                              {receiptFile.name}
-                            </p>
-                          ) : null}
-                          <div className="flex flex-wrap items-center gap-2">
-                            <button
-                              type="button"
-                              disabled={busy || !paidFormReady}
-                              onClick={() => submitAction(payout)}
-                              className="inline-flex items-center gap-2 rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-50"
-                            >
-                              {markPaidMutation.isPending ? (
-                                <Loader2 className="h-4 w-4 animate-spin" />
-                              ) : null}
-                              Confirm paid
-                            </button>
-                            <button
-                              type="button"
-                              onClick={closeAction}
-                              className="rounded-lg px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100"
-                            >
-                              Cancel
-                            </button>
-                          </div>
-                        </div>
-                      ) : isThisActionOpen && action?.type === "failed" ? (
+                      {isFailing ? (
                         <div className="space-y-3">
                           <div>
                             <label className="block text-xs font-semibold uppercase tracking-wide text-gray-600">
@@ -469,7 +328,7 @@ export default function Payouts() {
                               type="text"
                               value={note}
                               onChange={(e) => setNote(e.target.value)}
-                              placeholder="Why did the transfer fail?"
+                              placeholder="Why did the payout fail?"
                               className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#01411C] focus:outline-none focus:ring-1 focus:ring-[#01411C]"
                             />
                           </div>
@@ -477,7 +336,13 @@ export default function Payouts() {
                             <button
                               type="button"
                               disabled={busy}
-                              onClick={() => submitAction(payout)}
+                              onClick={() =>
+                                updateMutation.mutate({
+                                  id: payout.id,
+                                  status: "failed",
+                                  note: note.trim() || undefined,
+                                })
+                              }
                               className="inline-flex items-center gap-2 rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-50"
                             >
                               {updateMutation.isPending ? (
@@ -487,7 +352,7 @@ export default function Payouts() {
                             </button>
                             <button
                               type="button"
-                              onClick={closeAction}
+                              onClick={resetFailForm}
                               className="rounded-lg px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100"
                             >
                               Cancel
@@ -496,29 +361,27 @@ export default function Payouts() {
                         </div>
                       ) : (
                         <div className="flex flex-wrap items-center gap-2">
-                          {payout.status === "requested" ? (
-                            <button
-                              type="button"
-                              disabled={busy}
-                              onClick={() =>
-                                updateMutation.mutate({ id: payout.id, status: "processing" })
-                              }
-                              className="rounded-lg px-4 py-2 text-sm font-medium text-blue-700 ring-1 ring-blue-200 hover:bg-blue-50 disabled:opacity-50"
-                            >
-                              Mark processing
-                            </button>
-                          ) : null}
                           <button
                             type="button"
-                            onClick={() => openAction(payout.id, "paid")}
-                            className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800"
+                            disabled={busy}
+                            onClick={() => disburseMutation.mutate(payout.id)}
+                            className="inline-flex items-center gap-2 rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-50"
                           >
-                            Mark as paid
+                            {isDisbursing ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <Send className="h-4 w-4" />
+                            )}
+                            Approve &amp; Send Payment
                           </button>
                           <button
                             type="button"
-                            onClick={() => openAction(payout.id, "failed")}
-                            className="rounded-lg px-4 py-2 text-sm font-medium text-rose-700 ring-1 ring-rose-200 hover:bg-rose-50"
+                            disabled={busy}
+                            onClick={() => {
+                              setFailingId(payout.id);
+                              setNote("");
+                            }}
+                            className="rounded-lg px-4 py-2 text-sm font-medium text-rose-700 ring-1 ring-rose-200 hover:bg-rose-50 disabled:opacity-50"
                           >
                             Mark failed
                           </button>

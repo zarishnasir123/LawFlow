@@ -10,6 +10,7 @@ import {
   listAdminCasesHandler,
   listPayoutsHandler,
   markPayoutPaidHandler,
+  disbursePayoutHandler,
   updateCommissionRateHandler,
   updatePayoutHandler
 } from "./admin.controller.js";
@@ -18,6 +19,7 @@ import {
   listAdminCasesValidator,
   listPayoutsValidator,
   markPayoutPaidValidator,
+  disbursePayoutValidator,
   updateCommissionRateValidator,
   updatePayoutValidator
 } from "./admin.validators.js";
@@ -77,12 +79,21 @@ router.patch(
 );
 // Mark paid WITH transfer proof — multer parses the multipart body first so the
 // validators can see the text fields; the receipt file is checked in the handler.
+// (Kept for the manual-record flow; the UI now uses the one-click disburse below.)
 router.post(
   "/payouts/:payoutId/mark-paid",
   uploadPayoutReceipt,
   markPayoutPaidValidator,
   validateRequest,
   asyncHandler(markPayoutPaidHandler)
+);
+// One-click payout — "sends" via the disbursement adapter (sandbox-simulated
+// rail) and marks the payout paid with an auto-generated reference.
+router.post(
+  "/payouts/:payoutId/disburse",
+  disbursePayoutValidator,
+  validateRequest,
+  asyncHandler(disbursePayoutHandler)
 );
 router.get(
   "/payouts/:payoutId/receipt",

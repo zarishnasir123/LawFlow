@@ -94,6 +94,16 @@ export async function markPayoutPaid(
   return data.data;
 }
 
+// One-click payout: the platform "sends" the money via the disbursement adapter
+// (a sandbox-simulated rail) and marks it paid with an auto-generated reference.
+// Nothing to type or upload.
+export async function disbursePayout(payoutId: string): Promise<AdminPayout> {
+  const { data } = await apiClient.post<{ data: AdminPayout }>(
+    `/admin/payouts/${payoutId}/disburse`
+  );
+  return data.data;
+}
+
 // Admin-only short-lived signed URL to view a payout's receipt.
 export async function getPayoutReceiptUrl(payoutId: string): Promise<string> {
   const { data } = await apiClient.get<{ url: string }>(
