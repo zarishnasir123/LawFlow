@@ -5,6 +5,7 @@ import { isValidUuid } from "../../utils/uuid.js";
 import { getInstallmentForCheckout } from "./agreements.service.js";
 import { generateReceiptNumber } from "./transactions.service.js";
 import { createNotification } from "../notifications/notifications.service.js";
+import { queuePaymentReceiptClientEmail } from "../../services/email.service.js";
 
 // Safepay (Pakistani gateway) replaces Stripe. We run in SANDBOX for the
 // project — real production payments require State-Bank merchant onboarding.
@@ -290,6 +291,40 @@ export async function recordPaymentByToken({ checkoutToken, gatewayReference }) 
       console.error(
         "Payment received notification failed:",
         notifyErr?.message || notifyErr
+      );
+    }
+
+    // Best-effort: email the client a payment receipt. Looks up their address +
+    // the case/lawyer names, then queues the email fire-and-forget — a failure
+    // here never affects the recorded payment.
+    try {
+      const info = await dbClient.query(
+        `SELECT cl.email AS client_email,
+                cl.first_name AS client_first_name,
+                CONCAT(lw.first_name, ' ', lw.last_name) AS lawyer_name,
+                cs.title AS case_title
+         FROM users cl
+         LEFT JOIN users lw ON lw.id = $2
+         LEFT JOIN cases cs ON cs.id = $3
+         WHERE cl.id = $1`,
+        [row.client_user_id, row.lawyer_user_id, row.case_id]
+      );
+      const contact = info.rows[0];
+      if (contact?.client_email) {
+        queuePaymentReceiptClientEmail({
+          email: contact.client_email,
+          firstName: contact.client_first_name,
+          amount,
+          caseTitle: contact.case_title,
+          lawyerName: contact.lawyer_name,
+          receiptNumber,
+          paymentsUrl: `${frontendBaseUrl()}/client-payments/${row.case_id}`,
+        });
+      }
+    } catch (mailErr) {
+      console.error(
+        "Payment receipt email failed:",
+        mailErr?.message || mailErr
       );
     }
 

@@ -1,5 +1,6 @@
 import { pool } from "../../config/db.js";
 import { ApiError } from "../../utils/apiError.js";
+import { disburse } from "../../services/disbursement.service.js";
 
 // Where LawFlow settles a lawyer's collected installment payments. The platform
 // collects via its own Safepay account and pays each lawyer his share to this
@@ -346,6 +347,60 @@ export async function transitionPayout({
   } finally {
     client.release();
   }
+}
+
+// Admin one-click payout: "send" the money through the disbursement adapter (a
+// sandbox-simulated rail in this build) and mark the payout paid with the
+// reference the rail returned — no proof to type or upload. Reuses
+// transitionPayout for the atomic, locked state change, so balances, history,
+// and notifications behave identically to a manually-recorded payout. Returns
+// the updated payout (+ lawyerUserId) so the caller can notify the lawyer.
+export async function disbursePayout({ payoutId, adminUserId }) {
+  const found = await pool.query(
+    `SELECT amount, currency, status,
+            payout_account_title, payout_account_number, payout_bank_name
+     FROM payouts WHERE id = $1`,
+    [payoutId]
+  );
+  const payout = found.rows[0];
+  if (!payout) {
+    throw new ApiError(404, "Payout not found.");
+  }
+  if (!["requested", "processing"].includes(payout.status)) {
+    throw new ApiError(409, `Cannot disburse a ${payout.status} payout.`);
+  }
+
+  const result = await disburse({
+    payoutId,
+    amount: payout.amount,
+    currency: payout.currency,
+    accountTitle: payout.payout_account_title,
+    accountNumber: payout.payout_account_number,
+    bankName: payout.payout_bank_name,
+  });
+
+  // transitionPayout re-locks the row (FOR UPDATE) and re-checks the state
+  // machine, so a concurrent change between our read and here is still safe.
+  return transitionPayout({
+    payoutId,
+    adminUserId,
+    status: "paid",
+    reference: result.reference,
+    transferBank: result.transferBank,
+    transferDate: result.transferDate,
+    note: "Auto-disbursed via simulated rail",
+  });
+}
+
+// A lawyer's email + first name, for sending the "you've been paid" payout
+// email. Returns null if the user can't be found. Best-effort: callers wrap it.
+export async function getPayoutLawyerContact(lawyerUserId) {
+  const result = await pool.query(
+    `SELECT email, first_name FROM users WHERE id = $1`,
+    [lawyerUserId]
+  );
+  const row = result.rows[0];
+  return row ? { email: row.email, firstName: row.first_name } : null;
 }
 
 // Admin-only: the storage location of a payout's receipt (for minting a signed

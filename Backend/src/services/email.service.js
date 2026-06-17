@@ -158,6 +158,20 @@ function getFrontendUrl() {
   return process.env.FRONTEND_URL || "http://localhost:5173";
 }
 
+// Render a date value (Date or ISO/YYYY-MM-DD string) as "Mon dd, yyyy", or a
+// fallback when it's missing/unparseable — so a template never shows "Invalid
+// Date". Shared by the money emails below.
+function formatDateLabel(value, fallback) {
+  if (!value) return fallback;
+  const date = value instanceof Date ? value : new Date(value);
+  if (!Number.isFinite(date.getTime())) return fallback;
+  return date.toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+}
+
 function send(to, subject, templateName, vars) {
   const html = renderEmail(templateName, vars);
   return sendEmail({ to, subject, html });
@@ -647,6 +661,51 @@ export function queueInstallmentOverdueLawyerEmail(params) {
   return queueEmailTask("installment-overdue-lawyer", () =>
     sendInstallmentOverdueLawyerEmail(params)
   );
+}
+
+// --- Money emails -----------------------------------------------------------
+
+// Sent to the lawyer when a payout is marked paid / disbursed. Mirrors the
+// in-app "You've been paid" notification with the same amount + reference.
+export function sendPayoutPaidEmail({ email, firstName, amount, reference, transferDate, bankName }) {
+  return send(email, `You've been paid — Rs ${Number(amount || 0).toLocaleString()}`, "payoutPaidLawyer", {
+    firstName: firstName || "Counsel",
+    amount: Number(amount || 0).toLocaleString(),
+    reference: reference || "—",
+    transferDateLabel: formatDateLabel(transferDate, "today"),
+    bankName: bankName || "your bank account",
+    dashboardUrl: `${getFrontendUrl()}/login`,
+  });
+}
+
+export function queuePayoutPaidEmail(params) {
+  return queueEmailTask("payout-paid", () => sendPayoutPaidEmail(params));
+}
+
+// Sent to the client as a receipt when their payment is recorded. The money is
+// collected by LawFlow (marketplace model), so the receipt comes from LawFlow.
+export function sendPaymentReceiptClientEmail({
+  email,
+  firstName,
+  amount,
+  caseTitle,
+  lawyerName,
+  receiptNumber,
+  paymentsUrl,
+}) {
+  return send(email, `Payment received — Rs ${Number(amount || 0).toLocaleString()}`, "paymentReceiptClient", {
+    firstName: firstName || "there",
+    amount: Number(amount || 0).toLocaleString(),
+    caseTitle: caseTitle || "your case",
+    lawyerName: lawyerName || "your lawyer",
+    receiptNumber: receiptNumber || "—",
+    paidDateLabel: formatDateLabel(new Date(), "today"),
+    paymentsUrl: paymentsUrl || `${getFrontendUrl()}/login`,
+  });
+}
+
+export function queuePaymentReceiptClientEmail(params) {
+  return queueEmailTask("payment-receipt-client", () => sendPaymentReceiptClientEmail(params));
 }
 
 export async function warmEmailTransport() {
