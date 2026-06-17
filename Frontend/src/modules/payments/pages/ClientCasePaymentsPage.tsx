@@ -233,6 +233,7 @@ export default function ClientCasePaymentsPage() {
               <h1 className="mt-2 text-2xl font-semibold text-gray-900">Payments</h1>
               <p className="mt-1 text-sm text-gray-600">
                 View your payment plan, pay installments, and access receipts.
+                Payments are collected securely by LawFlow.
               </p>
             </div>
             {allAgreements.length >= 1 && (
@@ -291,6 +292,18 @@ export default function ClientCasePaymentsPage() {
           </div>
         ) : (
           <>
+            <div className="rounded-xl border border-sky-100 bg-sky-50/60 p-4 text-sm text-sky-800">
+              <div className="flex items-start gap-2">
+                <CreditCard className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>
+                  You're paying <span className="font-semibold">LawFlow</span> for
+                  your case with <span className="font-semibold">{snapshot.lawyerName}</span>.
+                  LawFlow securely collects this payment and settles your lawyer's
+                  share.
+                </span>
+              </div>
+            </div>
+
             <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
               <h2 className="text-sm font-semibold text-gray-900">Case Information</h2>
               <dl className="mt-3 grid gap-2 text-sm sm:grid-cols-2">

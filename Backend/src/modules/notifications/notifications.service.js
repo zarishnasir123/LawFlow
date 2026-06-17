@@ -59,6 +59,24 @@ export async function createNotification({
   return mapNotification(result.rows[0]);
 }
 
+// Fan a notification out to every admin user (e.g. a payout request, a new
+// lawyer awaiting verification). Looks admins up via the roles reference table.
+// Throwable like createNotification — callers treat it as best-effort and wrap
+// in try/catch (or .catch) so it never breaks their primary flow.
+export async function notifyAdmins({ type, title, message, caseId = null }) {
+  const admins = await pool.query(
+    `SELECT u.id
+     FROM users u
+     JOIN roles r ON r.id = u.role_id
+     WHERE r.name = 'admin'`
+  );
+  await Promise.all(
+    admins.rows.map((admin) =>
+      createNotification({ userId: admin.id, type, title, message, caseId })
+    )
+  );
+}
+
 // GET list payload: the caller's most recent notifications (newest first,
 // capped at LIST_LIMIT) plus the total unread count across ALL their rows
 // (not just the returned slice) so the bell badge stays accurate.

@@ -70,6 +70,16 @@ export const updatePayoutValidator = [
     .withMessage("note is too long")
 ];
 
+// PUT /api/admin/commission-rate — the platform fee percentage (0–100).
+export const updateCommissionRateValidator = [
+  body("commissionRate")
+    .exists()
+    .withMessage("commissionRate is required")
+    .bail()
+    .isFloat({ min: 0, max: 100 })
+    .withMessage("commissionRate must be a number between 0 and 100")
+];
+
 // POST /api/admin/payouts/:payoutId/mark-paid (multipart) — proof of transfer.
 // reference + transfer date + sending bank are required; the receipt file is
 // checked in the handler (express-validator can't see multipart files).

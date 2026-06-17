@@ -2,12 +2,15 @@ import { Router } from "express";
 
 import {
   getAdminCaseDetailHandler,
+  getCommissionRateHandler,
   getDashboardStatsHandler,
+  getMoneyOverviewHandler,
   getPayoutReceiptHandler,
   getRecentActivityHandler,
   listAdminCasesHandler,
   listPayoutsHandler,
   markPayoutPaidHandler,
+  updateCommissionRateHandler,
   updatePayoutHandler
 } from "./admin.controller.js";
 import {
@@ -15,6 +18,7 @@ import {
   listAdminCasesValidator,
   listPayoutsValidator,
   markPayoutPaidValidator,
+  updateCommissionRateValidator,
   updatePayoutValidator
 } from "./admin.validators.js";
 import { asyncHandler } from "../../middleware/asyncHandler.js";
@@ -44,6 +48,18 @@ router.get(
   adminCaseIdParamValidator,
   validateRequest,
   asyncHandler(getAdminCaseDetailHandler)
+);
+
+// Platform money overview for the Finances page (admin-only).
+router.get("/money-overview", asyncHandler(getMoneyOverviewHandler));
+
+// Platform commission rate — view + update (admin-only).
+router.get("/commission-rate", asyncHandler(getCommissionRateHandler));
+router.put(
+  "/commission-rate",
+  updateCommissionRateValidator,
+  validateRequest,
+  asyncHandler(updateCommissionRateHandler)
 );
 
 // Payouts queue + processing (admin-only, gated by the router.use above).

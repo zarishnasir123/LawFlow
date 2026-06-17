@@ -27,7 +27,7 @@ import {
   requestPayout,
   listLawyerPayouts,
 } from "./payouts.service.js";
-import { createNotification } from "../notifications/notifications.service.js";
+import { notifyAdmins } from "../notifications/notifications.service.js";
 
 function mapAgreementResponse(snapshot) {
   return {
@@ -321,27 +321,16 @@ export async function requestPayoutHandler(req, res) {
     // Best-effort: let the admins know a payout is waiting in their queue.
     // Never let a notification hiccup fail the request itself.
     try {
-      const admins = await pool.query(
-        `SELECT u.id
-         FROM users u
-         JOIN roles r ON r.id = u.role_id
-         WHERE r.name = 'admin'`
-      );
       const whoResult = await pool.query(
         `SELECT CONCAT(first_name, ' ', last_name) AS name FROM users WHERE id = $1`,
         [req.user.sub]
       );
       const lawyerName = whoResult.rows[0]?.name?.trim() || "A lawyer";
-      await Promise.all(
-        admins.rows.map((admin) =>
-          createNotification({
-            userId: admin.id,
-            type: "payout_requested",
-            title: "New payout request",
-            message: `${lawyerName} requested a payout of Rs ${payout.amount.toLocaleString()}.`,
-          })
-        )
-      );
+      await notifyAdmins({
+        type: "payout_requested",
+        title: "New payout request",
+        message: `${lawyerName} requested a payout of Rs ${payout.amount.toLocaleString()}.`,
+      });
     } catch (notifyErr) {
       console.error(
         "Payout request notification failed:",

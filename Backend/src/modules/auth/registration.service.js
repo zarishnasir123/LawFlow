@@ -14,6 +14,7 @@ import { ApiError } from "../../utils/apiError.js";
 import { normalizeCnic } from "../../utils/cnic.js";
 import { compareHash, hashValue } from "../../utils/hash.js";
 import { generateNumericOtp, getEmailOtpExpiryDate } from "../../utils/otp.js";
+import { notifyAdmins } from "../notifications/notifications.service.js";
 import { registrationStrategies } from "./registration.strategies.js";
 
 const lawyerDocumentFields = [
@@ -465,6 +466,20 @@ export async function completeRegistrationVerification({ email, otp }) {
         email: user.email,
         firstName: user.first_name
       });
+      // Best-effort, fire-and-forget: let admins know a new lawyer is waiting
+      // for verification. Post-commit + .catch so it never affects signup.
+      const lawyerName =
+        [user.first_name, user.last_name].filter(Boolean).join(" ") || user.email;
+      notifyAdmins({
+        type: "lawyer_pending_verification",
+        title: "New lawyer awaiting verification",
+        message: `${lawyerName} registered and is awaiting verification.`
+      }).catch((error) =>
+        console.error(
+          "Admin lawyer-pending notification failed:",
+          error?.message || error
+        )
+      );
     } else {
       queueWelcomeEmail({
         email: user.email,

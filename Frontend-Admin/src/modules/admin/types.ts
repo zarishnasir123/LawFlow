@@ -32,23 +32,6 @@ export type CaseTemplateCategory = {
   updatedAt: string;
 };
 
-export type AdminNotificationCategory =
-  | "lawyer_verification"
-  | "system_statistics"
-  | "registrar_management";
-
-export type AdminNotificationSeverity = "info" | "success" | "warning";
-
-export type AdminNotification = {
-  id: string;
-  title: string;
-  message: string;
-  category: AdminNotificationCategory;
-  severity: AdminNotificationSeverity;
-  createdAt: string;
-  isRead: boolean;
-};
-
 export type StatisticsRange = "week" | "month" | "year";
 
 export type StatisticsMetricTone = "emerald" | "blue" | "violet" | "orange";
