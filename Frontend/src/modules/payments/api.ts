@@ -227,9 +227,27 @@ export const getPaymentReceipt = async (receiptId: string) => {
   return data.data;
 };
 
+export type LawyerEarningsBalance = {
+  // Total clients have paid against this lawyer's cases.
+  grossEarned: number;
+  // The platform's commission, summed from the per-transaction snapshots.
+  platformFee: number;
+  // The lawyer's share after the platform fee (gross − platform fee).
+  netEarned: number;
+  // Net already settled to the lawyer's bank (status = 'paid' payouts).
+  paidOut: number;
+  // Net tied up in payouts that are requested/processing (not yet paid).
+  pendingPayouts: number;
+  // What the lawyer can still withdraw (net − paidOut − pendingPayouts).
+  available: number;
+  // Current platform commission rate, for the "platform fee (X%)" label only.
+  commissionRate: number;
+};
+
 export type LawyerEarnings = {
   totalReceived: number;
   paymentsCount: number;
+  balance: LawyerEarningsBalance;
   byCase: Array<{
     caseId: string;
     caseTitle: string;
@@ -276,4 +294,41 @@ export const updateLawyerPayoutAccount = async (payload: {
 }): Promise<LawyerPayoutAccount> => {
   const { data } = await apiClient.put("/payments/lawyer/payout-account", payload);
   return data.data as LawyerPayoutAccount;
+};
+
+export type PayoutStatus =
+  | "requested"
+  | "processing"
+  | "paid"
+  | "failed"
+  | "cancelled";
+
+// One payout record (the platform settling a lawyer's earnings to their bank).
+// Bank fields are the snapshot taken when the payout was requested.
+export type LawyerPayout = {
+  id: string;
+  amount: number;
+  currency: string;
+  status: PayoutStatus;
+  accountTitle: string | null;
+  accountNumber: string | null;
+  bankName: string | null;
+  reference: string | null;
+  note: string | null;
+  requestedAt: string;
+  processedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+// Lawyer asks LawFlow to pay out their full available balance. The backend
+// creates a 'requested' payout; the admin later marks it paid.
+export const requestLawyerPayout = async (): Promise<LawyerPayout> => {
+  const { data } = await apiClient.post("/payments/lawyer/request-payout");
+  return data.data as LawyerPayout;
+};
+
+export const getLawyerPayouts = async (): Promise<LawyerPayout[]> => {
+  const { data } = await apiClient.get("/payments/lawyer/payouts");
+  return data.data as LawyerPayout[];
 };

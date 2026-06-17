@@ -152,13 +152,43 @@ export async function generateReceiptNumber(client) {
 // lawyer, built from successful transactions. This is how "the money goes to
 // the lawyer" is represented in-system (real bank settlement is out of scope).
 export async function listLawyerEarnings(lawyerUserId) {
+  // Gross + the marketplace split. platform_fee_amount / lawyer_net_amount were
+  // added in the commission work and snapshotted per transaction; rows recorded
+  // before that have NULL, so COALESCE treats them as "no fee taken" (the whole
+  // amount is the lawyer's net) — that keeps gross = fee + net for every row.
   const totals = await pool.query(
     `SELECT COALESCE(SUM(amount), 0)::float AS total_received,
+            COALESCE(SUM(COALESCE(platform_fee_amount, 0)), 0)::float AS platform_fee,
+            COALESCE(SUM(COALESCE(lawyer_net_amount, amount)), 0)::float AS net_earned,
             COUNT(*)::int AS payments_count
      FROM payment_transactions
      WHERE lawyer_user_id = $1 AND status = 'success'`,
     [lawyerUserId]
   );
+
+  // What's already been paid out, and what's mid-flight. A payout that is
+  // requested or processing still ties up the money (it can't be requested
+  // twice), so it reduces the available balance the same as a paid one;
+  // cancelled/failed payouts release the money back.
+  const payouts = await pool.query(
+    `SELECT
+       COALESCE(SUM(amount) FILTER (WHERE status = 'paid'), 0)::float AS paid_out,
+       COALESCE(SUM(amount) FILTER (WHERE status IN ('requested', 'processing')), 0)::float
+         AS pending_payouts
+     FROM payouts
+     WHERE lawyer_user_id = $1`,
+    [lawyerUserId]
+  );
+
+  // Current platform commission rate, only for the "platform fee (X%)" label.
+  // The fee AMOUNT shown is the real per-transaction snapshot sum, not derived
+  // from this rate, so a later rate change never rewrites historical earnings.
+  const settings = await pool.query(
+    `SELECT commission_rate FROM platform_settings WHERE id = 1`
+  );
+  const commissionRate = settings.rows[0]
+    ? Number(settings.rows[0].commission_rate)
+    : 10;
 
   const byCase = await pool.query(
     `SELECT
@@ -195,9 +225,29 @@ export async function listLawyerEarnings(lawyerUserId) {
     [lawyerUserId]
   );
 
+  const grossEarned = totals.rows[0].total_received;
+  const platformFee = totals.rows[0].platform_fee;
+  const netEarned = totals.rows[0].net_earned;
+  const paidOut = payouts.rows[0].paid_out;
+  const pendingPayouts = payouts.rows[0].pending_payouts;
+  // Available = the lawyer's net minus everything already tied up in payouts.
+  // Clamp at 0 so floating-point dust can never show a tiny negative balance.
+  const available = Math.max(0, netEarned - paidOut - pendingPayouts);
+
   return {
-    totalReceived: totals.rows[0].total_received,
+    totalReceived: grossEarned,
     paymentsCount: totals.rows[0].payments_count,
+    // Marketplace balance breakdown: gross → platform fee → net → paid out →
+    // available to withdraw. Drives the lawyer Earnings page money panel.
+    balance: {
+      grossEarned,
+      platformFee,
+      netEarned,
+      paidOut,
+      pendingPayouts,
+      available,
+      commissionRate,
+    },
     byCase: byCase.rows.map((r) => ({
       caseId: r.case_id,
       caseTitle: r.case_title,

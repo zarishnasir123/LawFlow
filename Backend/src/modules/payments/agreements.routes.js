@@ -14,7 +14,9 @@ import {
   listClientAgreementsHandler,
   listLawyerAgreementCasesHandler,
   listLawyerEarningsHandler,
+  listLawyerPayoutsHandler,
   listReceiptsHandler,
+  requestPayoutHandler,
   updateLawyerPayoutAccountHandler,
   listTransactionsHandler,
   updateAgreementStatusHandler,
@@ -74,6 +76,22 @@ router.put(
   authenticate,
   authorizeRoles("lawyer"),
   asyncHandler(updateLawyerPayoutAccountHandler)
+);
+
+// Lawyer withdraws their available balance: create a payout request, then list
+// their payout history. Admin processes the request (see admin module).
+router.post(
+  "/lawyer/request-payout",
+  authenticate,
+  authorizeRoles("lawyer"),
+  asyncHandler(requestPayoutHandler)
+);
+
+router.get(
+  "/lawyer/payouts",
+  authenticate,
+  authorizeRoles("lawyer"),
+  asyncHandler(listLawyerPayoutsHandler)
 );
 
 router.get(

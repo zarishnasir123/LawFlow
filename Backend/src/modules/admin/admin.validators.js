@@ -1,6 +1,7 @@
-import { param, query } from "express-validator";
+import { body, param, query } from "express-validator";
 
 import { ADMIN_CASE_STATUSES } from "./adminCases.service.js";
+import { PAYOUT_STATUSES } from "../payments/payouts.service.js";
 
 // Validators for the admin case-traceability endpoints. Mirrors the
 // registrarReview.validators.js conventions: a malformed value surfaces as
@@ -39,4 +40,38 @@ export const listAdminCasesValidator = [
     .optional()
     .isInt({ min: 0 })
     .withMessage("offset must be a non-negative integer")
+];
+
+// The statuses an admin can transition a payout TO. "requested" is excluded —
+// that's the lawyer's starting state, not something the admin sets.
+const PAYOUT_TARGET_STATUSES = PAYOUT_STATUSES.filter((s) => s !== "requested");
+
+// GET /api/admin/payouts — optional status filter (any real payout status).
+export const listPayoutsValidator = [
+  query("status")
+    .optional()
+    .isIn(PAYOUT_STATUSES)
+    .withMessage(`status must be one of: ${PAYOUT_STATUSES.join(", ")}`)
+];
+
+// PATCH /api/admin/payouts/:payoutId — id must be a UUID; status is required
+// and must be a valid target; reference/note are optional free text (the
+// service additionally requires a reference when status === 'paid').
+export const updatePayoutValidator = [
+  param("payoutId").isUUID().withMessage("payoutId must be a valid UUID"),
+  body("status")
+    .isIn(PAYOUT_TARGET_STATUSES)
+    .withMessage(`status must be one of: ${PAYOUT_TARGET_STATUSES.join(", ")}`),
+  body("reference")
+    .optional({ nullable: true })
+    .isString()
+    .withMessage("reference must be text")
+    .isLength({ max: 255 })
+    .withMessage("reference is too long"),
+  body("note")
+    .optional({ nullable: true })
+    .isString()
+    .withMessage("note must be text")
+    .isLength({ max: 2000 })
+    .withMessage("note is too long")
 ];

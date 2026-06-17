@@ -4,6 +4,7 @@ import { ApiError } from "../../utils/apiError.js";
 import { isValidUuid } from "../../utils/uuid.js";
 import { getInstallmentForCheckout } from "./agreements.service.js";
 import { generateReceiptNumber } from "./transactions.service.js";
+import { createNotification } from "../notifications/notifications.service.js";
 
 // Safepay (Pakistani gateway) replaces Stripe. We run in SANDBOX for the
 // project — real production payments require State-Bank merchant onboarding.
@@ -274,6 +275,24 @@ export async function recordPaymentByToken({ checkoutToken, gatewayReference }) 
     }
 
     await dbClient.query("COMMIT");
+
+    // Best-effort: tell the lawyer their client just paid. Runs after the
+    // money is safely committed and never throws into the payment flow.
+    try {
+      await createNotification({
+        userId: row.lawyer_user_id,
+        type: "payment_received",
+        title: "Payment received",
+        message: `A client paid Rs ${amount.toLocaleString()} towards one of your cases.`,
+        caseId: row.case_id,
+      });
+    } catch (notifyErr) {
+      console.error(
+        "Payment received notification failed:",
+        notifyErr?.message || notifyErr
+      );
+    }
+
     return {
       duplicate: false,
       transactionId: transaction.id,

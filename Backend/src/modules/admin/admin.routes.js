@@ -4,11 +4,15 @@ import {
   getAdminCaseDetailHandler,
   getDashboardStatsHandler,
   getRecentActivityHandler,
-  listAdminCasesHandler
+  listAdminCasesHandler,
+  listPayoutsHandler,
+  updatePayoutHandler
 } from "./admin.controller.js";
 import {
   adminCaseIdParamValidator,
-  listAdminCasesValidator
+  listAdminCasesValidator,
+  listPayoutsValidator,
+  updatePayoutValidator
 } from "./admin.validators.js";
 import { asyncHandler } from "../../middleware/asyncHandler.js";
 import { authenticate } from "../../middleware/authenticate.js";
@@ -36,6 +40,20 @@ router.get(
   adminCaseIdParamValidator,
   validateRequest,
   asyncHandler(getAdminCaseDetailHandler)
+);
+
+// Payouts queue + processing (admin-only, gated by the router.use above).
+router.get(
+  "/payouts",
+  listPayoutsValidator,
+  validateRequest,
+  asyncHandler(listPayoutsHandler)
+);
+router.patch(
+  "/payouts/:payoutId",
+  updatePayoutValidator,
+  validateRequest,
+  asyncHandler(updatePayoutHandler)
 );
 
 export default router;

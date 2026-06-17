@@ -757,6 +757,27 @@ export async function updateCase({ caseId, lawyerUserId, updates }) {
 // never fails the delete — the swallowing lives in the storage helpers, and
 // we additionally guard the whole sweep so an unexpected throw can't bubble.
 export async function deleteCaseForLawyer({ caseId, lawyerUserId }) {
+  // Money already changed hands for this case? Block the delete so payment
+  // history is never silently destroyed by the FK cascade. Scoped to the
+  // owning lawyer so a non-owner can't probe whether some other case has
+  // payments — for them this finds nothing and the DELETE below 404s instead.
+  const recordedPayments = await pool.query(
+    `SELECT 1
+     FROM payment_transactions pt
+     JOIN cases c ON c.id = pt.case_id
+     WHERE pt.case_id = $1
+       AND c.lawyer_user_id = $2
+       AND pt.status = 'success'
+     LIMIT 1`,
+    [caseId, lawyerUserId]
+  );
+  if (recordedPayments.rows.length > 0) {
+    throw new ApiError(
+      409,
+      "This case has recorded payments and can't be deleted. Its payment history must be kept."
+    );
+  }
+
   // Capture the storage paths we'll want to sweep, scoped to the owning
   // lawyer so a non-owner learns nothing. If the case isn't theirs we get
   // zero rows and fall through to the 404 below after the DELETE no-ops.

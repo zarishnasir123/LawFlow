@@ -24,7 +24,10 @@ import {
 import {
   getLawyerPayoutAccount,
   upsertLawyerPayoutAccount,
+  requestPayout,
+  listLawyerPayouts,
 } from "./payouts.service.js";
+import { createNotification } from "../notifications/notifications.service.js";
 
 function mapAgreementResponse(snapshot) {
   return {
@@ -308,6 +311,61 @@ export async function updateLawyerPayoutAccountHandler(req, res) {
     }
     console.error("Error saving payout account:", error);
     return res.status(500).json({ message: "Failed to save payout account" });
+  }
+}
+
+export async function requestPayoutHandler(req, res) {
+  try {
+    const payout = await requestPayout(req.user.sub);
+
+    // Best-effort: let the admins know a payout is waiting in their queue.
+    // Never let a notification hiccup fail the request itself.
+    try {
+      const admins = await pool.query(
+        `SELECT u.id
+         FROM users u
+         JOIN roles r ON r.id = u.role_id
+         WHERE r.name = 'admin'`
+      );
+      const whoResult = await pool.query(
+        `SELECT CONCAT(first_name, ' ', last_name) AS name FROM users WHERE id = $1`,
+        [req.user.sub]
+      );
+      const lawyerName = whoResult.rows[0]?.name?.trim() || "A lawyer";
+      await Promise.all(
+        admins.rows.map((admin) =>
+          createNotification({
+            userId: admin.id,
+            type: "payout_requested",
+            title: "New payout request",
+            message: `${lawyerName} requested a payout of Rs ${payout.amount.toLocaleString()}.`,
+          })
+        )
+      );
+    } catch (notifyErr) {
+      console.error(
+        "Payout request notification failed:",
+        notifyErr?.message || notifyErr
+      );
+    }
+
+    return res.status(201).json({ message: "Payout requested", data: payout });
+  } catch (error) {
+    if (error instanceof ApiError) {
+      return res.status(error.statusCode).json({ message: error.message });
+    }
+    console.error("Error requesting payout:", error);
+    return res.status(500).json({ message: "Failed to request payout" });
+  }
+}
+
+export async function listLawyerPayoutsHandler(req, res) {
+  try {
+    const payouts = await listLawyerPayouts(req.user.sub);
+    return res.status(200).json({ data: payouts });
+  } catch (error) {
+    console.error("Error listing payouts:", error);
+    return res.status(500).json({ message: "Failed to fetch payouts" });
   }
 }
 

@@ -20,6 +20,7 @@ import {
   UserCheck,
   UserCircle2,
   UserX,
+  Wallet,
   X,
   type LucideIcon,
 } from "lucide-react";
@@ -55,6 +56,7 @@ const navItems: NavItem[] = [
     icon: GitBranch,
     matchPrefixes: ["/cases"],
   },
+  { to: "/payouts", label: "Payouts", icon: Wallet },
   { to: "/templates", label: "Templates", icon: FileText },
   { to: "/statistics", label: "Statistics", icon: BarChart3 },
   { to: "/notifications", label: "Notifications", icon: Bell },
