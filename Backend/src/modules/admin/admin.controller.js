@@ -1,5 +1,10 @@
 import { getDashboardStats, getRecentActivityFeed } from "./admin.service.js";
 import { getAdminCaseDetail, listAdminCases } from "./adminCases.service.js";
+import {
+  listPayoutsForAdmin,
+  transitionPayout,
+} from "../payments/payouts.service.js";
+import { createNotification } from "../notifications/notifications.service.js";
 import { ApiError } from "../../utils/apiError.js";
 
 // GET /api/admin/dashboard-stats
@@ -50,4 +55,57 @@ export async function getAdminCaseDetailHandler(req, res) {
     throw new ApiError(404, "Case not found");
   }
   return res.status(200).json(detail);
+}
+
+// GET /api/admin/payouts?status=
+// The payout queue: every payout (optionally filtered by status) with the
+// lawyer's name/email, open requests first. Shape: { items: AdminPayout[] }.
+export async function listPayoutsHandler(req, res) {
+  const items = await listPayoutsForAdmin({ status: req.query.status });
+  return res.status(200).json({ items });
+}
+
+// PATCH /api/admin/payouts/:payoutId
+// Admin moves a payout along its lifecycle (processing | paid | failed |
+// cancelled). Marking paid requires a bank reference. The transition + ledger
+// effects are validated in the service; here we additionally notify the lawyer
+// (best-effort) when their money lands or a payout fails.
+export async function updatePayoutHandler(req, res) {
+  const { status, reference, note } = req.body;
+  const payout = await transitionPayout({
+    payoutId: req.params.payoutId,
+    adminUserId: req.user.sub,
+    status,
+    reference,
+    note,
+  });
+
+  try {
+    if (status === "paid") {
+      await createNotification({
+        userId: payout.lawyerUserId,
+        type: "payout_paid",
+        title: "You've been paid",
+        message: `Your payout of Rs ${payout.amount.toLocaleString()} has been sent to your bank account${
+          payout.reference ? ` (ref: ${payout.reference})` : ""
+        }.`,
+      });
+    } else if (status === "failed") {
+      await createNotification({
+        userId: payout.lawyerUserId,
+        type: "payout_failed",
+        title: "Payout could not be completed",
+        message: `Your payout of Rs ${payout.amount.toLocaleString()} could not be processed, so the amount is back in your available balance.${
+          payout.note ? ` Note: ${payout.note}` : ""
+        }`,
+      });
+    }
+  } catch (notifyErr) {
+    console.error(
+      "Payout status notification failed:",
+      notifyErr?.message || notifyErr
+    );
+  }
+
+  return res.status(200).json({ message: "Payout updated", data: payout });
 }
