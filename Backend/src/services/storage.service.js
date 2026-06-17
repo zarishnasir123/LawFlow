@@ -564,3 +564,96 @@ export async function deleteCaseAttachment(storagePath) {
     .remove([storagePath])
     .catch(() => {});
 }
+
+// =====================================================================
+// Payout transfer receipts (private bucket).
+//
+// The admin's proof of the manual bank transfer to a lawyer, uploaded when a
+// payout is marked paid. Path convention: payouts/{payoutId}/receipt.{ext} —
+// one slot per payout (upsert replaces on re-upload). ADMIN-ONLY: served via a
+// short-lived signed URL behind an admin-gated endpoint, never to the lawyer.
+// =====================================================================
+
+function buildPayoutReceiptPath({ payoutId, originalName, mimeType }) {
+  let ext = originalName ? path.extname(originalName).toLowerCase() : "";
+  if (!ext) {
+    if (mimeType === "application/pdf") ext = ".pdf";
+    else if (mimeType === "image/png") ext = ".png";
+    else ext = ".jpg";
+  }
+  return `payouts/${payoutId}/receipt${ext}`;
+}
+
+export async function uploadPayoutReceipt({
+  payoutId,
+  fileBuffer,
+  mimeType,
+  originalName,
+}) {
+  if (!fileBuffer || fileBuffer.length === 0) {
+    throw new ApiError(400, "Receipt file is empty");
+  }
+
+  const config = getSupabaseStorageConfig();
+  const supabase = getSupabaseClient();
+  if (!supabase) {
+    throw new ApiError(
+      503,
+      `Receipt storage is not configured. Missing or placeholder values: ${config.issues.join(", ")}`
+    );
+  }
+
+  const storagePath = buildPayoutReceiptPath({ payoutId, originalName, mimeType });
+
+  const { error } = await supabase.storage
+    .from(config.payoutReceiptBucket)
+    .upload(storagePath, fileBuffer, {
+      contentType: mimeType || "application/octet-stream",
+      // upsert: true so re-marking (rare) overwrites in place rather than
+      // failing on a name collision.
+      upsert: true,
+    });
+
+  if (error) {
+    throw new ApiError(502, `Failed to upload payout receipt: ${error.message}`);
+  }
+
+  return { storageBucket: config.payoutReceiptBucket, storagePath };
+}
+
+export async function getPayoutReceiptSignedUrl(
+  storageBucket,
+  storagePath,
+  expiresInSeconds = 300
+) {
+  if (!storagePath) return null;
+
+  const config = getSupabaseStorageConfig();
+  const supabase = getSupabaseClient();
+  if (!supabase) return null;
+
+  const ttl =
+    Number.isFinite(expiresInSeconds) && expiresInSeconds > 0
+      ? expiresInSeconds
+      : 300;
+
+  const { data, error } = await supabase.storage
+    .from(storageBucket || config.payoutReceiptBucket)
+    .createSignedUrl(storagePath, ttl);
+
+  if (error || !data?.signedUrl) return null;
+  return data.signedUrl;
+}
+
+export async function deletePayoutReceipt(storageBucket, storagePath) {
+  if (!storagePath) return;
+
+  const supabase = getSupabaseClient();
+  if (!supabase) return;
+
+  const config = getSupabaseStorageConfig();
+  await supabase.storage
+    .from(storageBucket || config.payoutReceiptBucket)
+    .remove([storagePath])
+    .catch(() => {});
+}

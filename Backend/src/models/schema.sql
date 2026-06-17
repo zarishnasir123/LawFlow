@@ -844,6 +844,16 @@ CREATE TABLE payouts (
   note                  TEXT,
   processed_by_admin_id UUID REFERENCES users(id) ON DELETE SET NULL,
 
+  -- Proof of the manual bank transfer the admin made to the lawyer (Phase-1
+  -- admin-confirmed payout). Captured when marking paid. transfer_date +
+  -- transfer_bank + reference are shown to the lawyer as their confirmation;
+  -- the uploaded receipt image is ADMIN-ONLY (it can reveal the platform's own
+  -- bank account), so it lives behind an admin-gated signed-URL endpoint.
+  transfer_date          DATE,
+  transfer_bank          VARCHAR(150),
+  receipt_storage_bucket VARCHAR(100),
+  receipt_storage_path   TEXT,
+
   requested_at TIMESTAMP NOT NULL DEFAULT NOW(),
   processed_at TIMESTAMP,
   created_at   TIMESTAMP NOT NULL DEFAULT NOW(),

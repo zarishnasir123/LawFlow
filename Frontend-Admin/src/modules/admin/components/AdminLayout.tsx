@@ -27,6 +27,7 @@ import {
 
 import { useAdminNotificationsStore } from "../store/notifications.store";
 import { usePendingLawyerCount } from "../hooks/usePendingLawyerCount";
+import { useOpenPayoutCount } from "../hooks/useOpenPayoutCount";
 import LogoutConfirmationModal from "./modals/LogoutConfirmationModal";
 
 type NavItem = {
@@ -104,6 +105,7 @@ export default function AdminLayout() {
     (state) => state.notifications.filter((item) => !item.isRead).length,
   );
   const pendingLawyerCount = usePendingLawyerCount();
+  const openPayoutCount = useOpenPayoutCount();
 
   const handleLogout = () => {
     localStorage.clear();
@@ -196,16 +198,22 @@ export default function AdminLayout() {
               {navItems.map((item) => {
                 const active = isItemActive(location.pathname, item);
                 const Icon = item.icon;
-                // Two badges share the sidebar: unread notifications (red)
-                // and pending lawyer verifications (amber). Both follow the
-                // same dot-on-collapsed / number-on-expanded pattern.
+                // Three badges share the sidebar: unread notifications (red),
+                // pending lawyer verifications (amber), and payouts awaiting
+                // action (blue). All follow the same dot-on-collapsed /
+                // number-on-expanded pattern.
                 const badgeCount = (() => {
                   if (item.to === "/notifications") return unreadCount;
                   if (item.to === "/verifications") return pendingLawyerCount;
+                  if (item.to === "/payouts") return openPayoutCount;
                   return 0;
                 })();
                 const badgeColorClass =
-                  item.to === "/verifications" ? "bg-amber-500" : "bg-red-500";
+                  item.to === "/verifications"
+                    ? "bg-amber-500"
+                    : item.to === "/payouts"
+                      ? "bg-blue-500"
+                      : "bg-red-500";
                 const showBadge = badgeCount > 0;
                 return (
                   <li key={item.to}>

@@ -53,6 +53,11 @@ export default function LawyerDashboard() {
   } = useQuery({
     queryKey: ["lawyer", "dashboard-stats"],
     queryFn: casesApi.getDashboardStats,
+    // Keep the stat tiles (esp. Total Earnings) fresh: refetch on mount and
+    // when the lawyer returns to the tab, so they reflect new payments/payouts
+    // without a manual reload — and stay in step with the Earnings page.
+    staleTime: 0,
+    refetchOnWindowFocus: true,
   });
 
   // While loading we show a subtle dash placeholder; on error we fall back to

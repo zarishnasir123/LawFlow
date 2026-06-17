@@ -42,9 +42,10 @@ export const listAdminCasesValidator = [
     .withMessage("offset must be a non-negative integer")
 ];
 
-// The statuses an admin can transition a payout TO. "requested" is excluded —
-// that's the lawyer's starting state, not something the admin sets.
-const PAYOUT_TARGET_STATUSES = PAYOUT_STATUSES.filter((s) => s !== "requested");
+// The statuses an admin sets via the generic PATCH. "paid" is excluded — it
+// goes through the dedicated mark-paid endpoint that also captures transfer
+// proof; "requested" is the lawyer's starting state, never admin-set.
+const PAYOUT_PATCH_STATUSES = ["processing", "failed", "cancelled"];
 
 // GET /api/admin/payouts — optional status filter (any real payout status).
 export const listPayoutsValidator = [
@@ -54,20 +55,43 @@ export const listPayoutsValidator = [
     .withMessage(`status must be one of: ${PAYOUT_STATUSES.join(", ")}`)
 ];
 
-// PATCH /api/admin/payouts/:payoutId — id must be a UUID; status is required
-// and must be a valid target; reference/note are optional free text (the
-// service additionally requires a reference when status === 'paid').
+// PATCH /api/admin/payouts/:payoutId — processing | failed | cancelled, with an
+// optional note. Marking paid is NOT allowed here (use mark-paid).
 export const updatePayoutValidator = [
   param("payoutId").isUUID().withMessage("payoutId must be a valid UUID"),
   body("status")
-    .isIn(PAYOUT_TARGET_STATUSES)
-    .withMessage(`status must be one of: ${PAYOUT_TARGET_STATUSES.join(", ")}`),
-  body("reference")
+    .isIn(PAYOUT_PATCH_STATUSES)
+    .withMessage(`status must be one of: ${PAYOUT_PATCH_STATUSES.join(", ")}`),
+  body("note")
     .optional({ nullable: true })
     .isString()
-    .withMessage("reference must be text")
+    .withMessage("note must be text")
+    .isLength({ max: 2000 })
+    .withMessage("note is too long")
+];
+
+// POST /api/admin/payouts/:payoutId/mark-paid (multipart) — proof of transfer.
+// reference + transfer date + sending bank are required; the receipt file is
+// checked in the handler (express-validator can't see multipart files).
+export const markPayoutPaidValidator = [
+  param("payoutId").isUUID().withMessage("payoutId must be a valid UUID"),
+  body("reference")
+    .trim()
+    .notEmpty()
+    .withMessage("A bank reference / transaction ID is required")
     .isLength({ max: 255 })
     .withMessage("reference is too long"),
+  body("transferDate")
+    .notEmpty()
+    .withMessage("The transfer date is required")
+    .isISO8601()
+    .withMessage("transferDate must be a valid date (YYYY-MM-DD)"),
+  body("transferBank")
+    .trim()
+    .notEmpty()
+    .withMessage("The sending bank / method is required")
+    .isLength({ max: 150 })
+    .withMessage("bank / method is too long"),
   body("note")
     .optional({ nullable: true })
     .isString()

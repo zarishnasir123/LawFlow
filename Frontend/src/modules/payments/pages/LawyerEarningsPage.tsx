@@ -356,6 +356,15 @@ export default function LawyerEarningsPage() {
                               payout.status === "cancelled"
                                 ? payout.note || "—"
                                 : "—")}
+                            {payout.status === "paid" &&
+                            (payout.transferDate || payout.transferBank) ? (
+                              <span className="block text-xs text-gray-400">
+                                Sent {payout.transferDate || "—"}
+                                {payout.transferBank
+                                  ? ` via ${payout.transferBank}`
+                                  : ""}
+                              </span>
+                            ) : null}
                           </td>
                           <td className="px-4 py-3 text-sm text-gray-700">
                             {formatPayoutDate(payout.processedAt)}
