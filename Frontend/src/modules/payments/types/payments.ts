@@ -66,6 +66,7 @@ export interface Receipt {
   transactionId?: string;
   clientName?: string;
   lawyerName?: string;
+  caseTitle?: string;
   paymentStatus?: string;
 }
 

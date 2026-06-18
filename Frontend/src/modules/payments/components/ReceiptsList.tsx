@@ -8,12 +8,20 @@ type ReceiptsListProps = {
   receipts: Receipt[];
   installmentLabelById?: Record<string, string>;
   caseDisplayTitle?: string;
+  // Extra context for the printable receipt (the full agreement picture). All
+  // optional so other callers keep working.
+  caseTypeName?: string;
+  agreedTotal?: number;
+  totalPaid?: number;
 };
 
 export default function ReceiptsList({
   receipts,
   installmentLabelById = {},
   caseDisplayTitle = "Case Payment",
+  caseTypeName,
+  agreedTotal,
+  totalPaid,
 }: ReceiptsListProps) {
   const [selectedReceipt, setSelectedReceipt] = useState<Receipt | null>(null);
 
@@ -105,6 +113,9 @@ export default function ReceiptsList({
           installmentLabel={
             installmentLabelById[selectedReceipt.installmentId] || "Installment"
           }
+          caseTypeName={caseTypeName}
+          agreedTotal={agreedTotal}
+          totalPaid={totalPaid}
           onClose={() => setSelectedReceipt(null)}
         />
       )}

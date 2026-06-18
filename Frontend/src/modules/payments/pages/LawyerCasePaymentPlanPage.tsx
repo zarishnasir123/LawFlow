@@ -232,6 +232,11 @@ export default function LawyerCasePaymentPlanPage() {
                   installmentId: string;
                   amount: number;
                   issuedAt: string;
+                  transactionId?: string;
+                  clientName?: string;
+                  lawyerName?: string;
+                  caseTitle?: string;
+                  paymentStatus?: string;
                 }) => ({
                   id: r.id,
                   receiptNo: r.receiptNumber,
@@ -241,10 +246,18 @@ export default function LawyerCasePaymentPlanPage() {
                   method: "safepay" as const,
                   caseId: selectedCaseId!,
                   planId: snapshot.agreement.id,
+                  transactionId: r.transactionId,
+                  clientName: r.clientName,
+                  lawyerName: r.lawyerName,
+                  caseTitle: r.caseTitle,
+                  paymentStatus: r.paymentStatus,
                 })
               )}
               installmentLabelById={installmentLabelById}
               caseDisplayTitle={caseDisplayTitle}
+              caseTypeName={snapshot.caseTypeName}
+              agreedTotal={snapshot.agreement.agreedTotalAmount}
+              totalPaid={snapshot.totalAmountPaid}
             />
           </>
         ) : null}
