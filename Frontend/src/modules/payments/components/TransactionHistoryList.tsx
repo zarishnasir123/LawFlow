@@ -27,7 +27,9 @@ export default function TransactionHistoryList({
   return (
     <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 className="text-lg font-semibold text-gray-900">Transaction History</h3>
+        <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">
+          Transaction History
+        </p>
         <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-700">
           {transactions.length} {transactions.length === 1 ? "entry" : "entries"}
         </span>
@@ -41,23 +43,23 @@ export default function TransactionHistoryList({
         <div className="mt-4 overflow-x-auto rounded-xl border border-gray-200">
           <table className="w-full min-w-[680px]">
             <thead>
-              <tr className="border-b border-gray-200 bg-slate-50/90">
-                <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
+              <tr className="bg-[#01411C]">
+                <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-white">
                   Date
                 </th>
-                <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
+                <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-white">
                   Installment
                 </th>
-                <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
+                <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-white">
                   Method
                 </th>
-                <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
+                <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-white">
                   Provider
                 </th>
-                <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
+                <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-white">
                   Amount
                 </th>
-                <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
+                <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-white">
                   Status
                 </th>
               </tr>
