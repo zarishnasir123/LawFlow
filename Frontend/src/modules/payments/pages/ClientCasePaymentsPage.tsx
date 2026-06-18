@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { CreditCard, WalletCards } from "lucide-react";
+import { CreditCard } from "lucide-react";
 import ClientLayout from "../../client/components/ClientLayout";
 import ClientInstallmentsTable from "../components/ClientInstallmentsTable";
 import PaymentSummaryCard from "../components/PaymentSummaryCard";
@@ -223,43 +223,44 @@ export default function ClientCasePaymentsPage() {
   return (
     <ClientLayout brandSubtitle="Case Payments">
       <div className="space-y-6">
-        <div className="rounded-2xl border border-sky-100 bg-gradient-to-br from-white via-sky-50/40 to-white p-6 shadow-[0_20px_50px_-35px_rgba(14,165,233,0.45)]">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <div className="inline-flex items-center gap-2 rounded-full border border-sky-200 bg-white px-2.5 py-1 text-xs font-semibold text-sky-700">
-                <WalletCards className="h-3.5 w-3.5" />
-                Charges &amp; Payments
+        {/* Green header band — same language as the receipt header */}
+        <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+          <div className="bg-[#01411C] px-6 py-5">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h1 className="text-xl font-bold tracking-wide text-white">
+                  Case Payments
+                </h1>
+                <p className="mt-1 text-sm text-emerald-50/90">
+                  Pay your installments and access receipts — collected securely
+                  by LawFlow.
+                </p>
               </div>
-              <h1 className="mt-2 text-2xl font-semibold text-gray-900">Payments</h1>
-              <p className="mt-1 text-sm text-gray-600">
-                View your payment plan, pay installments, and access receipts.
-                Payments are collected securely by LawFlow.
-              </p>
+              {allAgreements.length >= 1 && (
+                <select
+                  value={activeCaseId || ""}
+                  onChange={(event) =>
+                    navigate({ to: `/client-payments/${event.target.value}` })
+                  }
+                  className="rounded-lg border border-white/30 bg-white px-3 py-2 text-sm text-gray-800 shadow-sm focus:outline-none focus:ring-2 focus:ring-white/40"
+                >
+                  {allAgreements.map((item) => (
+                    <option key={item.agreement.caseId} value={item.agreement.caseId}>
+                      {formatCaseSelectLabel({
+                        caseTitle: item.caseTitle,
+                        caseTypeName: item.caseTypeName,
+                        clientName: item.clientName,
+                      })}
+                    </option>
+                  ))}
+                </select>
+              )}
             </div>
-            {allAgreements.length >= 1 && (
-              <select
-                value={activeCaseId || ""}
-                onChange={(event) =>
-                  navigate({ to: `/client-payments/${event.target.value}` })
-                }
-                className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-100"
-              >
-                {allAgreements.map((item) => (
-                  <option key={item.agreement.caseId} value={item.agreement.caseId}>
-                    {formatCaseSelectLabel({
-                      caseTitle: item.caseTitle,
-                      caseTypeName: item.caseTypeName,
-                      clientName: item.clientName,
-                    })}
-                  </option>
-                ))}
-              </select>
-            )}
           </div>
         </div>
 
         {confirmingPayment && (
-          <div className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800">
+          <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
             Recording your payment…
           </div>
         )}
@@ -269,7 +270,7 @@ export default function ClientCasePaymentsPage() {
             className={`rounded-xl border px-4 py-3 text-sm ${
               feedback.tone === "success"
                 ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                : "border-sky-200 bg-sky-50 text-sky-800"
+                : "border-amber-200 bg-amber-50 text-amber-800"
             }`}
           >
             <div className="flex items-start gap-2">
@@ -280,7 +281,7 @@ export default function ClientCasePaymentsPage() {
         )}
 
         {!snapshot ? (
-          <div className="rounded-xl border border-dashed border-gray-300 bg-white p-10 text-center">
+          <div className="rounded-2xl border border-dashed border-gray-300 bg-white p-10 text-center">
             <p className="text-base font-medium text-gray-800">
               {allAgreements.length === 0
                 ? "No payment plans are available yet."
@@ -292,9 +293,9 @@ export default function ClientCasePaymentsPage() {
           </div>
         ) : (
           <>
-            <div className="rounded-xl border border-sky-100 bg-sky-50/60 p-4 text-sm text-sky-800">
+            <div className="rounded-xl border border-emerald-100 bg-[#f4fbf7] p-4 text-sm text-emerald-900">
               <div className="flex items-start gap-2">
-                <CreditCard className="mt-0.5 h-4 w-4 shrink-0" />
+                <CreditCard className="mt-0.5 h-4 w-4 shrink-0 text-emerald-700" />
                 <span>
                   You're paying <span className="font-semibold">LawFlow</span> for
                   your case with <span className="font-semibold">{snapshot.lawyerName}</span>.
@@ -304,26 +305,28 @@ export default function ClientCasePaymentsPage() {
               </div>
             </div>
 
-            <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-              <h2 className="text-sm font-semibold text-gray-900">Case Information</h2>
-              <dl className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
+            <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">
+                Case Information
+              </p>
+              <dl className="mt-3 grid gap-4 text-sm sm:grid-cols-2">
                 <div>
-                  <dt className="text-gray-500">Case Title</dt>
-                  <dd className="font-medium text-gray-900">{caseDisplayTitle}</dd>
+                  <dt className="text-xs text-gray-400">Case Title</dt>
+                  <dd className="mt-0.5 font-medium text-gray-900">{caseDisplayTitle}</dd>
                 </div>
                 <div>
-                  <dt className="text-gray-500">Case Type</dt>
-                  <dd className="font-medium text-gray-900">
+                  <dt className="text-xs text-gray-400">Case Type</dt>
+                  <dd className="mt-0.5 font-medium text-gray-900">
                     {snapshot.caseTypeName || "—"}
                   </dd>
                 </div>
                 <div>
-                  <dt className="text-gray-500">Lawyer</dt>
-                  <dd className="font-medium text-gray-900">{snapshot.lawyerName}</dd>
+                  <dt className="text-xs text-gray-400">Lawyer</dt>
+                  <dd className="mt-0.5 font-medium text-gray-900">{snapshot.lawyerName}</dd>
                 </div>
                 <div>
-                  <dt className="text-gray-500">Service Charge</dt>
-                  <dd className="font-semibold text-[#01411C]">
+                  <dt className="text-xs text-gray-400">Service Charge</dt>
+                  <dd className="mt-0.5 font-semibold text-[#01411C]">
                     PKR {snapshot.agreement.lawyerBaseFee.toLocaleString()}
                   </dd>
                 </div>
@@ -337,7 +340,9 @@ export default function ClientCasePaymentsPage() {
             />
 
             <div>
-              <h2 className="mb-3 text-sm font-semibold text-gray-900">Installments</h2>
+              <p className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-gray-500">
+                Installments
+              </p>
               <ClientInstallmentsTable
                 installments={clientInstallments}
                 caseName={caseDisplayTitle}

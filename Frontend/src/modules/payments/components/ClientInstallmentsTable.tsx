@@ -58,12 +58,12 @@ export default function ClientInstallmentsTable({
       <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
         <table className="w-full min-w-[640px]">
           <thead>
-            <tr className="border-b border-gray-200 bg-slate-50/90">
+            <tr className="bg-[#01411C]">
               {["Installment", "Due Date", "Amount", "Status", "Action"].map(
                 (heading) => (
                   <th
                     key={heading}
-                    className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600"
+                    className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-white"
                   >
                     {heading}
                   </th>
