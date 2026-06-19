@@ -60,8 +60,10 @@ export default function PayoutAccountCard() {
   return (
     <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
       <div className="flex items-center gap-2">
-        <Landmark className="h-4 w-4 text-[#01411C]" />
-        <h2 className="text-lg font-semibold text-gray-900">Payout Account</h2>
+        <Landmark className="h-3.5 w-3.5 text-gray-500" />
+        <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">
+          Payout Account
+        </p>
       </div>
       <p className="mt-1 text-sm text-gray-600">
         LawFlow collects your clients' payments and settles your share to this account.

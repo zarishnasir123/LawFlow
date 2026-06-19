@@ -171,17 +171,24 @@ export default function LawyerEarningsPage() {
   return (
     <LawyerLayout brandSubtitle="Payments Received">
       <div className="space-y-6">
-        <div className="rounded-2xl border border-emerald-100 bg-gradient-to-br from-white via-emerald-50/40 to-white p-6 shadow-[0_20px_50px_-35px_rgba(1,65,28,0.45)]">
-          <div className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-white px-2.5 py-1 text-xs font-semibold text-[#01411C]">
-            <Wallet className="h-3.5 w-3.5" />
-            Payments Received
+        {/* Green header band — same language as the receipt header */}
+        <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+          <div className="bg-[#01411C] px-6 py-5">
+            <div className="flex items-center gap-2 text-emerald-50">
+              <Wallet className="h-4 w-4" />
+              <span className="text-xs font-semibold uppercase tracking-wider">
+                Payments Received
+              </span>
+            </div>
+            <h1 className="mt-2 text-xl font-bold tracking-wide text-white">
+              Your Earnings
+            </h1>
+            <p className="mt-1 text-sm text-emerald-50/90">
+              Payments your clients have made against their installment plans.
+              LawFlow collects these and settles your share to your payout account
+              (set it up below). This page is your record of what's been received.
+            </p>
           </div>
-          <h1 className="mt-2 text-2xl font-semibold text-gray-900">Your Earnings</h1>
-          <p className="mt-1 text-sm text-gray-600">
-            Payments your clients have made against their installment plans.
-            LawFlow collects these and settles your share to your payout account
-            (set it up below). This page is your record of what's been received.
-          </p>
         </div>
 
         <PayoutAccountCard />
@@ -258,9 +265,9 @@ export default function LawyerEarningsPage() {
 
               {/* The math behind the available balance, top to bottom. */}
               <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm lg:col-span-3">
-                <h2 className="text-lg font-semibold text-gray-900">
-                  Earnings breakdown
-                </h2>
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">
+                  Earnings Breakdown
+                </p>
                 <p className="mt-1 text-sm text-gray-600">
                   How your available balance is worked out, from{" "}
                   {earnings!.paymentsCount}{" "}
@@ -307,19 +314,21 @@ export default function LawyerEarningsPage() {
 
             {(payouts || []).length > 0 && (
               <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-                <h2 className="text-lg font-semibold text-gray-900">Payout History</h2>
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">
+                  Payout History
+                </p>
                 <p className="mt-1 text-sm text-gray-600">
                   Withdrawals of your earnings to your bank account.
                 </p>
                 <div className="mt-4 overflow-x-auto rounded-xl border border-gray-200">
                   <table className="w-full min-w-[720px]">
                     <thead>
-                      <tr className="border-b border-gray-200 bg-slate-50/90">
+                      <tr className="bg-[#01411C]">
                         {["Requested", "Amount", "Bank Account", "Status", "Reference / Note", "Processed"].map(
                           (heading) => (
                             <th
                               key={heading}
-                              className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600"
+                              className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-white"
                             >
                               {heading}
                             </th>
@@ -378,16 +387,18 @@ export default function LawyerEarningsPage() {
             )}
 
             <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-              <h2 className="text-lg font-semibold text-gray-900">By Case</h2>
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">
+                By Case
+              </p>
               <div className="mt-4 overflow-x-auto rounded-xl border border-gray-200">
                 <table className="w-full min-w-[640px]">
                   <thead>
-                    <tr className="border-b border-gray-200 bg-slate-50/90">
+                    <tr className="bg-[#01411C]">
                       {["Case", "Client", "Payments", "Last Payment", "Received"].map(
                         (heading) => (
                           <th
                             key={heading}
-                            className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600"
+                            className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-white"
                           >
                             {heading}
                           </th>
