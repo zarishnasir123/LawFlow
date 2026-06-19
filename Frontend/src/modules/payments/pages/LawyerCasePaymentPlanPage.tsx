@@ -1,7 +1,7 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
-import { Briefcase, HandCoins } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Briefcase, HandCoins, Loader2, Trash2 } from "lucide-react";
 import LawyerLayout from "../../lawyer/components/LawyerLayout";
 import ReceiptsList from "../components/ReceiptsList";
 import TransactionHistoryList from "../components/TransactionHistoryList";
@@ -13,6 +13,7 @@ import {
   getLawyerCasePaymentContext,
   getPaymentReceipts,
   getPaymentTransactions,
+  removePaymentPlan,
 } from "../api";
 import { casesApi, type ApiCase } from "../../lawyer/api/cases.api";
 import { formatCaseTitle } from "../utils/caseDisplay";
@@ -55,6 +56,31 @@ export default function LawyerCasePaymentPlanPage() {
   }, [cases, casesLoading, navigate, params.caseId]);
 
   const selectedCase: ApiCase | undefined = cases.find((c) => c.id === selectedCaseId);
+
+  const queryClient = useQueryClient();
+  const [confirmRemovePlan, setConfirmRemovePlan] = useState(false);
+  const [removePlanError, setRemovePlanError] = useState<string | null>(null);
+
+  // Remove the payment plan so the case can be deleted. Refused by the backend
+  // (409) if the client has already paid — we surface that message.
+  const removePlanMutation = useMutation({
+    mutationFn: () => removePaymentPlan(selectedCaseId!),
+    onSuccess: async () => {
+      setConfirmRemovePlan(false);
+      setRemovePlanError(null);
+      await queryClient.invalidateQueries({ queryKey: ["agreements", selectedCaseId] });
+      await queryClient.invalidateQueries({
+        queryKey: ["lawyer-payment-context", selectedCaseId],
+      });
+    },
+    onError: (err: unknown) => {
+      const r = err as { response?: { data?: { message?: string } } };
+      setRemovePlanError(
+        r?.response?.data?.message ||
+          "Couldn't remove the payment plan. Please try again."
+      );
+    },
+  });
 
   const { data: paymentContext, isLoading: contextLoading } = useQuery({
     queryKey: ["lawyer-payment-context", selectedCaseId],
@@ -180,9 +206,55 @@ export default function LawyerCasePaymentPlanPage() {
         ) : snapshot ? (
           <>
             <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">
-                Case Information
-              </p>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">
+                  Case Information
+                </p>
+                {/* Remove-plan action — only when nothing has been paid yet.
+                    Lets the lawyer then delete the case (delete is blocked while
+                    a plan exists). A paid case shows nothing here. */}
+                {snapshot.totalAmountPaid <= 0 &&
+                  (confirmRemovePlan ? (
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-gray-600">
+                        Remove the plan? This lets you delete the case.
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => removePlanMutation.mutate()}
+                        disabled={removePlanMutation.isPending}
+                        className="inline-flex items-center gap-1.5 rounded-lg bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-rose-700 disabled:opacity-60"
+                      >
+                        {removePlanMutation.isPending ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : null}
+                        Yes, remove
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setConfirmRemovePlan(false)}
+                        className="rounded-lg px-2 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-100"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setRemovePlanError(null);
+                        setConfirmRemovePlan(true);
+                      }}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 px-3 py-1.5 text-xs font-semibold text-rose-700 transition hover:bg-rose-50"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                      Remove payment plan
+                    </button>
+                  ))}
+              </div>
+              {removePlanError && (
+                <p className="mt-2 text-xs text-rose-600">{removePlanError}</p>
+              )}
               <dl className="mt-3 grid gap-4 text-sm sm:grid-cols-3">
                 <div>
                   <dt className="text-xs text-gray-400">Client</dt>

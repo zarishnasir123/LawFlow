@@ -464,6 +464,41 @@ export async function createPaymentPlanForCase({
   });
 }
 
+// Remove a case's payment plan (the agreement and everything under it:
+// installments + any failed/unfinished payment attempts), so the lawyer can then
+// delete the case. Allowed ONLY when the client has NOT successfully paid
+// anything — a case with a recorded payment keeps its history (and can't be
+// deleted either). Owner-scoped: getCaseForAgreement 404s for a non-owner.
+export async function removePaymentPlanForLawyer({ caseId, lawyerUserId }) {
+  // Validates the id + that this lawyer owns the case (404 otherwise).
+  await getCaseForAgreement({ caseId, lawyerUserId });
+
+  const paid = await pool.query(
+    `SELECT 1 FROM payment_transactions
+     WHERE case_id = $1 AND status = 'success'
+     LIMIT 1`,
+    [caseId]
+  );
+  if (paid.rows.length > 0) {
+    throw new ApiError(
+      409,
+      "This case has a recorded payment, so its payment plan can't be removed."
+    );
+  }
+
+  // Deleting the agreement cascades to payment_plans → installments → any
+  // failed/pending transactions (no successful ones exist, per the check above).
+  const result = await pool.query(
+    `DELETE FROM agreements WHERE case_id = $1`,
+    [caseId]
+  );
+  if (result.rowCount === 0) {
+    throw new ApiError(404, "There's no payment plan to remove for this case.");
+  }
+
+  return { removed: true };
+}
+
 export async function getAgreementSnapshot(agreementId, userId, role) {
   if (!isValidUuid(agreementId)) {
     throw new ApiError(400, "Invalid agreement ID");
