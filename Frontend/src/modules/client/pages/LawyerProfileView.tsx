@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { BadgeCheck, Mail, Star, Gavel, MapPin, HandCoins } from "lucide-react";
+import { BadgeCheck, Mail, Star, Gavel, MapPin, HandCoins, Loader2 } from "lucide-react";
 import ClientLayout from "../components/ClientLayout";
 import ImageLightbox from "../../../shared/components/ImageLightbox";
 import { fetchLawyer, type DirectoryLawyer } from "../api/lawyers";
+import { startConversationWithLawyer } from "../api";
 import { getLawyerPublicCaseCharges } from "../../payments/api";
 
 // Stats backed by tables we haven't shipped yet (rating, cases
@@ -32,6 +33,8 @@ export default function LawyerProfileView() {
   // and the user clicks it. Lives at the page level so the modal
   // overlays everything including the hero card.
   const [lightboxOpen, setLightboxOpen] = useState(false);
+  // While the "Message" button is starting/opening the conversation.
+  const [openingChat, setOpeningChat] = useState(false);
 
   const { data: lawyer, isLoading, isError } = useQuery({
     queryKey: ["lawyer", lawyerId],
@@ -91,6 +94,21 @@ export default function LawyerProfileView() {
     : "Specialization pending";
   const initial = (lawyer.firstName?.charAt(0) || "?").toUpperCase();
   const hasAvatar = Boolean(lawyer.avatarUrl);
+
+  // Start (or reopen) a direct conversation with this lawyer, then open the
+  // chat. Idempotent on the backend so repeat clicks reuse the same chat.
+  const handleMessage = async () => {
+    try {
+      setOpeningChat(true);
+      const conversation = await startConversationWithLawyer(lawyer.userId);
+      // Open the split inbox with this conversation preselected (the inbox
+      // reads ?thread=<id> on mount) so both sides share the same layout.
+      navigate({ to: "/client-messages", search: { thread: conversation.id } });
+    } catch (err) {
+      console.error("Could not open chat:", err);
+      setOpeningChat(false);
+    }
+  };
 
   return (
     <ClientLayout brandSubtitle="Lawyer Profile">
@@ -167,10 +185,15 @@ export default function LawyerProfileView() {
 
                 <div className="flex flex-wrap gap-2">
                   <button
-                    onClick={() => navigate({ to: "/client-messages" })}
-                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#01411C] px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-[#024a23]"
+                    onClick={handleMessage}
+                    disabled={openingChat}
+                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#01411C] px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-[#024a23] disabled:opacity-70"
                   >
-                    <Mail className="h-4 w-4" />
+                    {openingChat ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Mail className="h-4 w-4" />
+                    )}
                     Message
                   </button>
                   <button

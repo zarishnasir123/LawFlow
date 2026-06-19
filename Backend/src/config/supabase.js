@@ -49,6 +49,12 @@ export function getSupabaseStorageConfig() {
   // changing this only affects future uploads; old receipts stay resolvable.
   const payoutReceiptBucket =
     process.env.SUPABASE_PAYOUT_RECEIPT_BUCKET || "payout-receipts";
+  // Private bucket for chat attachments — documents + voice notes shared in a
+  // client↔lawyer conversation. Its own bucket (separate lifecycle + access:
+  // conversation-participant check, not case/lawyer ownership). The dev needs
+  // to create this bucket in Supabase Studio (keep it Private).
+  const chatAttachmentBucket =
+    process.env.SUPABASE_CHAT_BUCKET || "chat-attachments";
   const previewUrlExpiresIn = Number(process.env.SUPABASE_PREVIEW_URL_EXPIRES_IN || 900);
 
   const issues = [];
@@ -65,6 +71,7 @@ export function getSupabaseStorageConfig() {
     avatarBucket,
     caseAttachmentBucket,
     payoutReceiptBucket,
+    chatAttachmentBucket,
     previewUrlExpiresIn: Number.isFinite(previewUrlExpiresIn) && previewUrlExpiresIn > 0
       ? previewUrlExpiresIn
       : 900

@@ -36,12 +36,29 @@ export interface ClientChatThread {
 
 export type ChatSender = "lawyer" | "client";
 
+// A plain text message, a shared document ("file"), or a recorded voice note.
+export type ChatMessageKind = "text" | "file" | "voice";
+
 export interface ChatMessage {
   id: string;
   threadId: string;
   sender: ChatSender;
   text: string;
   createdAt: string; // ISO
+
+  // Attachment fields (Chunk 2). Present for "file" / "voice" messages; null
+  // or omitted for plain text. attachmentUrl is a short-lived signed URL the
+  // browser can open/play directly.
+  kind?: ChatMessageKind;
+  attachmentName?: string | null;
+  attachmentMime?: string | null;
+  attachmentSize?: number | null;
+  attachmentUrl?: string | null;
+  voiceDurationSeconds?: number | null;
+
+  // "Seen" tick (Chunk 4): true once the other participant has read this
+  // message (their last-read time has passed it).
+  seen?: boolean;
 }
 
 export interface SendMessagePayload {

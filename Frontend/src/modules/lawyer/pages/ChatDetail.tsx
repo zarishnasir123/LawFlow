@@ -9,7 +9,17 @@ import {
 import LawyerLayout from "../components/LawyerLayout";
 import ChatMessageBubble from "../components/ChatMessageBubble";
 import ChatComposer from "../components/ChatComposer";
-import { getThreadMessages, sendThreadMessage, getThreadById } from "../api";
+import {
+  getThreadMessages,
+  sendThreadMessage,
+  getThreadById,
+  sendThreadFile,
+  sendThreadVoice,
+} from "../api";
+import { getApiErrorMessage } from "../../../shared/utils/getApiErrorMessage";
+import { chatSocket } from "../../../shared/api/chatSocket";
+import { useChatSocket } from "../../../shared/hooks/useChatSocket";
+import { upsertMessage } from "../../../shared/utils/chatMessages";
 import type { ChatMessage, LawyerChatThread } from "../../../types/chat";
 
 export default function ChatDetail() {
@@ -21,7 +31,42 @@ export default function ChatDetail() {
   const [activeTab, setActiveTab] = useState<"messages" | "participants">(
     "messages"
   );
+  const [typing, setTyping] = useState(false);
+  const typingClearRef = useRef<number | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Live channel: subscribe to this conversation and react to live events.
+  useEffect(() => {
+    if (!threadId) return;
+    chatSocket.subscribe(threadId);
+    return () => chatSocket.unsubscribe(threadId);
+  }, [threadId]);
+
+  useChatSocket({
+    onMessage: (conversationId, message) => {
+      if (conversationId !== threadId) return;
+      setMessages((prev) =>
+        prev.some((m) => m.id === message.id) ? prev : [...prev, message]
+      );
+    },
+    onTyping: (conversationId, _from, isTyping) => {
+      if (conversationId !== threadId) return;
+      if (typingClearRef.current) window.clearTimeout(typingClearRef.current);
+      if (isTyping) {
+        setTyping(true);
+        typingClearRef.current = window.setTimeout(() => setTyping(false), 3000);
+      } else {
+        setTyping(false);
+      }
+    },
+    onPresence: (userId, online) => {
+      setThread((prev) =>
+        prev && prev.client.id === userId
+          ? { ...prev, client: { ...prev.client, status: online ? "online" : "offline" } }
+          : prev
+      );
+    },
+  });
 
   // Scroll to bottom when messages change
   useEffect(() => {
@@ -50,7 +95,33 @@ export default function ChatDetail() {
 
   const handleSendMessage = async (text: string) => {
     const newMsg = await sendThreadMessage(threadId, { text });
-    setMessages((prev) => [...prev, newMsg]);
+    setMessages((prev) => upsertMessage(prev, newMsg));
+  };
+
+  const handleSendFiles = async (files: File[]) => {
+    for (const file of files) {
+      try {
+        const msg = await sendThreadFile(threadId, file);
+        setMessages((prev) => upsertMessage(prev, msg));
+      } catch (error) {
+        console.error("Error uploading file:", error);
+        alert(getApiErrorMessage(error, "Could not upload that file."));
+      }
+    }
+  };
+
+  const handleSendVoice = async (
+    blob: Blob,
+    durationSeconds: number,
+    mimeType: string
+  ) => {
+    try {
+      const msg = await sendThreadVoice(threadId, blob, durationSeconds, mimeType);
+      setMessages((prev) => upsertMessage(prev, msg));
+    } catch (error) {
+      console.error("Error sending voice message:", error);
+      alert(getApiErrorMessage(error, "Could not send the voice message."));
+    }
   };
 
   if (loading) {
@@ -100,7 +171,11 @@ export default function ChatDetail() {
                 {thread.client.name}
               </h2>
               <p className="text-sm text-gray-500">
-                {thread.client.status === "online" ? "🟢 Online" : "⚫ Offline"}
+                {typing
+                  ? "typing…"
+                  : thread.client.status === "online"
+                    ? "🟢 Online"
+                    : "⚫ Offline"}
               </p>
             </div>
           </div>
@@ -148,7 +223,12 @@ export default function ChatDetail() {
 
           {/* Message Composer - Sticky at bottom */}
           <div className="sticky bottom-0 z-30 border-t border-gray-200 bg-white px-4 sm:px-8 py-4 shadow-lg">
-            <ChatComposer onSend={handleSendMessage} />
+            <ChatComposer
+              onSend={handleSendMessage}
+              onSendFiles={handleSendFiles}
+              onSendVoice={handleSendVoice}
+              onTyping={(isTyping) => chatSocket.sendTyping(threadId, isTyping)}
+            />
           </div>
         </div>
 

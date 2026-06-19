@@ -15,7 +15,20 @@ import {
   getClientThreads,
   getClientThreadMessages,
   sendClientThreadMessage,
-} from "../api"; // ✅ Fixed imports
+  sendClientThreadFile,
+  sendClientThreadVoice,
+} from "../api";
+import { getApiErrorMessage } from "../../../shared/utils/getApiErrorMessage";
+import { chatSocket } from "../../../shared/api/chatSocket";
+import { useChatSocket } from "../../../shared/hooks/useChatSocket";
+import { upsertMessage } from "../../../shared/utils/chatMessages";
+
+// Inbox preview text for a message (attachments show a label, not blank).
+function previewOf(message: ChatMessage): string {
+  if (message.kind === "file") return "📎 Document";
+  if (message.kind === "voice") return "🎤 Voice message";
+  return message.text;
+}
 
 export default function ClientMessages() {
   const { thread } = useSearch({ strict: false }) as { thread?: string };
@@ -31,6 +44,55 @@ export default function ClientMessages() {
   const [uploadedFiles, setUploadedFiles] = useState<
     Array<{ name: string; size: number; uploadedAt: string }>
   >([]);
+  // Which conversation currently shows "…typing" from the other person.
+  const [typingThreadId, setTypingThreadId] = useState<string | null>(null);
+  const typingClearRef = useRef<number | null>(null);
+
+  // Live channel: subscribe to the open conversation; react to incoming
+  // messages, typing, and presence.
+  useEffect(() => {
+    if (!selectedThreadId) return;
+    chatSocket.subscribe(selectedThreadId);
+    return () => chatSocket.unsubscribe(selectedThreadId);
+  }, [selectedThreadId]);
+
+  useChatSocket({
+    onMessage: (conversationId, message) => {
+      if (conversationId === selectedThreadId) {
+        setMessages((prev) =>
+          prev.some((m) => m.id === message.id) ? prev : [...prev, message]
+        );
+      }
+      setThreads((prev) =>
+        prev.map((t) =>
+          t.id === conversationId
+            ? { ...t, lastMessage: previewOf(message), lastMessageAt: message.createdAt }
+            : t
+        )
+      );
+    },
+    onTyping: (conversationId, _from, isTyping) => {
+      if (typingClearRef.current) window.clearTimeout(typingClearRef.current);
+      if (isTyping) {
+        setTypingThreadId(conversationId);
+        typingClearRef.current = window.setTimeout(
+          () => setTypingThreadId(null),
+          3000
+        );
+      } else {
+        setTypingThreadId(null);
+      }
+    },
+    onPresence: (userId, online) => {
+      setThreads((prev) =>
+        prev.map((t) =>
+          t.lawyer.id === userId
+            ? { ...t, lawyer: { ...t.lawyer, status: online ? "online" : "offline" } }
+            : t
+        )
+      );
+    },
+  });
 
   // ✅ Format last seen
   const formatLastSeen = (timestamp: string): string => {
@@ -129,23 +191,54 @@ export default function ClientMessages() {
     if (!selectedThreadId) return;
     try {
       const newMsg = await sendClientThreadMessage(selectedThreadId, { text });
-      setMessages((prev) => [...prev, newMsg]);
+      setMessages((prev) => upsertMessage(prev, newMsg));
     } catch (error) {
       console.error("Error sending message:", error);
     }
   };
 
-  // ✅ File upload simulation
-  const handleFileUpload = (files: File[]) => {
-    const newFiles = files.map((file) => ({
-      name: file.name,
-      size: file.size,
-      uploadedAt: new Date().toLocaleTimeString([], {
-        hour: "2-digit",
-        minute: "2-digit",
-      }),
-    }));
-    setUploadedFiles((prev) => [...prev, ...newFiles]);
+  const handleSendFiles = async (files: File[]) => {
+    if (!selectedThreadId) return;
+    for (const file of files) {
+      try {
+        const msg = await sendClientThreadFile(selectedThreadId, file);
+        setMessages((prev) => upsertMessage(prev, msg));
+        setUploadedFiles((prev) => [
+          ...prev,
+          {
+            name: file.name,
+            size: file.size,
+            uploadedAt: new Date().toLocaleTimeString([], {
+              hour: "2-digit",
+              minute: "2-digit",
+            }),
+          },
+        ]);
+      } catch (error) {
+        console.error("Error uploading file:", error);
+        alert(getApiErrorMessage(error, "Could not upload that file."));
+      }
+    }
+  };
+
+  const handleSendVoice = async (
+    blob: Blob,
+    durationSeconds: number,
+    mimeType: string
+  ) => {
+    if (!selectedThreadId) return;
+    try {
+      const msg = await sendClientThreadVoice(
+        selectedThreadId,
+        blob,
+        durationSeconds,
+        mimeType
+      );
+      setMessages((prev) => upsertMessage(prev, msg));
+    } catch (error) {
+      console.error("Error sending voice message:", error);
+      alert(getApiErrorMessage(error, "Could not send the voice message."));
+    }
   };
 
   return (
@@ -294,19 +387,25 @@ export default function ClientMessages() {
                       <h2 className="text-base font-bold text-gray-900">
                         {selectedThread.lawyer.name}
                       </h2>
-                      <p
-                        className={`text-xs font-medium ${
-                          selectedThread.lawyer.status === "online"
-                            ? "text-green-600"
-                            : "text-gray-500"
-                        }`}
-                      >
-                        {selectedThread.lawyer.status === "online"
-                          ? "● Online"
-                          : `Last seen ${formatLastSeen(
-                              selectedThread.lastMessageAt
-                            )}`}
-                      </p>
+                      {typingThreadId === selectedThreadId ? (
+                        <p className="text-xs font-medium text-green-600">
+                          typing…
+                        </p>
+                      ) : (
+                        <p
+                          className={`text-xs font-medium ${
+                            selectedThread.lawyer.status === "online"
+                              ? "text-green-600"
+                              : "text-gray-500"
+                          }`}
+                        >
+                          {selectedThread.lawyer.status === "online"
+                            ? "● Online"
+                            : `Last seen ${formatLastSeen(
+                                selectedThread.lastMessageAt
+                              )}`}
+                        </p>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -371,7 +470,12 @@ export default function ClientMessages() {
                   <div className="flex-shrink-0 border-t-2 border-gray-300">
                     <ChatComposer
                       onSend={handleSendMessage}
-                      onFileUpload={handleFileUpload}
+                      onSendFiles={handleSendFiles}
+                      onSendVoice={handleSendVoice}
+                      onTyping={(isTyping) =>
+                        selectedThreadId &&
+                        chatSocket.sendTyping(selectedThreadId, isTyping)
+                      }
                     />
                   </div>
                 </div>
