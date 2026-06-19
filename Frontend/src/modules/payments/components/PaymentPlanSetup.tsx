@@ -157,7 +157,9 @@ export default function PaymentPlanSetup({ caseId, context }: PaymentPlanSetupPr
 
   return (
     <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
-      <h2 className="text-lg font-semibold text-gray-900">Payment Plan Setup</h2>
+      <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">
+        Payment Plan Setup
+      </p>
       <p className="mt-1 text-sm text-gray-600">
         The total is pre-filled from your configured case charge — adjust it if
         you agreed a different fee with the client. It's split equally into
@@ -229,7 +231,7 @@ export default function PaymentPlanSetup({ caseId, context }: PaymentPlanSetupPr
           <div className="overflow-x-auto rounded-xl border border-gray-200">
             <table className="w-full min-w-[420px] text-sm">
               <thead>
-                <tr className="border-b border-gray-200 bg-slate-50/90 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
+                <tr className="bg-[#01411C] text-left text-xs font-semibold uppercase tracking-wide text-white">
                   <th className="px-4 py-2.5">Installment</th>
                   <th className="px-4 py-2.5">Amount (PKR)</th>
                   <th className="px-4 py-2.5">Due Date</th>

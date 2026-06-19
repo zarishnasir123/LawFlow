@@ -138,31 +138,38 @@ export default function LawyerCasePaymentPlanPage() {
   return (
     <LawyerLayout brandTitle="LawFlow" brandSubtitle="Case Payment Plans">
       <div className="space-y-6">
-        <div className="rounded-2xl border border-emerald-100 bg-gradient-to-br from-white via-emerald-50/30 to-white p-6">
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div>
-              <div className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-white px-2.5 py-1 text-xs font-semibold text-emerald-700">
-                <HandCoins className="h-3.5 w-3.5" />
-                Payment Planning
+        {/* Green header band — same language as the receipt header */}
+        <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+          <div className="bg-[#01411C] px-6 py-5">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2 text-emerald-50">
+                  <HandCoins className="h-4 w-4" />
+                  <span className="text-xs font-semibold uppercase tracking-wider">
+                    Payment Planning
+                  </span>
+                </div>
+                <h1 className="mt-2 text-xl font-bold tracking-wide text-white">
+                  Case Payment Plan
+                </h1>
               </div>
-              <h1 className="mt-2 text-2xl font-semibold text-gray-900">Case Payment Plan</h1>
+              <select
+                value={selectedCaseId || ""}
+                onChange={(e) =>
+                  navigate({
+                    to: "/lawyer-case-payments/$caseId",
+                    params: { caseId: e.target.value },
+                  })
+                }
+                className="rounded-lg border border-white/30 bg-white px-3 py-2 text-sm text-gray-800 shadow-sm focus:outline-none focus:ring-2 focus:ring-white/40"
+              >
+                {cases.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.title} — {c.clientName}
+                  </option>
+                ))}
+              </select>
             </div>
-            <select
-              value={selectedCaseId || ""}
-              onChange={(e) =>
-                navigate({
-                  to: "/lawyer-case-payments/$caseId",
-                  params: { caseId: e.target.value },
-                })
-              }
-              className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm shadow-sm"
-            >
-              {cases.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.title} — {c.clientName}
-                </option>
-              ))}
-            </select>
           </div>
         </div>
 
@@ -172,21 +179,26 @@ export default function LawyerCasePaymentPlanPage() {
           <PaymentPlanSetup caseId={selectedCaseId!} context={paymentContext} />
         ) : snapshot ? (
           <>
-            <div className="rounded-xl border border-gray-200 bg-white p-4 text-sm">
-              <p>
-                <span className="text-gray-500">Client:</span>{" "}
-                <span className="font-medium">{snapshot.clientName}</span>
+            <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">
+                Case Information
               </p>
-              <p className="mt-1">
-                <span className="text-gray-500">Case:</span>{" "}
-                <span className="font-medium">{caseDisplayTitle}</span>
-              </p>
-              <p className="mt-1">
-                <span className="text-gray-500">Service Charge:</span>{" "}
-                <span className="font-semibold text-[#01411C]">
-                  PKR {snapshot.agreement.lawyerBaseFee.toLocaleString()}
-                </span>
-              </p>
+              <dl className="mt-3 grid gap-4 text-sm sm:grid-cols-3">
+                <div>
+                  <dt className="text-xs text-gray-400">Client</dt>
+                  <dd className="mt-0.5 font-medium text-gray-900">{snapshot.clientName}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-gray-400">Case</dt>
+                  <dd className="mt-0.5 font-medium text-gray-900">{caseDisplayTitle}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-gray-400">Service Charge</dt>
+                  <dd className="mt-0.5 font-semibold text-[#01411C]">
+                    PKR {snapshot.agreement.lawyerBaseFee.toLocaleString()}
+                  </dd>
+                </div>
+              </dl>
             </div>
 
             <PaymentSummaryCard

@@ -38,7 +38,7 @@ export default function LawyerInstallmentsTable({
         </div>
         <div className="h-2 overflow-hidden rounded-full bg-emerald-100">
           <div
-            className="h-full rounded-full bg-emerald-600 transition-all duration-500"
+            className="h-full rounded-full bg-[#01411C] transition-all duration-500"
             style={{ width: `${progress}%` }}
           />
         </div>
@@ -47,11 +47,11 @@ export default function LawyerInstallmentsTable({
       <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
         <table className="w-full min-w-[640px]">
           <thead>
-            <tr className="border-b border-gray-200 bg-slate-50/90">
+            <tr className="bg-[#01411C]">
               {["Installment", "Due Date", "Amount", "Status"].map((heading) => (
                 <th
                   key={heading}
-                  className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600"
+                  className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-white"
                 >
                   {heading}
                 </th>
