@@ -3,6 +3,7 @@ import { ApiError } from "../../utils/apiError.js";
 import {
   createAgreementWithInstallments,
   createPaymentPlanForCase,
+  removePaymentPlanForLawyer,
   getAgreementSnapshot,
   getAgreementsByCase,
   getCaseForAgreement,
@@ -151,6 +152,26 @@ export async function listLawyerAgreementCasesHandler(req, res) {
   } catch (error) {
     console.error("Error listing agreement cases:", error);
     return res.status(500).json({ message: "Failed to fetch cases" });
+  }
+}
+
+// DELETE /api/payments/lawyer/cases/:caseId/payment-plan
+// Removes the case's payment plan so the lawyer can then delete the case.
+// Refused (409) if the client has already paid successfully.
+export async function removePaymentPlanHandler(req, res) {
+  const { caseId } = req.params;
+  try {
+    const result = await removePaymentPlanForLawyer({
+      caseId,
+      lawyerUserId: req.user.sub,
+    });
+    return res.status(200).json({ message: "Payment plan removed", data: result });
+  } catch (error) {
+    if (error instanceof ApiError) {
+      return res.status(error.statusCode).json({ message: error.message });
+    }
+    console.error("Error removing payment plan:", error);
+    return res.status(500).json({ message: "Failed to remove payment plan" });
   }
 }
 

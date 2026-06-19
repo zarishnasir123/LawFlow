@@ -130,6 +130,16 @@ export const createPaymentPlan = async (
   return data.data as AgreementSnapshotData;
 };
 
+// Remove a case's payment plan (lawyer). Only allowed when the client hasn't
+// paid anything successfully; refused (409) otherwise. Lets the lawyer then
+// delete the case.
+export const removePaymentPlan = async (caseId: string) => {
+  const { data } = await apiClient.delete(
+    `/payments/lawyer/cases/${caseId}/payment-plan`
+  );
+  return data as { message: string; data: { removed: boolean } };
+};
+
 export type PublicCaseCharges = {
   charges: Array<{ category: string; amount: number }>;
 } | null;

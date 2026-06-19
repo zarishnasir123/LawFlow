@@ -150,6 +150,16 @@ export async function recordPaymentByToken({ checkoutToken, gatewayReference }) 
 
     if (installmentResult.rows.length === 0) {
       await dbClient.query("ROLLBACK");
+      // No installment matches this checkout token — e.g. the case/plan was
+      // removed between the client starting checkout and this callback. Never
+      // silently drop a real payment: log it loudly so an unattachable payment
+      // can be spotted and reconciled by hand.
+      console.warn(
+        "[ORPHAN PAYMENT] No installment for checkout token:",
+        checkoutToken,
+        "| gateway ref:",
+        gatewayReference || "(none)"
+      );
       return null;
     }
 

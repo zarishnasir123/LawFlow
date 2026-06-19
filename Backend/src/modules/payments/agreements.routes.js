@@ -6,6 +6,7 @@ import { authorizeRoles } from "../../middleware/authorizeRoles.js";
 import {
   createAgreementHandler,
   createPaymentPlanHandler,
+  removePaymentPlanHandler,
   getAgreementHandler,
   getAgreementsByCaseHandler,
   getLawyerCaseAgreementContextHandler,
@@ -110,6 +111,17 @@ router.post(
   createPaymentPlanValidator,
   validateRequest,
   asyncHandler(createPaymentPlanHandler)
+);
+
+// Remove a case's payment plan (only when nothing has been paid) so the lawyer
+// can then delete the case.
+router.delete(
+  "/lawyer/cases/:caseId/payment-plan",
+  authenticate,
+  authorizeRoles("lawyer"),
+  caseIdParamValidator,
+  validateRequest,
+  asyncHandler(removePaymentPlanHandler)
 );
 
 router.get(
