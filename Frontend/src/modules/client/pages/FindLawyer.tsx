@@ -6,6 +6,7 @@ import ClientLayout from "../components/ClientLayout";
 import LawyerCard from "../components/LawyerCard";
 import LawyerCardSkeleton from "../components/LawyerCardSkeleton";
 import { fetchLawyers, type ListLawyersParams } from "../api/lawyers";
+import { startConversationWithLawyer } from "../api";
 
 // Specialization filter values match the backend's closed-set
 // validator (Civil / Family). "all" disables the filter.
@@ -20,6 +21,21 @@ export default function FindLawyer() {
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<SpecializationFilter>("all");
   const navigate = useNavigate();
+
+  // "Message" on a card → start (or reopen) a direct conversation with that
+  // lawyer, then open the chat. Idempotent on the backend, so repeat clicks
+  // land on the same conversation.
+  const handleMessageLawyer = async (lawyerUserId: string) => {
+    try {
+      const conversation = await startConversationWithLawyer(lawyerUserId);
+      // Open the split inbox with this conversation preselected (the inbox
+      // reads ?thread=<id> on mount), so the client gets the same list +
+      // chat layout the lawyer sees.
+      navigate({ to: "/client-messages", search: { thread: conversation.id } });
+    } catch (err) {
+      console.error("Could not open chat:", err);
+    }
+  };
 
   // useInfiniteQuery owns the page-stitching: it caches each page
   // under the same queryKey and exposes fetchNextPage / hasNextPage
@@ -132,7 +148,7 @@ export default function FindLawyer() {
                 key={lawyer.lawyerProfileId}
                 lawyer={lawyer}
                 onViewProfile={(id) => navigate({ to: `/client-lawyer/${id}` })}
-                onMessage={() => navigate({ to: "/client-messages" })}
+                onMessage={handleMessageLawyer}
               />
             ))}
 

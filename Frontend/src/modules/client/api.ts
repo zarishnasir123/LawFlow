@@ -54,53 +54,167 @@ export async function verifyClientCnic(
   );
   return data;
 }
-import type { ChatMessage, SendMessagePayload, ClientChatThread } from "../../types/chat";
-import { mockClientThreads, mockClientMessages } from "./data/chat.mock";
+import type {
+  ChatClient,
+  ChatMessage,
+  SendMessagePayload,
+  ClientChatThread,
+} from "../../types/chat";
 
-/**
- * Get all chat threads for a client
- */
-export async function getClientThreads(): Promise<ClientChatThread[]> {
-  return Promise.resolve(mockClientThreads);
+// =====================================================================
+// Case chat (real backend). The conversation id IS the case id, so the
+// `threadId` the chat screens pass around is a case UUID. The backend
+// returns a role-agnostic `counterpart`; for the client app that's the
+// lawyer, so we map it onto the ClientChatThread.lawyer field the UI uses.
+// =====================================================================
+
+interface ChatConversationDto {
+  id: string;
+  counterpart: ChatClient;
+  lastMessage?: string;
+  lastMessageAt?: string;
+  unreadCount?: number;
+}
+
+function toClientThread(dto: ChatConversationDto): ClientChatThread {
+  return {
+    id: dto.id,
+    lawyer: dto.counterpart,
+    tags: [],
+    lastMessage: dto.lastMessage ?? "",
+    lastMessageAt: dto.lastMessageAt ?? new Date().toISOString(),
+    unreadCount: dto.unreadCount ?? 0,
+  };
 }
 
 /**
- * Get a single chat thread by ID
+ * Start (or reopen) a direct conversation with a lawyer from the directory.
+ * Idempotent — clicking "Message" again returns the same conversation.
+ * Returns the conversation's id so the caller can open the chat screen.
+ */
+export async function startConversationWithLawyer(
+  lawyerUserId: string
+): Promise<ClientChatThread> {
+  const { data } = await apiClient.post<{ conversation: ChatConversationDto }>(
+    "/chat/conversations",
+    { lawyerUserId }
+  );
+  return toClientThread(data.conversation);
+}
+
+/**
+ * Get all chat conversations for the signed-in client (one per linked case).
+ */
+export async function getClientThreads(): Promise<ClientChatThread[]> {
+  const { data } = await apiClient.get<{ conversations: ChatConversationDto[] }>(
+    "/chat/conversations"
+  );
+  return (data.conversations ?? []).map(toClientThread);
+}
+
+/**
+ * Get a single conversation's header info by case id.
  */
 export async function getClientThreadById(
   threadId: string
 ): Promise<ClientChatThread | null> {
-  const thread = mockClientThreads.find((t) => t.id === threadId);
-  return Promise.resolve(thread ?? null);
+  try {
+    const { data } = await apiClient.get<{ conversation: ChatConversationDto }>(
+      `/chat/conversations/${threadId}`
+    );
+    return toClientThread(data.conversation);
+  } catch {
+    return null;
+  }
 }
 
 /**
- * Get all messages for a specific client thread
+ * Get all messages for a specific conversation.
  */
 export async function getClientThreadMessages(
   threadId: string
 ): Promise<ChatMessage[]> {
-  return Promise.resolve(mockClientMessages[threadId] ?? []);
+  const { data } = await apiClient.get<{ messages: ChatMessage[] }>(
+    `/chat/conversations/${threadId}/messages`
+  );
+  return data.messages ?? [];
 }
 
 /**
- * Send a message as the client user
+ * Send a text message as the client user.
  */
 export async function sendClientThreadMessage(
   threadId: string,
   payload: SendMessagePayload
 ): Promise<ChatMessage> {
-  const msg: ChatMessage = {
-    id: `cmsg-${Date.now()}`,
-    threadId,
-    sender: "client", // 👈 important — client is the sender here
-    text: payload.text,
-    createdAt: new Date().toISOString(),
-  };
+  const { data } = await apiClient.post<{ message: ChatMessage }>(
+    `/chat/conversations/${threadId}/messages`,
+    { text: payload.text }
+  );
+  return data.message;
+}
 
-  const existing = mockClientMessages[threadId] ?? [];
-  mockClientMessages[threadId] = [...existing, msg];
+/**
+ * Mark the whole conversation read up to now (unread badges + "seen" tick).
+ */
+export async function markClientThreadRead(threadId: string): Promise<void> {
+  await apiClient.post(`/chat/conversations/${threadId}/read`);
+}
 
-  return Promise.resolve(msg);
+/**
+ * Upload a document to the conversation. Returns the created (file) message
+ * with a ready-to-open signed URL.
+ */
+export async function sendClientThreadFile(
+  threadId: string,
+  file: File
+): Promise<ChatMessage> {
+  const form = new FormData();
+  form.append("file", file);
+  form.append("kind", "file");
+  const { data } = await apiClient.post<{ message: ChatMessage }>(
+    `/chat/conversations/${threadId}/attachments`,
+    form,
+    { headers: { "Content-Type": "multipart/form-data" } }
+  );
+  return data.message;
+}
+
+/**
+ * Upload a recorded voice note. Returns the created (voice) message.
+ */
+export async function sendClientThreadVoice(
+  threadId: string,
+  blob: Blob,
+  durationSeconds: number,
+  mimeType: string
+): Promise<ChatMessage> {
+  const file = voiceBlobToFile(blob, mimeType);
+  const form = new FormData();
+  form.append("file", file);
+  form.append("kind", "voice");
+  form.append("durationSeconds", String(durationSeconds));
+  const { data } = await apiClient.post<{ message: ChatMessage }>(
+    `/chat/conversations/${threadId}/attachments`,
+    form,
+    { headers: { "Content-Type": "multipart/form-data" } }
+  );
+  return data.message;
+}
+
+// Turn a recorded audio blob into a named File the backend can store. The
+// extension mirrors the recorder's container so the saved object plays back.
+function voiceBlobToFile(blob: Blob, mimeType: string): File {
+  const base = (mimeType || "audio/webm").split(";")[0];
+  const ext = base.includes("mp4")
+    ? "m4a"
+    : base.includes("ogg")
+      ? "ogg"
+      : base.includes("mpeg")
+        ? "mp3"
+        : base.includes("wav")
+          ? "wav"
+          : "webm";
+  return new File([blob], `voice-message.${ext}`, { type: base });
 }
 

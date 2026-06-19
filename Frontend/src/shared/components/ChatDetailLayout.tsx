@@ -5,12 +5,15 @@ import { ArrowLeft } from "lucide-react";
 interface ChatDetailLayoutProps {
   clientName?: string;
   clientStatus?: "online" | "offline";
+  // Overrides the Online/Offline label when set (e.g. "typing…").
+  statusText?: string;
   children: ReactNode;
 }
 
 export default function ChatDetailLayout({
   clientName = "Client",
   clientStatus = "offline",
+  statusText,
   children,
 }: ChatDetailLayoutProps) {
   const navigate = useNavigate();
@@ -33,7 +36,7 @@ export default function ChatDetailLayout({
           <div className="flex-1 ml-4">
             <h1 className="text-lg font-semibold">{clientName}</h1>
             <p className="text-xs text-gray-300">
-              {clientStatus === "online" ? "Online" : "Offline"}
+              {statusText ?? (clientStatus === "online" ? "Online" : "Offline")}
             </p>
           </div>
 

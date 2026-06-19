@@ -657,3 +657,111 @@ export async function deletePayoutReceipt(storageBucket, storagePath) {
     .remove([storagePath])
     .catch(() => {});
 }
+
+// =====================================================================
+// Chat attachments (private bucket — see config/supabase.js).
+//
+// Documents + voice notes shared inside a client↔lawyer conversation.
+// Path convention: chat/{conversationId}/{messageId}/{safeFileName} so
+// every attachment owns its own folder (trivial per-message cleanup, no
+// name collisions). The browser fetches via short-lived signed URLs
+// (1-hour TTL) minted on read — the storage path is never sent to the
+// client. Re-uses safeAttachmentFileName above for the same sanitisation
+// the case-attachment path uses.
+// =====================================================================
+
+function buildChatAttachmentPath({ conversationId, messageId, originalName }) {
+  return `chat/${conversationId}/${messageId}/${safeAttachmentFileName(originalName)}`;
+}
+
+export async function uploadChatAttachment({
+  conversationId,
+  messageId,
+  fileBuffer,
+  mimeType,
+  originalName,
+}) {
+  if (!fileBuffer || fileBuffer.length === 0) {
+    throw new ApiError(400, "Attachment file is empty");
+  }
+
+  const config = getSupabaseStorageConfig();
+  const supabase = getSupabaseClient();
+  if (!supabase) {
+    throw new ApiError(
+      503,
+      `Chat attachment storage is not configured. Missing or placeholder values: ${config.issues.join(", ")}`
+    );
+  }
+
+  const storagePath = buildChatAttachmentPath({
+    conversationId,
+    messageId,
+    originalName,
+  });
+
+  // Retry transient network blips (the "fetch failed" class) up to 3 times — a
+  // tiny voice clip shouldn't be lost to a momentary hiccup. We upsert on
+  // retries so a half-completed first attempt doesn't 409 the next one.
+  let lastError = null;
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    const { error } = await supabase.storage
+      .from(config.chatAttachmentBucket)
+      .upload(storagePath, fileBuffer, {
+        contentType: mimeType || "application/octet-stream",
+        upsert: attempt > 1,
+      });
+
+    if (!error) {
+      return { storageBucket: config.chatAttachmentBucket, storagePath };
+    }
+
+    lastError = error;
+    const transient =
+      /fetch failed|network|timeout|ETIMEDOUT|ECONNRESET|EAI_AGAIN|socket|5\d\d/i.test(
+        error.message || ""
+      );
+    if (!transient || attempt === 3) break;
+    await new Promise((resolve) => setTimeout(resolve, attempt * 500));
+  }
+
+  throw new ApiError(
+    502,
+    `Failed to upload chat attachment: ${lastError?.message || "unknown error"}`
+  );
+}
+
+export async function getChatAttachmentSignedUrl(storagePath, expiresInSeconds = 3600) {
+  if (!storagePath) return null;
+
+  const config = getSupabaseStorageConfig();
+  const supabase = getSupabaseClient();
+  if (!supabase) return null;
+
+  const ttl =
+    Number.isFinite(expiresInSeconds) && expiresInSeconds > 0
+      ? expiresInSeconds
+      : 3600;
+
+  const { data, error } = await supabase.storage
+    .from(config.chatAttachmentBucket)
+    .createSignedUrl(storagePath, ttl);
+
+  if (error || !data?.signedUrl) return null;
+  return data.signedUrl;
+}
+
+export async function deleteChatAttachment(storagePath) {
+  if (!storagePath) return;
+
+  const supabase = getSupabaseClient();
+  if (!supabase) return;
+
+  const config = getSupabaseStorageConfig();
+  // Best-effort cleanup — orphaning a storage object is far better than
+  // blocking a delete. Matches the case-attachment / avatar pattern.
+  await supabase.storage
+    .from(config.chatAttachmentBucket)
+    .remove([storagePath])
+    .catch(() => {});
+}

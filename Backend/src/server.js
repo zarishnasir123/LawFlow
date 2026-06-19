@@ -4,6 +4,7 @@ import app from "./app.js";
 import { pool } from "./config/db.js";
 import { warmEmailTransport } from "./services/email.service.js";
 import { startScheduledJobs } from "./scheduler.js";
+import { initChatSocket } from "./realtime/chatSocket.js";
 
 const port = process.env.PORT || 5000;
 
@@ -11,7 +12,7 @@ async function startServer() {
   await pool.query("SELECT 1");
   await warmEmailTransport();
 
-  app.listen(port, () => {
+  const server = app.listen(port, () => {
     console.log(`LawFlow backend running on port ${port}`);
 
     // Background jobs (overdue payment reminders, etc.).
@@ -27,6 +28,9 @@ async function startServer() {
     //   );
     // }
   });
+
+  // Attach the chat WebSocket server to the same HTTP server (path /ws/chat).
+  initChatSocket(server);
 }
 
 startServer().catch((error) => {
