@@ -1,5 +1,10 @@
 import { ApiError } from "../../utils/apiError.js";
-import { pushMessageToConversation } from "../../realtime/chatSocket.js";
+import {
+  isUserViewingConversation,
+  pushMessageToConversation,
+  pushReadReceipt,
+} from "../../realtime/chatSocket.js";
+import { createNotification } from "../notifications/notifications.service.js";
 import {
   createAttachmentMessage,
   createTextMessage,
@@ -10,10 +15,18 @@ import {
   startConversationForClient,
 } from "./chat.service.js";
 
-// Push a freshly-saved message to both participants over the live channel.
-// Best-effort: a socket-layer hiccup must never fail the REST request that
-// already durably saved the message.
-function broadcastMessage(participant, message) {
+// Short preview used in the bell notification.
+function previewOf(message) {
+  if (message.kind === "file") return "📎 Document";
+  if (message.kind === "voice") return "🎤 Voice message";
+  return message.text || "New message";
+}
+
+// After a message is saved: push it live to both participants, and — if the
+// recipient ISN'T currently looking at this chat — drop a bell notification so
+// they notice. All best-effort: a socket/notification hiccup must never fail
+// the REST request that already durably saved the message.
+async function deliverMessage(participant, message) {
   try {
     pushMessageToConversation({
       clientUserId: participant.clientUserId,
@@ -23,6 +36,20 @@ function broadcastMessage(participant, message) {
     });
   } catch (err) {
     console.error("[chat] live push failed:", err?.message);
+  }
+
+  const recipientId = participant.counterpart.id;
+  if (!isUserViewingConversation(recipientId, participant.conversationId)) {
+    try {
+      await createNotification({
+        userId: recipientId,
+        type: "chat_message",
+        title: "New message",
+        message: previewOf(message),
+      });
+    } catch (err) {
+      console.error("[chat] bell notification failed:", err?.message);
+    }
   }
 }
 
@@ -78,8 +105,9 @@ export async function sendMessage(req, res) {
     conversationId: req.params.conversationId,
     userId: req.user.sub,
     body: req.body?.text,
+    replyToMessageId: req.body?.replyToMessageId,
   });
-  broadcastMessage(participant, message);
+  await deliverMessage(participant, message);
   return res.status(201).json({ message });
 }
 
@@ -98,7 +126,7 @@ export async function sendAttachment(req, res) {
     kind: req.body?.kind === "voice" ? "voice" : "file",
     voiceDurationSeconds: req.body?.durationSeconds,
   });
-  broadcastMessage(participant, message);
+  await deliverMessage(participant, message);
   return res.status(201).json({ message });
 }
 
@@ -108,5 +136,15 @@ export async function markRead(req, res) {
     conversationId: req.params.conversationId,
     userId: req.user.sub,
   });
-  return res.status(200).json(result);
+  // Tell the other party (live) that their messages were seen.
+  try {
+    pushReadReceipt({
+      toUserId: result.participant.counterpart.id,
+      conversationId: req.params.conversationId,
+      readAt: result.readAt,
+    });
+  } catch (err) {
+    console.error("[chat] read receipt failed:", err?.message);
+  }
+  return res.status(200).json({ read: result.read });
 }

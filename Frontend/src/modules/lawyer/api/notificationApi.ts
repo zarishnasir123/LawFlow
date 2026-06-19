@@ -19,7 +19,8 @@ import type {
 function mapType(backendType: string): Notification["type"] {
   if (backendType.startsWith("case")) return "case";
   if (backendType.startsWith("hearing")) return "hearing";
-  if (backendType.startsWith("message")) return "message";
+  if (backendType.startsWith("chat") || backendType.startsWith("message"))
+    return "message";
   if (backendType.startsWith("document")) return "document";
   return "system";
 }
@@ -29,7 +30,13 @@ function mapType(backendType: string): Notification["type"] {
 // the editor route handles all statuses, so we use it as the single, always-
 // valid destination. Notifications with no caseId get no actionUrl (clicking
 // them just marks read).
-function mapActionUrl(caseId: string | null): string | undefined {
+function mapActionUrl(
+  backendType: string,
+  caseId: string | null
+): string | undefined {
+  if (backendType.startsWith("chat") || backendType.startsWith("message")) {
+    return "/lawyer-messages";
+  }
   return caseId ? `/lawyer-case-editor/${caseId}` : undefined;
 }
 
@@ -45,7 +52,7 @@ function mapNotification(row: ApiNotification): Notification {
     read: row.isRead,
     createdAt: row.createdAt,
     caseId: row.caseId ?? undefined,
-    actionUrl: mapActionUrl(row.caseId),
+    actionUrl: mapActionUrl(row.type, row.caseId),
   };
 }
 

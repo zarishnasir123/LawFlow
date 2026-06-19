@@ -610,7 +610,23 @@ CREATE TABLE chat_messages (
   attachment_size         BIGINT,
   voice_duration_seconds  INTEGER,
 
+  -- Reply: the message this one is quoting (NULL for a normal message). SET
+  -- NULL if the quoted message is later hidden/removed so the reply survives.
+  reply_to_message_id UUID REFERENCES chat_messages(id) ON DELETE SET NULL,
+
+  -- Stamps the last text edit (NULL = never edited) so the UI can show "edited".
+  edited_at       TIMESTAMP,
+
   created_at      TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+-- "Delete for me": a message hidden from ONE participant's own view only (the
+-- other person still sees it — there is no delete-for-everyone). One row per
+-- (message, user) who hid it; listMessages excludes the caller's hidden rows.
+CREATE TABLE chat_message_hidden_for (
+  message_id UUID NOT NULL REFERENCES chat_messages(id) ON DELETE CASCADE,
+  user_id    UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  PRIMARY KEY (message_id, user_id)
 );
 
 -- History load + "last message" lookups both filter by conversation + time.

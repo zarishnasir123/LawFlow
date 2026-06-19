@@ -1,4 +1,5 @@
 import {
+  deleteNotificationForUser,
   listNotificationsForUser,
   markAllNotificationsRead,
   markNotificationRead
@@ -34,4 +35,14 @@ export async function markAllMyNotificationsRead(req, res) {
   });
 
   return res.status(200).json({ updated });
+}
+
+// DELETE /api/notifications/:id
+export async function deleteMyNotification(req, res) {
+  const result = await deleteNotificationForUser({
+    userId: req.user.sub,
+    notificationId: req.params.id
+  });
+
+  return res.status(200).json(result);
 }

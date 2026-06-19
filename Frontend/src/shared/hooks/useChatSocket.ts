@@ -4,8 +4,10 @@ import type { ChatMessage } from "../../types/chat";
 
 export interface ChatSocketHandlers {
   onMessage?: (conversationId: string, message: ChatMessage) => void;
+  onMessageUpdate?: (conversationId: string, message: ChatMessage) => void;
   onTyping?: (conversationId: string, from: string, isTyping: boolean) => void;
   onPresence?: (userId: string, online: boolean) => void;
+  onRead?: (conversationId: string, readAt: string) => void;
 }
 
 // Subscribe a component to the shared chat socket. Handlers are kept in a ref
@@ -24,10 +26,14 @@ export function useChatSocket(handlers: ChatSocketHandlers) {
     const off = chatSocket.on((event: ChatSocketEvent) => {
       if (event.type === "message") {
         ref.current.onMessage?.(event.conversationId, event.message);
+      } else if (event.type === "message_update") {
+        ref.current.onMessageUpdate?.(event.conversationId, event.message);
       } else if (event.type === "typing") {
         ref.current.onTyping?.(event.conversationId, event.from, event.isTyping);
       } else if (event.type === "presence") {
         ref.current.onPresence?.(event.userId, event.online);
+      } else if (event.type === "read") {
+        ref.current.onRead?.(event.conversationId, event.readAt);
       }
     });
     return off;

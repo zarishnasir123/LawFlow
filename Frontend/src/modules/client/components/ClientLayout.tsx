@@ -7,6 +7,7 @@ import { useLogout } from "../../auth/hooks/useLogout";
 import { useCurrentUser, displayFullName } from "../../auth/hooks/useCurrentUser";
 import { LogoutConfirmationModal, NotificationModal } from "./modals";
 import ClientLayoutContext from "./ClientLayoutContext";
+import { useClientNotifications } from "../hooks/useClientNotifications";
 
 type ClientLayoutProps = {
   brandTitle?: ReactNode;
@@ -26,12 +27,16 @@ export default function ClientLayout({
   showBackButton = false,
   onBackClick,
   backLabel,
-  notificationBadge = 3,
+  notificationBadge,
   children,
 }: ClientLayoutProps) {
   const navigate = useNavigate();
   const performLogout = useLogout();
   const { data: currentUser } = useCurrentUser();
+  // Live unread count for the bell badge. An explicit notificationBadge prop
+  // (rarely passed) still overrides it.
+  const { unreadCount } = useClientNotifications();
+  const badgeCount = notificationBadge ?? unreadCount;
   const [notificationModalOpen, setNotificationModalOpen] = useState(false);
   const [logoutModalOpen, setLogoutModalOpen] = useState(false);
 
@@ -101,11 +106,11 @@ export default function ClientLayout({
       {
         label: "Notifications",
         icon: Bell,
-        badge: notificationBadge,
+        badge: badgeCount,
         onClick: openNotificationModal,
       },
     ],
-    [navigate, notificationBadge, openNotificationModal]
+    [navigate, badgeCount, openNotificationModal]
   );
 
   return (

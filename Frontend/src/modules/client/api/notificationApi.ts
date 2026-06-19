@@ -1,75 +1,74 @@
-import type { Notification, NotificationResponse } from "../types/notification";
+import { apiClient } from "../../../shared/api/axios";
+import type {
+  ApiNotification,
+  ApiNotificationResponse,
+  Notification,
+  NotificationResponse,
+} from "../types/notification";
 
-const minutesAgo = (minutes: number) =>
-  new Date(Date.now() - minutes * 60 * 1000).toISOString();
+// Live client notification API (replaces the previous frontend-only mock).
+// Talks to the real backend (Backend/src/modules/notifications) via the shared
+// apiClient. Every endpoint is scoped server-side to the logged-in user, so a
+// client only ever sees / mutates their OWN notifications.
 
-// Frontend-only mock data for client notifications.
-let mockNotifications: Notification[] = [
-  {
-    id: "1",
-    title: "Document Sent for Signature",
-    message: "Your lawyer sent a Vakalatnama for review and signature.",
-    type: "document",
-    read: false,
-    createdAt: minutesAgo(10),
-    actionUrl: "/case-tracking?view=pending",
-  },
-  {
-    id: "2",
-    title: "Hearing Scheduled",
-    message: "Your hearing is scheduled for Jan 30, 2025 at 10:00 AM.",
-    type: "hearing",
-    read: false,
-    createdAt: minutesAgo(60),
-    actionUrl: "/client-hearings",
-  },
-  {
-    id: "3",
-    title: "New Message",
-    message: "Your lawyer sent you a new message.",
-    type: "message",
-    read: false,
-    createdAt: minutesAgo(120),
-    actionUrl: "/client-messages",
-  },
-  {
-    id: "4",
-    title: "Case Status Updated",
-    message: "Your case status was updated to Hearing Scheduled.",
-    type: "case",
-    read: true,
-    createdAt: minutesAgo(240),
-    actionUrl: "/case-tracking",
-  },
-  {
-    id: "5",
-    title: "System Update",
-    message: "A system update is planned for this weekend.",
-    type: "system",
-    read: true,
-    createdAt: minutesAgo(1440),
-  },
-];
+// Map a backend `type` (e.g. "chat_message", "case_accepted") onto the broad
+// UI category NotificationCard keys its icon/color off. Unknown types fall
+// back to "system" so a new backend type still renders sensibly.
+function mapType(backendType: string): Notification["type"] {
+  if (backendType.startsWith("chat")) return "message";
+  if (backendType.startsWith("message")) return "message";
+  if (backendType.startsWith("case")) return "case";
+  if (backendType.startsWith("hearing")) return "hearing";
+  if (backendType.startsWith("document")) return "document";
+  return "system";
+}
 
-const buildResponse = (): NotificationResponse => ({
-  notifications: [...mockNotifications],
-  unreadCount: mockNotifications.filter((n) => !n.read).length,
-});
+// Where clicking a notification takes the client. Chat alerts open the
+// messages inbox; case-related ones open case tracking; others have no link
+// (clicking just marks read).
+function mapActionUrl(backendType: string, caseId: string | null): string | undefined {
+  if (backendType.startsWith("chat") || backendType.startsWith("message")) {
+    return "/client-messages";
+  }
+  if (caseId) return "/case-tracking";
+  return undefined;
+}
 
+function mapNotification(row: ApiNotification): Notification {
+  return {
+    id: row.id,
+    title: row.title,
+    message: row.message,
+    type: mapType(row.type),
+    read: row.isRead,
+    createdAt: row.createdAt,
+    caseId: row.caseId ?? undefined,
+    actionUrl: mapActionUrl(row.type, row.caseId),
+  };
+}
+
+// GET /api/notifications -> { notifications, unreadCount }.
 export async function fetchNotifications(): Promise<NotificationResponse> {
-  return buildResponse();
+  const { data } = await apiClient.get<ApiNotificationResponse>("/notifications");
+  return {
+    notifications: data.notifications.map(mapNotification),
+    unreadCount: data.unreadCount,
+  };
 }
 
-export async function markNotificationAsRead(notificationId: string): Promise<void> {
-  mockNotifications = mockNotifications.map((n) =>
-    n.id === notificationId ? { ...n, read: true } : n
-  );
+// PATCH /api/notifications/:id/read
+export async function markNotificationAsRead(
+  notificationId: string
+): Promise<void> {
+  await apiClient.patch(`/notifications/${notificationId}/read`);
 }
 
+// PATCH /api/notifications/read-all
 export async function markAllNotificationsAsRead(): Promise<void> {
-  mockNotifications = mockNotifications.map((n) => ({ ...n, read: true }));
+  await apiClient.patch("/notifications/read-all");
 }
 
+// DELETE /api/notifications/:id
 export async function deleteNotification(notificationId: string): Promise<void> {
-  mockNotifications = mockNotifications.filter((n) => n.id !== notificationId);
+  await apiClient.delete(`/notifications/${notificationId}`);
 }

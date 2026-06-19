@@ -18,6 +18,7 @@ import "dotenv/config";
 
 import { pool } from "../config/db.js";
 import { getSupabaseClient, getSupabaseStorageConfig } from "../config/supabase.js";
+import { deleteChatStorageForConversation } from "../services/storage.service.js";
 
 const DRY_RUN = process.argv.includes("--dry-run");
 const email = process.argv.find((a, i) => i >= 2 && !a.startsWith("--"));
@@ -90,8 +91,24 @@ async function main() {
     }
   }
 
+  // Gather the user's chat conversations BEFORE deleting (the rows cascade
+  // away with the user, but their stored attachment files don't).
+  const convRows = await pool.query(
+    `SELECT id FROM chat_conversations
+     WHERE client_user_id = $1 OR lawyer_user_id = $1`,
+    [user.id]
+  );
+
   const { rowCount } = await pool.query(`DELETE FROM users WHERE id = $1`, [user.id]);
   log(`Deleted ${rowCount} LawFlow user row. FK cascades handled dependents.`);
+
+  // Best-effort sweep of chat attachment files for those conversations.
+  if (convRows.rows.length > 0) {
+    for (const row of convRows.rows) {
+      await deleteChatStorageForConversation(row.id);
+    }
+    log(`Swept chat storage for ${convRows.rows.length} conversation(s).`);
+  }
 }
 
 main()

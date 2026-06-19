@@ -61,6 +61,10 @@ function mapMessage(row, lawyerUserId) {
       row.voice_duration_seconds === undefined
         ? null
         : Number(row.voice_duration_seconds),
+    edited: Boolean(row.edited_at),
+    // Quoted reply, filled in by the caller (listMessages / create) since it
+    // needs the parent message's preview.
+    replyTo: null,
     createdAt: row.created_at,
   };
 }
@@ -68,6 +72,32 @@ function mapMessage(row, lawyerUserId) {
 function fullName(first, last, fallback) {
   const name = `${first || ""} ${last || ""}`.trim();
   return name || fallback;
+}
+
+// One-line preview of a message (used inside a quoted reply bar).
+function messagePreview(kind, body) {
+  if (kind === "file") return "📎 Document";
+  if (kind === "voice") return "🎤 Voice message";
+  return body || "";
+}
+
+// Build the { id, sender, preview } for a quoted reply, validating the parent
+// message is in the same conversation. Returns null if there's no/invalid parent.
+async function getReplyPreview(conversationId, replyToMessageId, lawyerUserId) {
+  if (!replyToMessageId) return null;
+  const { rows } = await pool.query(
+    `SELECT id, sender_user_id, message_kind, body
+     FROM chat_messages
+     WHERE id = $1 AND conversation_id = $2`,
+    [replyToMessageId, conversationId]
+  );
+  const p = rows[0];
+  if (!p) return null;
+  return {
+    id: p.id,
+    sender: p.sender_user_id === lawyerUserId ? "lawyer" : "client",
+    preview: messagePreview(p.message_kind, p.body),
+  };
 }
 
 // Mint short-lived signed download URLs for any attachment messages, in
@@ -289,24 +319,74 @@ export async function listMessages({ conversationId, userId }) {
   const participant = await assertConversationParticipant(conversationId, userId);
 
   const { rows } = await pool.query(
-    `SELECT id, conversation_id, sender_user_id, message_kind, body,
-            attachment_storage_path, attachment_name, attachment_mime,
-            attachment_size, voice_duration_seconds, created_at
-     FROM chat_messages
-     WHERE conversation_id = $1
-     ORDER BY created_at ASC`,
+    `SELECT m.id, m.conversation_id, m.sender_user_id, m.message_kind, m.body,
+            m.attachment_storage_path, m.attachment_name, m.attachment_mime,
+            m.attachment_size, m.voice_duration_seconds, m.edited_at,
+            m.reply_to_message_id, m.created_at,
+            p.sender_user_id AS reply_sender_user_id,
+            p.message_kind   AS reply_kind,
+            p.body           AS reply_body
+     FROM chat_messages m
+     LEFT JOIN chat_messages p ON p.id = m.reply_to_message_id
+     WHERE m.conversation_id = $1
+     ORDER BY m.created_at ASC`,
     [conversationId]
   );
 
-  const messages = rows.map((row) => mapMessage(row, participant.lawyerUserId));
+  const messages = rows.map((row) => {
+    const msg = mapMessage(row, participant.lawyerUserId);
+    if (row.reply_to_message_id && row.reply_kind) {
+      msg.replyTo = {
+        id: row.reply_to_message_id,
+        sender:
+          row.reply_sender_user_id === participant.lawyerUserId
+            ? "lawyer"
+            : "client",
+        preview: messagePreview(row.reply_kind, row.reply_body),
+      };
+    }
+    return msg;
+  });
   await enrichWithSignedUrls(messages, rows);
+
+  // Mark the caller's OWN messages "seen" once the counterpart's last-read time
+  // has passed them (drives the ✓✓ tick). A message is the caller's own when
+  // its derived sender matches the caller's role.
+  const counterpartReadAt = await getLastReadAt(
+    conversationId,
+    participant.counterpart.id
+  );
+  if (counterpartReadAt) {
+    const readMs = new Date(counterpartReadAt).getTime();
+    messages.forEach((m, i) => {
+      if (m.sender === participant.role) {
+        m.seen = new Date(rows[i].created_at).getTime() <= readMs;
+      }
+    });
+  }
 
   return { participant, messages, rows };
 }
 
+// The last time a given user read a conversation (NULL if never).
+async function getLastReadAt(conversationId, userId) {
+  const { rows } = await pool.query(
+    `SELECT last_read_at FROM chat_reads
+     WHERE conversation_id = $1 AND user_id = $2`,
+    [conversationId, userId]
+  );
+  return rows[0]?.last_read_at || null;
+}
+
 // Persist a text message from the caller and bump the conversation's
-// last-activity time. Returns the mapped ChatMessage + the participant.
-export async function createTextMessage({ conversationId, userId, body }) {
+// last-activity time. Optionally quotes another message (replyToMessageId).
+// Returns the mapped ChatMessage + the participant.
+export async function createTextMessage({
+  conversationId,
+  userId,
+  body,
+  replyToMessageId,
+}) {
   const participant = await assertConversationParticipant(conversationId, userId);
 
   const text = (body || "").trim();
@@ -314,13 +394,21 @@ export async function createTextMessage({ conversationId, userId, body }) {
     throw new ApiError(400, "Message text is required");
   }
 
+  // Validate + build the quoted-reply preview (null if no/invalid parent).
+  const replyTo = await getReplyPreview(
+    conversationId,
+    replyToMessageId,
+    participant.lawyerUserId
+  );
+
   const { rows } = await pool.query(
-    `INSERT INTO chat_messages (conversation_id, sender_user_id, message_kind, body)
-     VALUES ($1, $2, 'text', $3)
+    `INSERT INTO chat_messages (conversation_id, sender_user_id, message_kind, body, reply_to_message_id)
+     VALUES ($1, $2, 'text', $3, $4)
      RETURNING id, conversation_id, sender_user_id, message_kind, body,
                attachment_storage_path, attachment_name, attachment_mime,
-               attachment_size, voice_duration_seconds, created_at`,
-    [conversationId, userId, text]
+               attachment_size, voice_duration_seconds, edited_at,
+               reply_to_message_id, created_at`,
+    [conversationId, userId, text, replyTo ? replyTo.id : null]
   );
 
   await pool.query(
@@ -328,10 +416,10 @@ export async function createTextMessage({ conversationId, userId, body }) {
     [conversationId]
   );
 
-  return {
-    participant,
-    message: mapMessage(rows[0], participant.lawyerUserId),
-  };
+  const message = mapMessage(rows[0], participant.lawyerUserId);
+  message.replyTo = replyTo;
+
+  return { participant, message };
 }
 
 // Persist a file or voice message: upload the bytes to storage, then insert
@@ -380,7 +468,8 @@ export async function createAttachmentMessage({
      VALUES ($1, $2, $3, $4, NULL, $5, $6, $7, $8, $9)
      RETURNING id, conversation_id, sender_user_id, message_kind, body,
                attachment_storage_path, attachment_name, attachment_mime,
-               attachment_size, voice_duration_seconds, created_at`,
+               attachment_size, voice_duration_seconds, edited_at,
+               reply_to_message_id, created_at`,
     [
       messageId,
       conversationId,
@@ -408,15 +497,18 @@ export async function createAttachmentMessage({
 // Mark the conversation read up to "now" for the caller. Drives unread badges
 // + the other party's seen tick.
 export async function markConversationRead({ conversationId, userId }) {
-  await assertConversationParticipant(conversationId, userId);
+  const participant = await assertConversationParticipant(conversationId, userId);
 
-  await pool.query(
+  const { rows } = await pool.query(
     `INSERT INTO chat_reads (conversation_id, user_id, last_read_at)
      VALUES ($1, $2, NOW())
      ON CONFLICT (conversation_id, user_id)
-     DO UPDATE SET last_read_at = NOW()`,
+     DO UPDATE SET last_read_at = NOW()
+     RETURNING last_read_at`,
     [conversationId, userId]
   );
 
-  return { read: true };
+  // participant + readAt let the controller push a "seen" receipt to the other
+  // party over the live channel.
+  return { read: true, participant, readAt: rows[0].last_read_at };
 }

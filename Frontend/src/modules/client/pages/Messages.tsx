@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect, useRef } from "react";
+import { Fragment, useMemo, useState, useEffect, useRef } from "react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import {
   Search,
@@ -9,6 +9,7 @@ import {
 import ClientLayout from "../components/ClientLayout";
 import ChatMessageBubble from "../components/ChatMessageBubble";
 import ChatComposer from "../components/ChatComposer";
+import ChatDateSeparator from "../../../shared/components/ChatDateSeparator";
 import LawyerInfoSidebar from "../components/lawyerInfoSidebar";
 import type { ClientChatThread, ChatMessage } from "../../../types/chat";
 import {
@@ -17,11 +18,17 @@ import {
   sendClientThreadMessage,
   sendClientThreadFile,
   sendClientThreadVoice,
+  markClientThreadRead,
 } from "../api";
 import { getApiErrorMessage } from "../../../shared/utils/getApiErrorMessage";
 import { chatSocket } from "../../../shared/api/chatSocket";
 import { useChatSocket } from "../../../shared/hooks/useChatSocket";
-import { upsertMessage } from "../../../shared/utils/chatMessages";
+import {
+  upsertMessage,
+  replaceMessage,
+  messagePreview,
+  isSameDay,
+} from "../../../shared/utils/chatMessages";
 
 // Inbox preview text for a message (attachments show a label, not blank).
 function previewOf(message: ChatMessage): string {
@@ -47,6 +54,10 @@ export default function ClientMessages() {
   // Which conversation currently shows "…typing" from the other person.
   const [typingThreadId, setTypingThreadId] = useState<string | null>(null);
   const typingClearRef = useRef<number | null>(null);
+  // The message currently being replied to (drives the composer reply bar).
+  const [replyTarget, setReplyTarget] = useState<ChatMessage | null>(null);
+  // In-conversation message search.
+  const [msgSearch, setMsgSearch] = useState("");
 
   // Live channel: subscribe to the open conversation; react to incoming
   // messages, typing, and presence.
@@ -58,16 +69,45 @@ export default function ClientMessages() {
 
   useChatSocket({
     onMessage: (conversationId, message) => {
-      if (conversationId === selectedThreadId) {
-        setMessages((prev) =>
-          prev.some((m) => m.id === message.id) ? prev : [...prev, message]
-        );
+      const isOpen = conversationId === selectedThreadId;
+      if (isOpen) {
+        setMessages((prev) => upsertMessage(prev, message));
+        if (message.sender !== "client") {
+          markClientThreadRead(conversationId).catch(() => {});
+        }
       }
       setThreads((prev) =>
-        prev.map((t) =>
-          t.id === conversationId
-            ? { ...t, lastMessage: previewOf(message), lastMessageAt: message.createdAt }
-            : t
+        prev.map((t) => {
+          if (t.id !== conversationId) return t;
+          const fromOther = message.sender !== "client";
+          return {
+            ...t,
+            lastMessage: previewOf(message),
+            lastMessageAt: message.createdAt,
+            unreadCount: isOpen
+              ? 0
+              : fromOther
+                ? (t.unreadCount || 0) + 1
+                : t.unreadCount,
+          };
+        })
+      );
+    },
+    onMessageUpdate: (conversationId, message) => {
+      if (conversationId === selectedThreadId) {
+        setMessages((prev) => replaceMessage(prev, message));
+      }
+    },
+    onRead: (conversationId, readAt) => {
+      if (conversationId !== selectedThreadId) return;
+      const readMs = new Date(readAt).getTime();
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.sender === "client" &&
+          !m.seen &&
+          new Date(m.createdAt).getTime() <= readMs
+            ? { ...m, seen: true }
+            : m
         )
       );
     },
@@ -150,6 +190,7 @@ export default function ClientMessages() {
 
   // ✅ Load messages when a thread is selected
   useEffect(() => {
+    setReplyTarget(null);
     if (!selectedThreadId) {
       setMessages([]);
       return;
@@ -160,6 +201,12 @@ export default function ClientMessages() {
       try {
         const data = await getClientThreadMessages(selectedThreadId);
         setMessages(data);
+        markClientThreadRead(selectedThreadId).catch(() => {});
+        setThreads((prev) =>
+          prev.map((t) =>
+            t.id === selectedThreadId ? { ...t, unreadCount: 0 } : t
+          )
+        );
       } catch (error) {
         console.error("Error loading messages:", error);
       } finally {
@@ -186,12 +233,23 @@ export default function ClientMessages() {
 
   const selectedThread = threads.find((t) => t.id === selectedThreadId);
 
+  // Messages shown in the open chat, narrowed by the in-chat search box.
+  const displayedMessages = msgSearch.trim()
+    ? messages.filter((m) =>
+        (m.text || "").toLowerCase().includes(msgSearch.trim().toLowerCase())
+      )
+    : messages;
+
   // ✅ Handle sending message
   const handleSendMessage = async (text: string) => {
     if (!selectedThreadId) return;
     try {
-      const newMsg = await sendClientThreadMessage(selectedThreadId, { text });
+      const newMsg = await sendClientThreadMessage(selectedThreadId, {
+        text,
+        replyToMessageId: replyTarget?.id,
+      });
       setMessages((prev) => upsertMessage(prev, newMsg));
+      setReplyTarget(null);
     } catch (error) {
       console.error("Error sending message:", error);
     }
@@ -407,6 +465,16 @@ export default function ClientMessages() {
                         </p>
                       )}
                     </div>
+                    <div className="relative hidden sm:block">
+                      <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-400" />
+                      <input
+                        type="text"
+                        value={msgSearch}
+                        onChange={(e) => setMsgSearch(e.target.value)}
+                        placeholder="Search in chat"
+                        className="w-44 rounded-lg border border-gray-300 py-2 pl-8 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#01411C]/30 focus:border-[#01411C]"
+                      />
+                    </div>
                   </div>
                 </div>
 
@@ -426,9 +494,17 @@ export default function ClientMessages() {
                         </p>
                       </div>
                     ) : (
-                      messages.map((msg) => (
-                        <ChatMessageBubble key={msg.id} msg={msg} />
-                      ))
+                      displayedMessages.map((msg, i) => {
+                        const prev = displayedMessages[i - 1];
+                        const showDate =
+                          !prev || !isSameDay(prev.createdAt, msg.createdAt);
+                        return (
+                          <Fragment key={msg.id}>
+                            {showDate && <ChatDateSeparator iso={msg.createdAt} />}
+                            <ChatMessageBubble msg={msg} onReply={setReplyTarget} />
+                          </Fragment>
+                        );
+                      })
                     )}
                     <div ref={messagesEndRef} />
                   </div>
@@ -476,6 +552,8 @@ export default function ClientMessages() {
                         selectedThreadId &&
                         chatSocket.sendTyping(selectedThreadId, isTyping)
                       }
+                      replyPreview={replyTarget ? messagePreview(replyTarget) : null}
+                      onCancelReply={() => setReplyTarget(null)}
                     />
                   </div>
                 </div>

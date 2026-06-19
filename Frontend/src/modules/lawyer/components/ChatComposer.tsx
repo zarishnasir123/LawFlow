@@ -21,6 +21,9 @@ interface ChatComposerProps {
   // Fired when the user starts (true) / pauses (false) typing, for the live
   // "…typing" indicator.
   onTyping?: (isTyping: boolean) => void;
+  // Quoted-reply bar: preview of the message being replied to (null = none).
+  replyPreview?: string | null;
+  onCancelReply?: () => void;
 }
 
 export default function ChatComposer({
@@ -29,6 +32,8 @@ export default function ChatComposer({
   onSendFiles,
   onSendVoice,
   onTyping,
+  replyPreview,
+  onCancelReply,
 }: ChatComposerProps) {
   const [text, setText] = useState("");
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
@@ -166,6 +171,26 @@ export default function ChatComposer({
 
   return (
     <div className="bg-white px-5 sm:px-8 py-3 border-t-2 border-gray-300">
+      {/* Reply bar */}
+      {replyPreview && !recording && (
+        <div className="mb-2 flex items-center gap-2 rounded-lg border-l-4 border-[#01411C] bg-gray-50 px-3 py-2">
+          <div className="min-w-0 flex-1">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-[#01411C]">
+              Replying to
+            </p>
+            <p className="truncate text-sm text-gray-600">{replyPreview}</p>
+          </div>
+          <button
+            type="button"
+            onClick={onCancelReply}
+            className="text-gray-500 hover:text-red-500 transition"
+            title="Cancel reply"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+
       {/* File Preview */}
       {selectedFiles.length > 0 && !recording && (
         <div className="mb-2 flex flex-wrap gap-2">

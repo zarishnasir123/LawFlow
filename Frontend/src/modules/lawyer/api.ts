@@ -248,7 +248,7 @@ export async function sendThreadMessage(
 ): Promise<ChatMessage> {
   const { data } = await apiClient.post<{ message: ChatMessage }>(
     `/chat/conversations/${threadId}/messages`,
-    { text: payload.text }
+    { text: payload.text, replyToMessageId: payload.replyToMessageId }
   );
   return data.message;
 }
