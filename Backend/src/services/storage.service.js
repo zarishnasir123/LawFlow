@@ -765,3 +765,50 @@ export async function deleteChatAttachment(storagePath) {
     .remove([storagePath])
     .catch(() => {});
 }
+
+// Sweep every stored object for a conversation (chat/{conversationId}/...).
+// Used when a user (and therefore their conversations) is deleted, so the
+// attachment files don't orphan. Best-effort — never throws. Our paths are
+// exactly chat/{conversationId}/{messageId}/{fileName}, so we list one level
+// (the message folders) then their files.
+export async function deleteChatStorageForConversation(conversationId) {
+  if (!conversationId) return;
+
+  const supabase = getSupabaseClient();
+  if (!supabase) return;
+
+  const config = getSupabaseStorageConfig();
+  const bucket = config.chatAttachmentBucket;
+  const root = `chat/${conversationId}`;
+
+  try {
+    const { data: messageFolders, error } = await supabase.storage
+      .from(bucket)
+      .list(root, { limit: 1000 });
+    if (error || !Array.isArray(messageFolders) || messageFolders.length === 0) {
+      return;
+    }
+
+    const paths = [];
+    for (const folder of messageFolders) {
+      const { data: files } = await supabase.storage
+        .from(bucket)
+        .list(`${root}/${folder.name}`, { limit: 1000 });
+      if (Array.isArray(files)) {
+        for (const file of files) {
+          paths.push(`${root}/${folder.name}/${file.name}`);
+        }
+      }
+    }
+
+    if (paths.length > 0) {
+      await supabase.storage.from(bucket).remove(paths);
+    }
+  } catch (err) {
+    console.error("[STORAGE CLEANUP FAILED]", {
+      task: "delete-chat-conversation",
+      conversationId,
+      message: err?.message,
+    });
+  }
+}

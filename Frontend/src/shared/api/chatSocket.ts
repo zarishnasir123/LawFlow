@@ -21,8 +21,10 @@ const WS_URL =
 
 export type ChatSocketEvent =
   | { type: "message"; conversationId: string; message: ChatMessage }
+  | { type: "message_update"; conversationId: string; message: ChatMessage }
   | { type: "typing"; conversationId: string; from: string; isTyping: boolean }
-  | { type: "presence"; userId: string; online: boolean };
+  | { type: "presence"; userId: string; online: boolean }
+  | { type: "read"; conversationId: string; readAt: string };
 
 type Listener = (event: ChatSocketEvent) => void;
 
@@ -78,8 +80,10 @@ class ChatSocketManager {
       }
       if (
         msg.type === "message" ||
+        msg.type === "message_update" ||
         msg.type === "typing" ||
-        msg.type === "presence"
+        msg.type === "presence" ||
+        msg.type === "read"
       ) {
         this.emit(data as ChatSocketEvent);
       }
@@ -126,6 +130,9 @@ class ChatSocketManager {
 
   unsubscribe(conversationId: string) {
     this.subscriptions.delete(conversationId);
+    // Tell the server we've stopped viewing this chat (so it knows to send a
+    // bell notification for future messages).
+    this.rawSend({ type: "unsubscribe", conversationId });
   }
 
   sendTyping(conversationId: string, isTyping: boolean) {

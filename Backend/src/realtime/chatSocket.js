@@ -77,6 +77,37 @@ export function pushMessageToConversation({
   sendToUser(lawyerUserId, payload);
 }
 
+// Push a "seen" receipt to a user — their messages up to readAt are now read
+// by the other party (drives the ✓✓ tick live).
+export function pushReadReceipt({ toUserId, conversationId, readAt }) {
+  sendToUser(toUserId, { type: "read", conversationId, readAt });
+}
+
+// Push an UPDATED message (e.g. edited) to both participants so they replace
+// the existing one in place.
+export function pushMessageUpdate({
+  clientUserId,
+  lawyerUserId,
+  conversationId,
+  message,
+}) {
+  const payload = { type: "message_update", conversationId, message };
+  sendToUser(clientUserId, payload);
+  sendToUser(lawyerUserId, payload);
+}
+
+// Is the user actively looking at this conversation right now? True if any of
+// their sockets has it as the active (subscribed) conversation. Used to decide
+// whether a bell notification is needed (skip it while they're watching).
+export function isUserViewingConversation(userId, conversationId) {
+  const set = userSockets.get(userId);
+  if (!set) return false;
+  for (const ws of set) {
+    if (ws.activeConversationId === conversationId) return true;
+  }
+  return false;
+}
+
 // Mirror app.js's CORS origin policy for the WS upgrade (helmet/cors don't run
 // on upgrades). Fail-closed in production, allow localhost in dev.
 function resolveAllowedOrigins() {
@@ -108,6 +139,7 @@ export function initChatSocket(server) {
   wss.on("connection", (ws) => {
     ws.isAuthed = false;
     ws.userId = null;
+    ws.activeConversationId = null;
 
     // Drop connections that never authenticate.
     const authTimer = setTimeout(() => {
@@ -164,6 +196,9 @@ export function initChatSocket(server) {
             msg.conversationId,
             ws.userId
           );
+          // Remember which conversation this socket is viewing (one at a time)
+          // so the bell logic can tell whether to notify.
+          ws.activeConversationId = msg.conversationId;
           sendToSocket(ws, {
             type: "presence",
             userId: participant.counterpart.id,
@@ -171,6 +206,14 @@ export function initChatSocket(server) {
           });
         } catch {
           /* not a participant — ignore silently */
+        }
+        return;
+      }
+
+      // ---- leave a conversation (stop "viewing" it) -------------------
+      if (msg.type === "unsubscribe" && msg.conversationId) {
+        if (ws.activeConversationId === msg.conversationId) {
+          ws.activeConversationId = null;
         }
         return;
       }

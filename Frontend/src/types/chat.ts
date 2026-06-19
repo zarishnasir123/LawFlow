@@ -59,8 +59,17 @@ export interface ChatMessage {
   // "Seen" tick (Chunk 4): true once the other participant has read this
   // message (their last-read time has passed it).
   seen?: boolean;
+
+  // Quoted reply (Chunk 5): the message this one is replying to, with a short
+  // preview to render in the quoted bar. null/omitted for a normal message.
+  replyTo?: { id: string; sender: ChatSender; preview: string } | null;
+
+  // True once the text has been edited (Chunk 6) — the UI shows an "edited" tag.
+  edited?: boolean;
 }
 
 export interface SendMessagePayload {
   text: string;
+  // When set, this message quotes another (reply).
+  replyToMessageId?: string;
 }

@@ -1,14 +1,9 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { X, Check, Trash2, SlidersHorizontal } from "lucide-react";
 import NotificationCard from "../NotificationCard";
 import NotificationPreferencesModal from "./NotificationPreferencesModal";
 import type { Notification } from "../../types/notification";
-import {
-  fetchNotifications,
-  markNotificationAsRead,
-  markAllNotificationsAsRead,
-  deleteNotification,
-} from "../../api/notificationApi";
+import { useClientNotifications } from "../../hooks/useClientNotifications";
 
 interface NotificationModalProps {
   isOpen: boolean;
@@ -19,72 +14,25 @@ export default function NotificationModal({
   isOpen,
   onClose,
 }: NotificationModalProps) {
-  const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [unreadCount, setUnreadCount] = useState(0);
-  const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<"all" | "unread">("all");
   const [preferencesOpen, setPreferencesOpen] = useState(false);
+  // Shares the same cache as the bell badge (ClientLayout), so marking read /
+  // deleting here updates the badge instantly.
+  const {
+    notifications,
+    unreadCount,
+    isLoading: loading,
+    markRead,
+    markAllRead,
+    remove,
+  } = useClientNotifications();
 
-  useEffect(() => {
-    if (isOpen) {
-      loadNotifications();
-    }
-  }, [isOpen]);
-
-  const loadNotifications = async () => {
-    try {
-      setLoading(true);
-      const response = await fetchNotifications();
-      setNotifications(response.notifications);
-      setUnreadCount(response.unreadCount);
-    } catch (err) {
-      console.error("Error fetching notifications:", err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleMarkAsRead = async (notificationId: string) => {
-    try {
-      setNotifications((prev) =>
-        prev.map((notif) =>
-          notif.id === notificationId ? { ...notif, read: true } : notif
-        )
-      );
-      setUnreadCount((prev) => Math.max(0, prev - 1));
-      await markNotificationAsRead(notificationId);
-    } catch (err) {
-      console.error("Error marking notification as read:", err);
-      loadNotifications();
-    }
-  };
-
-  const handleMarkAllAsRead = async () => {
-    try {
-      setNotifications((prev) => prev.map((notif) => ({ ...notif, read: true })));
-      setUnreadCount(0);
-      await markAllNotificationsAsRead();
-    } catch (err) {
-      console.error("Error marking all as read:", err);
-      loadNotifications();
-    }
-  };
-
-  const handleDelete = async (notificationId: string) => {
-    try {
-      const deletedNotif = notifications.find((n) => n.id === notificationId);
-      setNotifications((prev) => prev.filter((notif) => notif.id !== notificationId));
-      if (deletedNotif && !deletedNotif.read) {
-        setUnreadCount((prev) => Math.max(0, prev - 1));
-      }
-      await deleteNotification(notificationId);
-    } catch (err) {
-      console.error("Error deleting notification:", err);
-      loadNotifications();
-    }
-  };
+  const handleMarkAsRead = (notificationId: string) => markRead(notificationId);
+  const handleMarkAllAsRead = () => markAllRead();
+  const handleDelete = (notificationId: string) => remove(notificationId);
 
   const handleNotificationClick = (notification: Notification) => {
+    if (!notification.read) markRead(notification.id);
     if (notification.actionUrl) {
       window.location.href = notification.actionUrl;
     }

@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from "react";
+import { Fragment, useEffect, useState, useRef } from "react";
 import { useParams, useNavigate } from "@tanstack/react-router";
 import {
   Search,
@@ -9,17 +9,24 @@ import {
 import LawyerLayout from "../components/LawyerLayout";
 import ChatMessageBubble from "../components/ChatMessageBubble";
 import ChatComposer from "../components/ChatComposer";
+import ChatDateSeparator from "../../../shared/components/ChatDateSeparator";
 import {
   getThreadMessages,
   sendThreadMessage,
   getThreadById,
   sendThreadFile,
   sendThreadVoice,
+  markThreadRead,
 } from "../api";
 import { getApiErrorMessage } from "../../../shared/utils/getApiErrorMessage";
 import { chatSocket } from "../../../shared/api/chatSocket";
 import { useChatSocket } from "../../../shared/hooks/useChatSocket";
-import { upsertMessage } from "../../../shared/utils/chatMessages";
+import {
+  upsertMessage,
+  replaceMessage,
+  messagePreview,
+  isSameDay,
+} from "../../../shared/utils/chatMessages";
 import type { ChatMessage, LawyerChatThread } from "../../../types/chat";
 
 export default function ChatDetail() {
@@ -34,6 +41,7 @@ export default function ChatDetail() {
   const [typing, setTyping] = useState(false);
   const typingClearRef = useRef<number | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [replyTarget, setReplyTarget] = useState<ChatMessage | null>(null);
 
   // Live channel: subscribe to this conversation and react to live events.
   useEffect(() => {
@@ -45,8 +53,27 @@ export default function ChatDetail() {
   useChatSocket({
     onMessage: (conversationId, message) => {
       if (conversationId !== threadId) return;
+      setMessages((prev) => upsertMessage(prev, message));
+      // I'm viewing this chat → mark the counterpart's message read.
+      if (message.sender !== "lawyer") {
+        markThreadRead(threadId).catch(() => {});
+      }
+    },
+    onMessageUpdate: (conversationId, message) => {
+      if (conversationId !== threadId) return;
+      setMessages((prev) => replaceMessage(prev, message));
+    },
+    onRead: (conversationId, readAt) => {
+      if (conversationId !== threadId) return;
+      const readMs = new Date(readAt).getTime();
       setMessages((prev) =>
-        prev.some((m) => m.id === message.id) ? prev : [...prev, message]
+        prev.map((m) =>
+          m.sender === "lawyer" &&
+          !m.seen &&
+          new Date(m.createdAt).getTime() <= readMs
+            ? { ...m, seen: true }
+            : m
+        )
       );
     },
     onTyping: (conversationId, _from, isTyping) => {
@@ -83,6 +110,7 @@ export default function ChatDetail() {
 
         setThread(threadData);
         setMessages(messagesData);
+        markThreadRead(threadId).catch(() => {});
       } catch (error) {
         console.error("Error loading chat:", error);
       } finally {
@@ -94,8 +122,12 @@ export default function ChatDetail() {
   }, [threadId]);
 
   const handleSendMessage = async (text: string) => {
-    const newMsg = await sendThreadMessage(threadId, { text });
+    const newMsg = await sendThreadMessage(threadId, {
+      text,
+      replyToMessageId: replyTarget?.id,
+    });
     setMessages((prev) => upsertMessage(prev, newMsg));
+    setReplyTarget(null);
   };
 
   const handleSendFiles = async (files: File[]) => {
@@ -215,9 +247,17 @@ export default function ChatDetail() {
         <div className="flex-1 flex flex-col bg-white">
           {/* Messages Container */}
           <div className="flex-1 overflow-y-auto py-6 space-y-5 px-4 sm:px-8">
-            {messages.map((msg) => (
-              <ChatMessageBubble key={msg.id} msg={msg} />
-            ))}
+            {messages.map((msg, i) => {
+              const prev = messages[i - 1];
+              const showDate =
+                !prev || !isSameDay(prev.createdAt, msg.createdAt);
+              return (
+                <Fragment key={msg.id}>
+                  {showDate && <ChatDateSeparator iso={msg.createdAt} />}
+                  <ChatMessageBubble msg={msg} onReply={setReplyTarget} />
+                </Fragment>
+              );
+            })}
             <div ref={messagesEndRef} />
           </div>
 
@@ -228,6 +268,8 @@ export default function ChatDetail() {
               onSendFiles={handleSendFiles}
               onSendVoice={handleSendVoice}
               onTyping={(isTyping) => chatSocket.sendTyping(threadId, isTyping)}
+              replyPreview={replyTarget ? messagePreview(replyTarget) : null}
+              onCancelReply={() => setReplyTarget(null)}
             />
           </div>
         </div>
