@@ -108,6 +108,13 @@ function getFrontendUrl() {
   return process.env.FRONTEND_URL || "http://localhost:5173";
 }
 
+// The admin panel is a separate app on its own origin (default :5174). Admin
+// password-reset links must point here, not at the client/lawyer app, so the
+// whole recovery flow stays inside the admin portal.
+function getAdminUrl() {
+  return process.env.ADMIN_URL || "http://localhost:5174";
+}
+
 export async function registerClient(req, res) {
   const result = await startRegistration({
     role: "client",
@@ -549,7 +556,10 @@ export async function forgotPassword(req, res) {
     });
   } else if (result) {
     const { token, user } = result;
-    const resetUrl = `${getFrontendUrl()}/reset-password?token=${token}`;
+    // Admins live in a separate panel — send them back to it; everyone else
+    // resets in the client/lawyer app.
+    const baseUrl = user.role === "admin" ? getAdminUrl() : getFrontendUrl();
+    const resetUrl = `${baseUrl}/reset-password?token=${token}`;
 
     queuePasswordResetEmail({
       email: user.email,

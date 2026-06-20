@@ -1,7 +1,10 @@
 import { Shield } from "lucide-react";
+import { useNavigate } from "@tanstack/react-router";
 import AdminLoginForm from "../components/AdminLoginForm";
 
 export default function Login() {
+  const navigate = useNavigate();
+
   return (
     <div className="min-h-screen scroll-smooth bg-gradient-to-br from-green-50 to-white px-4 py-6 flex items-center justify-center">
       <div className="mx-auto w-full max-w-md">
@@ -19,7 +22,9 @@ export default function Login() {
             </p>
           </div>
 
-          <AdminLoginForm />
+          <AdminLoginForm
+            onForgotPassword={() => navigate({ to: "/forgot-password" })}
+          />
         </div>
       </div>
     </div>

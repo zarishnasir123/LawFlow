@@ -10,6 +10,8 @@ import { requireAdmin } from "./routeGuards";
 import { getStoredAuthUser } from "../modules/auth/utils/authStorage";
 
 import Login from "../modules/auth/pages/Login";
+import ForgotPassword from "../modules/auth/pages/ForgotPassword";
+import ResetPassword from "../modules/auth/pages/ResetPassword";
 import AdminLayout from "../modules/admin/components/AdminLayout";
 import AdminDashboardPage from "../modules/admin/pages/Dashboard";
 import AdminRegistrarsPage from "../modules/admin/pages/Registrars";
@@ -47,6 +49,25 @@ const loginRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "login",
   component: Login,
+});
+
+// Public recovery routes — sit alongside login (NOT under the gated _admin
+// layout) so a logged-out admin can reach them. The reset link the backend
+// emails to admins lands on /reset-password?token=... in this panel.
+const forgotPasswordRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "forgot-password",
+  component: ForgotPassword,
+});
+
+const resetPasswordRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "reset-password",
+  component: ResetPassword,
+  // Surface the ?token= query param to the page via useSearch.
+  validateSearch: (search: Record<string, unknown>) => ({
+    token: typeof search.token === "string" ? search.token : undefined,
+  }),
 });
 
 // Pathless layout route: renders the persistent sidebar + top bar via
@@ -144,6 +165,8 @@ const notificationsRoute = createRoute({
 const routeTree = rootRoute.addChildren([
   indexRoute,
   loginRoute,
+  forgotPasswordRoute,
+  resetPasswordRoute,
   adminLayoutRoute.addChildren([
     dashboardRoute,
     registrarsRoute,

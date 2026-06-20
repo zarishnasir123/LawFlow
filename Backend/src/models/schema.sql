@@ -126,7 +126,7 @@ CREATE TABLE users (
 );
 
 -- Default admin for local dev.
--- Login: LfAdmin@gmail.com / Admin@123
+-- Login: lawflowadmin@gmail.com / Admin@123
 INSERT INTO users (
   role_id,
   first_name,
@@ -143,7 +143,7 @@ VALUES (
   (SELECT id FROM roles WHERE name = 'admin'),
   'LawFlow',
   'Admin',
-  'LfAdmin@gmail.com',
+  'lawflowadmin@gmail.com',
   '+920000000000',
   '34104-0000000-1',
   crypt('Admin@123', gen_salt('bf', 12)),

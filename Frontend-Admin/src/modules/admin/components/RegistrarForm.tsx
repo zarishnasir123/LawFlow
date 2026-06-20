@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useMemo, useState, type FormEvent } from "react";
 
 export type RegistrarRole = "Registrar";
 
@@ -86,9 +86,15 @@ export default function RegistrarForm({
   const [values, setValues] = useState<RegistrarFormValues>(defaults);
   const [error, setError] = useState<string>("");
 
-  useEffect(() => {
+  // Re-seed the form when `defaults` (derived from initialValues) change — e.g.
+  // when the edit form's data loads in. Done during render via a tracked
+  // previous value rather than in an effect (React's recommended way to reset
+  // state from props).
+  const [syncedDefaults, setSyncedDefaults] = useState(defaults);
+  if (syncedDefaults !== defaults) {
+    setSyncedDefaults(defaults);
     setValues(defaults);
-  }, [defaults]);
+  }
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
