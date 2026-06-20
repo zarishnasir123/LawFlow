@@ -3,6 +3,7 @@ import { ApiError } from "../../utils/apiError.js";
 import { findNextAvailableSlot, getNextHearingStage } from "./hearingScheduler.js";
 import { createNotification } from "../notifications/notifications.service.js";
 import { safeRecordCaseEvent } from "../cases/caseEvents.service.js";
+import { queueHearingNotificationEmail } from "../../services/email.service.js";
 
 // Reusable SELECT with joins
 const SELECT_HEARING_DETAILS = `
@@ -66,6 +67,41 @@ async function getCaseDetails(caseId) {
     throw new ApiError(404, "Case not found");
   }
   return result.rows[0];
+}
+
+// Look up a user's email + first name so we can email them about a hearing.
+async function getUserContact(userId) {
+  if (!userId) return null;
+  const r = await pool.query(
+    "SELECT email, first_name FROM users WHERE id = $1",
+    [userId]
+  );
+  return r.rows[0] || null;
+}
+
+// Email the lawyer and (if the case is linked to one) the client about a hearing
+// event. Fire-and-forget + best-effort: a mail hiccup must never break the
+// registrar's action, so failures are swallowed and logged. Mirrors the in-app
+// notifications that fire alongside it.
+async function emailHearingParties({ lawyerUserId, clientUserId, ...emailParams }) {
+  try {
+    const recipients = [];
+    const lawyer = await getUserContact(lawyerUserId);
+    if (lawyer?.email) recipients.push(lawyer);
+    if (clientUserId) {
+      const client = await getUserContact(clientUserId);
+      if (client?.email) recipients.push(client);
+    }
+    for (const r of recipients) {
+      queueHearingNotificationEmail({
+        email: r.email,
+        firstName: r.first_name,
+        ...emailParams,
+      });
+    }
+  } catch (err) {
+    console.error("Failed to queue hearing notification emails", err);
+  }
 }
 
 // Fetch registrar tehsil to restrict scopes
@@ -474,6 +510,23 @@ export async function confirmHearing({
     }
   }
 
+  // Email both parties — same moment as the in-app notifications above.
+  await emailHearingParties({
+    lawyerUserId: caseRow.lawyer_user_id,
+    clientUserId: caseRow.client_user_id,
+    subject: `Hearing scheduled — ${confirmed.hearingType}`,
+    heading: "Hearing Scheduled",
+    intro: `A hearing has been scheduled for your case "${caseRow.title}". Please attend in person at the court on the date below.`,
+    caseTitle: caseRow.title,
+    hearingLine: `Hearing #${hearingNumber} — ${confirmed.hearingType}`,
+    showSchedule: true,
+    date: confirmed.hearingDate,
+    timeLabel: `${confirmed.startTime} – ${confirmed.endTime}`,
+    courtroomName: confirmed.courtroomName,
+    footerNote:
+      "Hearings are held in person at the court. Please arrive on time with all required documents.",
+  });
+
   return confirmed;
 }
 
@@ -584,6 +637,21 @@ export async function recordOutcome({
         console.error("Failed to notify user of case disposal", err);
       }
     }
+
+    await emailHearingParties({
+      lawyerUserId: caseRow.lawyer_user_id,
+      clientUserId: caseRow.client_user_id,
+      subject: `Case closed — ${caseRow.title}`,
+      heading: "Case Closed — Final Decision",
+      intro: `Your case "${caseRow.title}" has been disposed (officially closed) by the court. The final decision has been recorded.`,
+      caseTitle: caseRow.title,
+      hearingLine: `Final hearing — ${hearing.hearingType}`,
+      showSchedule: false,
+      showRemarks: Boolean(remarks),
+      remarksLabel: "Court's final decision / remarks",
+      remarks,
+      footerNote: "No further hearings will be scheduled for this case.",
+    });
   } else {
     // Notify lawyer and client of the hearing outcome (completed / adjourned)
     const outcomeLabel = outcome === "adjourned" ? "Adjourned" : "Completed";
@@ -605,6 +673,27 @@ export async function recordOutcome({
         console.error(`Failed to notify user of hearing ${outcome}`, err);
       }
     }
+
+    const isAdjourned = outcome === "adjourned";
+    await emailHearingParties({
+      lawyerUserId: caseRow.lawyer_user_id,
+      clientUserId: caseRow.client_user_id,
+      subject: `Hearing ${isAdjourned ? "adjourned" : "completed"} — ${hearing.hearingType}`,
+      heading: isAdjourned ? "Hearing Adjourned" : "Hearing Completed",
+      intro: isAdjourned
+        ? `Hearing #${hearing.hearingNumber} (${hearing.hearingType}) for your case "${caseRow.title}" was adjourned. A new hearing will be scheduled and you'll be notified of the date.`
+        : `Hearing #${hearing.hearingNumber} (${hearing.hearingType}) for your case "${caseRow.title}" was completed. The next hearing will be scheduled and you'll be notified of the date.`,
+      caseTitle: caseRow.title,
+      hearingLine: `Hearing #${hearing.hearingNumber} — ${hearing.hearingType}`,
+      showSchedule: false,
+      showRemarks: Boolean(remarks),
+      remarksLabel: isAdjourned ? "Reason for adjournment" : "Court order / remarks",
+      remarks,
+      footerNote:
+        isAdjourned && nextHearingType
+          ? `Next stage: ${nextHearingType}. You'll receive the new hearing date once it's scheduled.`
+          : "You'll receive the next hearing's date once it's scheduled.",
+    });
 
     // Schedule next hearing (Completed / Adjourned)
     // We await this synchronously so the frontend's subsequent GET /hearings
@@ -904,6 +993,22 @@ export async function rescheduleHearing({
         console.error("Failed to notify client of rescheduled hearing", err);
       }
     }
+
+    await emailHearingParties({
+      lawyerUserId: hearing.lawyerUserId,
+      clientUserId: caseRow.client_user_id,
+      subject: `Hearing rescheduled — ${updatedHearing.hearingType}`,
+      heading: "Hearing Rescheduled",
+      intro: `Hearing #${hearing.hearingNumber} (${updatedHearing.hearingType}) for your case "${caseRow.title}" has been moved to a new date. Please note the updated details below.`,
+      caseTitle: caseRow.title,
+      hearingLine: `Hearing #${hearing.hearingNumber} — ${updatedHearing.hearingType}`,
+      showSchedule: true,
+      date: updatedHearing.hearingDate,
+      timeLabel: `${updatedHearing.startTime} – ${updatedHearing.endTime}`,
+      courtroomName: updatedHearing.courtroomName,
+      footerNote:
+        "Please attend in person at the court on the new date. Your earlier date no longer applies.",
+    });
   }
 
   return updatedHearing;
@@ -967,6 +1072,21 @@ export async function cancelHearing({ hearingId, registrarUserId }) {
         console.error("Failed to notify client of cancelled hearing", err);
       }
     }
+
+    await emailHearingParties({
+      lawyerUserId: hearing.lawyerUserId,
+      clientUserId: caseRow.client_user_id,
+      subject: `Hearing cancelled — ${hearing.hearingType}`,
+      heading: "Hearing Cancelled",
+      intro: `Hearing #${hearing.hearingNumber} (${hearing.hearingType}) for your case "${caseRow.title}" has been cancelled. The previously scheduled slot below no longer applies.`,
+      caseTitle: caseRow.title,
+      hearingLine: `Hearing #${hearing.hearingNumber} — ${hearing.hearingType}`,
+      showSchedule: true,
+      date: hearing.hearingDate,
+      timeLabel: `${hearing.startTime} – ${hearing.endTime}`,
+      courtroomName: hearing.courtroomName,
+      footerNote: "If a new hearing is scheduled, you'll be notified by email.",
+    });
   }
 
   return { hearingId, status: "cancelled" };
