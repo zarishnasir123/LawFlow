@@ -18,18 +18,23 @@ export default function SuspendLawyerConfirmationModal({
 }: SuspendLawyerConfirmationModalProps) {
   const [reason, setReason] = useState("");
 
+  // Body-scroll lock only — a genuine external-system sync (no setState here).
   useEffect(() => {
-    if (open) {
-      document.body.style.overflow = "hidden";
-    } else {
-      document.body.style.overflow = "auto";
-      setReason("");
-    }
-
+    document.body.style.overflow = open ? "hidden" : "auto";
     return () => {
       document.body.style.overflow = "auto";
     };
   }, [open]);
+
+  // Clear the reason each time the modal (re)opens — done during render via a
+  // tracked previous value, not in an effect, so it never trips
+  // set-state-in-effect. This preserves the typed reason while the modal stays
+  // open (e.g. if the suspend request fails) and only resets on a fresh open.
+  const [wasOpen, setWasOpen] = useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    if (open) setReason("");
+  }
 
   if (!open) return null;
 

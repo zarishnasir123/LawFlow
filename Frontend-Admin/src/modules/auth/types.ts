@@ -35,3 +35,27 @@ export type LoginPayload = {
 };
 
 export type AdminLoginPayload = LoginPayload;
+
+// Partial update for PATCH /auth/me. Every field optional; only included keys
+// are sent. Email + CNIC are intentionally absent — they're locked in the admin
+// UI and the backend rejects a CNIC change outright.
+export type UpdateMyProfilePayload = {
+  firstName?: string;
+  lastName?: string;
+  phone?: string;
+};
+
+// In-profile password rotation (caller knows the current password).
+export type ChangePasswordPayload = {
+  currentPassword: string;
+  newPassword: string;
+  confirmPassword: string;
+};
+
+// Forgot-password reset, gated by the emailed token instead of a current
+// password.
+export type ResetPasswordPayload = {
+  token: string;
+  password: string;
+  confirmPassword: string;
+};
