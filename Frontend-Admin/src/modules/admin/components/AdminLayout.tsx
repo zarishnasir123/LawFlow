@@ -29,6 +29,11 @@ import {
 import { useAdminNotificationCount } from "../hooks/useAdminNotificationCount";
 import { usePendingLawyerCount } from "../hooks/usePendingLawyerCount";
 import { useOpenPayoutCount } from "../hooks/useOpenPayoutCount";
+import {
+  avatarInitial,
+  displayFullName,
+  useCurrentUser,
+} from "../../auth/hooks/useCurrentUser";
 import LogoutConfirmationModal from "./modals/LogoutConfirmationModal";
 
 type NavItem = {
@@ -63,7 +68,8 @@ const navItems: NavItem[] = [
   { to: "/templates", label: "Templates", icon: FileText },
   { to: "/statistics", label: "Statistics", icon: BarChart3 },
   { to: "/notifications", label: "Notifications", icon: Bell },
-  { to: "/profile", label: "Profile", icon: UserCircle2 },
+  // Profile is reached via the identity chip in the sidebar footer (avatar +
+  // name), so it's intentionally not duplicated as a top-level nav item.
 ];
 
 const SIDEBAR_COLLAPSED_STORAGE_KEY = "lawflow_admin_sidebar_collapsed";
@@ -106,6 +112,8 @@ export default function AdminLayout() {
   const unreadCount = useAdminNotificationCount();
   const pendingLawyerCount = usePendingLawyerCount();
   const openPayoutCount = useOpenPayoutCount();
+  const { data: currentUser } = useCurrentUser();
+  const profileActive = location.pathname === "/profile";
 
   const handleLogout = () => {
     localStorage.clear();
@@ -260,6 +268,55 @@ export default function AdminLayout() {
               showLabels ? "px-3" : "px-2"
             }`}
           >
+            {/* Logged-in admin identity — display only. Collapses to just the
+                avatar when the sidebar is collapsed. */}
+            <div
+              className={`flex items-center ${
+                showLabels ? "gap-3 px-2 py-2" : "justify-center px-2 py-2"
+              }`}
+            >
+              <span className="grid h-8 w-8 shrink-0 place-items-center overflow-hidden rounded-full bg-white/15 text-sm font-semibold text-white">
+                {currentUser?.avatarUrl ? (
+                  <img
+                    src={currentUser.avatarUrl}
+                    alt=""
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  avatarInitial(currentUser)
+                )}
+              </span>
+              {showLabels ? (
+                <span className="min-w-0 leading-tight">
+                  <span className="block truncate text-sm font-medium text-white">
+                    {displayFullName(currentUser) || "Admin"}
+                  </span>
+                  <span className="block text-xs text-green-100/70">
+                    Administrator
+                  </span>
+                </span>
+              ) : null}
+            </div>
+
+            {/* Profile option — the single way into the admin's own profile. */}
+            <Link
+              to="/profile"
+              onClick={closeMobileDrawer}
+              title={showLabels ? undefined : "Administrator Profile"}
+              className={`mt-1 flex items-center rounded-lg text-sm font-medium transition-colors ${
+                showLabels
+                  ? "gap-3 px-3 py-2.5"
+                  : "justify-center px-2 py-2.5"
+              } ${
+                profileActive
+                  ? "bg-white/15 text-white"
+                  : "text-green-100/85 hover:bg-white/10 hover:text-white"
+              }`}
+            >
+              <UserCircle2 className="h-[18px] w-[18px] shrink-0" />
+              {showLabels ? <span>Administrator Profile</span> : null}
+            </Link>
+
             <button
               type="button"
               onClick={() => setLogoutOpen(true)}

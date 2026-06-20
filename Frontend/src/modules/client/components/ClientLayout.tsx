@@ -16,6 +16,7 @@ type ClientLayoutProps = {
   showBackButton?: boolean;
   onBackClick?: () => void;
   backLabel?: string;
+  notificationBadge?: number;
   children: ReactNode;
 };
 
@@ -26,12 +27,17 @@ export default function ClientLayout({
   showBackButton = false,
   onBackClick,
   backLabel,
+  notificationBadge,
   children,
 }: ClientLayoutProps) {
   const navigate = useNavigate();
   const performLogout = useLogout();
   const { data: currentUser } = useCurrentUser();
   const { unreadCount } = useClientNotifications();
+  
+  // Live unread count for the bell badge. An explicit notificationBadge prop
+  // (rarely passed) still overrides it.
+  const badgeCount = notificationBadge ?? unreadCount;
   const [notificationModalOpen, setNotificationModalOpen] = useState(false);
   const [logoutModalOpen, setLogoutModalOpen] = useState(false);
 
@@ -101,11 +107,11 @@ export default function ClientLayout({
       {
         label: "Notifications",
         icon: Bell,
-        badge: unreadCount,
+        badge: badgeCount,
         onClick: openNotificationModal,
       },
     ],
-    [navigate, unreadCount, openNotificationModal]
+    [navigate, badgeCount, openNotificationModal]
   );
 
   return (

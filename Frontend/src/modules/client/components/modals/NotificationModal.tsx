@@ -16,14 +16,15 @@ export default function NotificationModal({
 }: NotificationModalProps) {
   const [filter, setFilter] = useState<"all" | "unread">("all");
   const [preferencesOpen, setPreferencesOpen] = useState(false);
-
+  // Shares the same cache as the bell badge (ClientLayout), so marking read /
+  // deleting here updates the badge instantly.
   const {
     notifications,
     unreadCount,
     isLoading,
     markRead,
     markAllRead,
-    deleteNotif,
+    remove,
   } = useClientNotifications();
 
   useEffect(() => {
@@ -44,10 +45,11 @@ export default function NotificationModal({
   };
 
   const handleDelete = (notificationId: string) => {
-    deleteNotif(notificationId);
+    remove(notificationId);
   };
 
   const handleNotificationClick = (notification: Notification) => {
+    if (!notification.read) markRead(notification.id);
     if (notification.actionUrl) {
       window.location.href = notification.actionUrl;
     }

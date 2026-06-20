@@ -1,15 +1,21 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
+  deleteNotification,
   fetchNotifications,
   markAllNotificationsAsRead,
   markNotificationAsRead,
-  deleteNotification,
 } from "../api/notificationApi";
 import type { NotificationResponse } from "../types/notification";
 
+// Shared query key for the client's live notifications. Both the bell badge
+// (ClientLayout) and the NotificationModal read from this single cache entry,
+// so marking one read in the modal updates the badge instantly.
 export const CLIENT_NOTIFICATIONS_KEY = ["client", "notifications"] as const;
 
+// Poll every 30s so new notifications (e.g. a new chat message while the
+// client is elsewhere in the app) and the unread badge appear without a manual
+// refresh.
 const REFETCH_INTERVAL_MS = 30_000;
 
 export function useClientNotifications() {
@@ -58,10 +64,7 @@ export function useClientNotifications() {
       const previous = queryClient.getQueryData<NotificationResponse>(CLIENT_NOTIFICATIONS_KEY);
       if (previous) {
         queryClient.setQueryData<NotificationResponse>(CLIENT_NOTIFICATIONS_KEY, {
-          notifications: previous.notifications.map((n) => ({
-            ...n,
-            read: true,
-          })),
+          notifications: previous.notifications.map((n) => ({ ...n, read: true })),
           unreadCount: 0,
         });
       }
@@ -77,11 +80,13 @@ export function useClientNotifications() {
     },
   });
 
-  const deleteNotif = useMutation({
+  const remove = useMutation({
     mutationFn: (notificationId: string) => deleteNotification(notificationId),
     onMutate: async (notificationId: string) => {
       await queryClient.cancelQueries({ queryKey: CLIENT_NOTIFICATIONS_KEY });
-      const previous = queryClient.getQueryData<NotificationResponse>(CLIENT_NOTIFICATIONS_KEY);
+      const previous = queryClient.getQueryData<NotificationResponse>(
+        CLIENT_NOTIFICATIONS_KEY
+      );
       if (previous) {
         const target = previous.notifications.find((n) => n.id === notificationId);
         const wasUnread = target ? !target.read : false;
@@ -112,6 +117,6 @@ export function useClientNotifications() {
     refetch: query.refetch,
     markRead: markRead.mutate,
     markAllRead: markAllRead.mutate,
-    deleteNotif: deleteNotif.mutate,
+    remove: remove.mutate,
   };
 }

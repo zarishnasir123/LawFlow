@@ -140,3 +140,19 @@ export async function markAllNotificationsRead({ userId }) {
 
   return { updated: result.rowCount };
 }
+
+// Delete a single notification. The user_id guard is part of the WHERE so a
+// caller can only ever delete their OWN row; a missing/foreign id yields
+// rowCount 0 -> 404 (we don't distinguish "not found" from "not yours").
+export async function deleteNotificationForUser({ userId, notificationId }) {
+  const result = await pool.query(
+    `DELETE FROM notifications WHERE id = $1 AND user_id = $2`,
+    [notificationId, userId]
+  );
+
+  if (result.rowCount === 0) {
+    throw new ApiError(404, "Notification not found");
+  }
+
+  return { deleted: true };
+}

@@ -5,6 +5,7 @@ import { authenticate } from "../../middleware/authenticate.js";
 import { validateRequest } from "../../middleware/validateRequest.js";
 
 import {
+  deleteMyNotification,
   listMyNotifications,
   markAllMyNotificationsRead,
   markMyNotificationRead
@@ -33,6 +34,14 @@ router.patch(
   notificationIdParamValidator,
   validateRequest,
   asyncHandler(markMyNotificationRead)
+);
+
+// DELETE /api/notifications/:id -> { deleted: true }
+router.delete(
+  "/:id",
+  notificationIdParamValidator,
+  validateRequest,
+  asyncHandler(deleteMyNotification)
 );
 
 export default router;

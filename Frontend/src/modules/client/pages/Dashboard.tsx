@@ -49,7 +49,7 @@ export default function Dashboard() {
           .filter((h) => h.status === "scheduled" || h.status === "proposed")
           .slice(0, 2)
           .map((h) => ({
-            id: h.id as any,
+            id: String(h.id),
             caseNumber: `Hearing #${h.hearingNumber} (${h.hearingType})`,
             title: h.caseTitle,
             dateTime: h.status === "proposed"

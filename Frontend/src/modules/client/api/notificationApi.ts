@@ -9,21 +9,24 @@ import type {
 // Map a backend `type` (e.g. "case_accepted", "case_returned") onto the
 // broad UI category the NotificationCard keys its icon/color off of.
 function mapType(backendType: string): Notification["type"] {
+  if (backendType.startsWith("chat") || backendType.startsWith("message")) return "message";
   if (backendType.startsWith("case")) return "case";
   if (backendType.startsWith("hearing")) return "hearing";
-  if (backendType.startsWith("message")) return "message";
   if (backendType.startsWith("document")) return "document";
   return "system";
 }
 
 // Derive a click-through route. Hearing and outcome notifications (completed,
-// adjourned, case_disposed) all go to the hearings page. Case-level
-// notifications go to case-tracking. Anything else falls back to undefined.
+// adjourned, case_disposed) all go to the hearings page. Chat alerts open the
+// messages inbox; case-related ones open case tracking; others have no link.
 function mapActionUrl(backendType: string, caseId: string | null): string | undefined {
   if (
     backendType.startsWith("hearing") ||
     backendType === "case_disposed"
   ) return "/client-hearings";
+  if (backendType.startsWith("chat") || backendType.startsWith("message")) {
+    return "/client-messages";
+  }
   if (caseId) return "/case-tracking";
   return undefined;
 }
@@ -41,6 +44,7 @@ function mapNotification(row: ApiNotification): Notification {
   };
 }
 
+// GET /api/notifications -> { notifications, unreadCount }.
 export async function fetchNotifications(): Promise<NotificationResponse> {
   const { data } = await apiClient.get<ApiNotificationResponse>("/notifications");
   return {
@@ -49,14 +53,19 @@ export async function fetchNotifications(): Promise<NotificationResponse> {
   };
 }
 
-export async function markNotificationAsRead(notificationId: string): Promise<void> {
+// PATCH /api/notifications/:id/read
+export async function markNotificationAsRead(
+  notificationId: string
+): Promise<void> {
   await apiClient.patch(`/notifications/${notificationId}/read`);
 }
 
+// PATCH /api/notifications/read-all
 export async function markAllNotificationsAsRead(): Promise<void> {
   await apiClient.patch("/notifications/read-all");
 }
 
+// DELETE /api/notifications/:id
 export async function deleteNotification(notificationId: string): Promise<void> {
   await apiClient.delete(`/notifications/${notificationId}`);
 }

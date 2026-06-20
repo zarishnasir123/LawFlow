@@ -12,6 +12,7 @@ import registrarRoutes from "./modules/registrar/registrar.routes.js";
 import adminRoutes from "./modules/admin/admin.routes.js";
 import registrarReviewRoutes from "./modules/registrarReview/registrarReview.routes.js";
 import notificationRoutes from "./modules/notifications/notifications.routes.js";
+import chatRoutes from "./modules/chat/chat.routes.js";
 import aiRoutes from "./modules/ai/ai.routes.js";
 import hearingsRoutes from "./modules/hearings/hearings.routes.js";
 import paymentRoutes from "./modules/payments/serviceCharges.routes.js";
@@ -87,6 +88,10 @@ app.use("/api/registrar", registrarReviewRoutes);
 // In-app notifications. Gated by authenticate inside the router; every query
 // is scoped to req.user so a user only ever sees / marks their own rows.
 app.use("/api/notifications", notificationRoutes);
+// Case chat: one-to-one messaging between a case's lawyer and its linked
+// client. Gated to those two roles in the router; per-case participation is
+// checked in the service on every request.
+app.use("/api/chat", chatRoutes);
 // Lawyer-only AI legal assistant (Google Gemini, grounded in LawFlow's case
 // templates). Gated by authenticate + authorizeRoles('lawyer') inside the router.
 app.use("/api/ai", aiRoutes);

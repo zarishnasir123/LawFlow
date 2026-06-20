@@ -19,7 +19,8 @@ import type {
 function mapType(backendType: string): Notification["type"] {
   if (backendType.startsWith("case")) return "case";
   if (backendType.startsWith("hearing")) return "hearing";
-  if (backendType.startsWith("message")) return "message";
+  if (backendType.startsWith("chat") || backendType.startsWith("message"))
+    return "message";
   if (backendType.startsWith("document")) return "document";
   return "system";
 }
@@ -32,7 +33,12 @@ function mapActionUrl(backendType: string, caseId: string | null): string | unde
   if (
     backendType.startsWith("hearing") ||
     backendType === "case_disposed"
-  ) return "/lawyer-hearings";
+  ) {
+    return "/lawyer-hearings";
+  }
+  if (backendType.startsWith("chat") || backendType.startsWith("message")) {
+    return "/lawyer-messages";
+  }
   return caseId ? `/lawyer-case-editor/${caseId}` : undefined;
 }
 

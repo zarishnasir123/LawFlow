@@ -130,7 +130,7 @@ CREATE TABLE users (
 );
 
 -- Default admin for local dev.
--- Login: LfAdmin@gmail.com / Admin@123
+-- Login: lawflowadmin@gmail.com / Admin@123
 INSERT INTO users (
   role_id,
   first_name,
@@ -147,7 +147,7 @@ VALUES (
   (SELECT id FROM roles WHERE name = 'admin'),
   'LawFlow',
   'Admin',
-  'LfAdmin@gmail.com',
+  'lawflowadmin@gmail.com',
   '+920000000000',
   '34104-0000000-1',
   crypt('Admin@123', gen_salt('bf', 12)),
@@ -559,6 +559,97 @@ CREATE TABLE ai_chat_messages (
 -- Loading a conversation + building LLM context: a session's messages in order.
 CREATE INDEX idx_ai_chat_messages_session_created
   ON ai_chat_messages (session_id, created_at ASC);
+
+-- =====================================================================
+-- Chat: real-time, one-to-one messaging between a CLIENT and a LAWYER. A
+-- conversation is a (client, lawyer) PAIR — independent of any case. A
+-- client browses the lawyer directory (GET /api/lawyers) and can start a
+-- conversation with any registered lawyer; the lawyer sees it in their
+-- inbox and replies. Exactly ONE conversation per pair (UNIQUE), created
+-- the first time the client opens the chat.
+--
+-- message_kind:
+--   text  -> body holds the text; attachment_* are NULL
+--   file  -> a shared document; attachment_* hold the stored object
+--   voice -> a recorded voice note; attachment_* + voice_duration_seconds set
+-- Attachment bytes live in Supabase Storage (private bucket, see
+-- SUPABASE_CHAT_BUCKET) under chat/{conversationId}/{messageId}/{filename};
+-- we keep only the storage path here and mint a short-lived signed URL on
+-- read. sender_user_id nulls out if the sender's account is deleted, so the
+-- message text/history survives ("a former user wrote…").
+-- =====================================================================
+CREATE TABLE chat_conversations (
+  id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  lawyer_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+
+  created_at     TIMESTAMP NOT NULL DEFAULT NOW(),
+  -- Bumped on every new message so inboxes can sort "most recent first".
+  updated_at     TIMESTAMP NOT NULL DEFAULT NOW(),
+
+  UNIQUE (client_user_id, lawyer_user_id)
+);
+
+-- Inbox queries: "my conversations, most recently active first" — one index
+-- per side since a user is only ever on one side of the pair.
+CREATE INDEX idx_chat_conversations_client
+  ON chat_conversations (client_user_id, updated_at DESC);
+CREATE INDEX idx_chat_conversations_lawyer
+  ON chat_conversations (lawyer_user_id, updated_at DESC);
+
+CREATE TABLE chat_messages (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  conversation_id UUID NOT NULL REFERENCES chat_conversations(id) ON DELETE CASCADE,
+  sender_user_id  UUID REFERENCES users(id) ON DELETE SET NULL,
+
+  message_kind    VARCHAR(10) NOT NULL DEFAULT 'text'
+                  CHECK (message_kind IN ('text', 'file', 'voice')),
+
+  -- Text content / optional caption. NULL for pure file/voice messages.
+  body            TEXT,
+
+  -- File + voice attachment metadata (NULL for plain text messages).
+  attachment_storage_path TEXT,
+  attachment_name         TEXT,
+  attachment_mime         VARCHAR(120),
+  attachment_size         BIGINT,
+  voice_duration_seconds  INTEGER,
+
+  -- Reply: the message this one is quoting (NULL for a normal message). SET
+  -- NULL if the quoted message is later hidden/removed so the reply survives.
+  reply_to_message_id UUID REFERENCES chat_messages(id) ON DELETE SET NULL,
+
+  -- Stamps the last text edit (NULL = never edited) so the UI can show "edited".
+  edited_at       TIMESTAMP,
+
+  created_at      TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+-- "Delete for me": a message hidden from ONE participant's own view only (the
+-- other person still sees it — there is no delete-for-everyone). One row per
+-- (message, user) who hid it; listMessages excludes the caller's hidden rows.
+CREATE TABLE chat_message_hidden_for (
+  message_id UUID NOT NULL REFERENCES chat_messages(id) ON DELETE CASCADE,
+  user_id    UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  PRIMARY KEY (message_id, user_id)
+);
+
+-- History load + "last message" lookups both filter by conversation + time.
+CREATE INDEX idx_chat_messages_conversation_created
+  ON chat_messages (conversation_id, created_at);
+
+-- Per-participant read marker. One row per (conversation, user); last_read_at
+-- drives both the unread badge (messages newer than this that the user didn't
+-- send) and the "seen" tick (the other party's marker passing a message's
+-- timestamp). Far cheaper than a per-message read row. Cascades on
+-- conversation or user deletion.
+CREATE TABLE chat_reads (
+  conversation_id UUID NOT NULL REFERENCES chat_conversations(id) ON DELETE CASCADE,
+  user_id         UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  last_read_at    TIMESTAMP NOT NULL DEFAULT NOW(),
+
+  PRIMARY KEY (conversation_id, user_id)
+);
 
 -- =====================================================================
 -- Signature requests: ONE row PER SIGNER per "Send for signature" action.

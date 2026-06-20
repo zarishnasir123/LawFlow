@@ -146,7 +146,7 @@ export default function ClientHearings() {
           ].map((item) => (
             <button
               key={item.value}
-              onClick={() => setFilter(item.value as any)}
+              onClick={() => setFilter(item.value as "all" | "upcoming" | "completed")}
               className={`px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition border ${
                 filter === item.value
                   ? "bg-[#01411C] text-white border-[#01411C] shadow-sm"

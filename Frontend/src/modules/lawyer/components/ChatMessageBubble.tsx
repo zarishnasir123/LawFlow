@@ -1,9 +1,18 @@
 import type { ChatMessage } from "../../../types/chat";
-import { Phone } from "lucide-react";
+import { Check, CheckCheck, Phone } from "lucide-react";
 import { useState } from "react";
+import ChatAttachment from "../../../shared/components/ChatAttachment";
+import ChatMessageMenu from "../../../shared/components/ChatMessageMenu";
 
-export default function ChatMessageBubble({ msg }: { msg: ChatMessage }) {
+export default function ChatMessageBubble({
+  msg,
+  onReply,
+}: {
+  msg: ChatMessage;
+  onReply?: (msg: ChatMessage) => void;
+}) {
   const mine = msg.sender === "lawyer";
+  const isAttachment = msg.kind === "file" || msg.kind === "voice";
   const [dialpadNumber, setDialpadNumber] = useState<string | null>(null);
 
   // Detect phone numbers in text and make them clickable
@@ -38,13 +47,49 @@ export default function ChatMessageBubble({ msg }: { msg: ChatMessage }) {
       <div className={`flex ${mine ? "justify-end" : "justify-start"}`}>
         <div
           className={[
-            "max-w-xs sm:max-w-sm md:max-w-md lg:max-w-lg rounded-lg px-4 py-3 text-sm whitespace-pre-line",
+            "group/msg relative max-w-xs sm:max-w-sm md:max-w-md lg:max-w-lg rounded-lg px-4 py-3 pr-8 text-sm whitespace-pre-line",
             mine ? "bg-[#01411C] text-white" : "bg-gray-50 border border-gray-200",
           ].join(" ")}
         >
-          <div>{renderMessageWithPhoneLinks(msg.text)}</div>
-          <div className={`mt-2 text-[11px] ${mine ? "text-green-200" : "text-gray-400"}`}>
-            {new Date(msg.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+          <div className="absolute right-1 top-1 z-10">
+            <ChatMessageMenu
+              msg={msg}
+              mine={mine}
+              onReply={onReply ? () => onReply(msg) : undefined}
+            />
+          </div>
+
+          {/* Quoted reply bar */}
+          {msg.replyTo && (
+            <div
+              className={`mb-1 rounded border-l-2 px-2 py-1 text-xs ${
+                mine
+                  ? "border-green-300 bg-white/10 text-green-100"
+                  : "border-gray-300 bg-gray-100 text-gray-600"
+              }`}
+            >
+              <span className="line-clamp-2">
+                {msg.replyTo.preview || "Message"}
+              </span>
+            </div>
+          )}
+
+          {isAttachment ? (
+            <ChatAttachment msg={msg} mine={mine} />
+          ) : (
+            <div>{renderMessageWithPhoneLinks(msg.text)}</div>
+          )}
+
+          <div className={`mt-2 flex items-center gap-1 text-[11px] ${mine ? "text-green-200" : "text-gray-400"}`}>
+            <span>
+              {new Date(msg.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+            </span>
+            {mine &&
+              (msg.seen ? (
+                <CheckCheck className="h-3.5 w-3.5" />
+              ) : (
+                <Check className="h-3.5 w-3.5" />
+              ))}
           </div>
         </div>
       </div>
