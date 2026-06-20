@@ -97,7 +97,9 @@ export default function LawyerRecentActivity() {
     queryFn: casesApi.getRecentActivity,
   });
 
-  const items = !isError && activities ? activities : [];
+  // Cap at the 5 most recent so the feed stays short and never grows the page
+  // (matches the client dashboard's Recent Activity).
+  const items = (!isError && activities ? activities : []).slice(0, 5);
 
   return (
     <Card>
@@ -110,7 +112,7 @@ export default function LawyerRecentActivity() {
       ) : items.length === 0 ? (
         <p className="py-4 text-xs text-gray-500">No recent activity.</p>
       ) : (
-        <div className="space-y-3">
+        <div className="max-h-80 space-y-3 overflow-y-auto pr-1">
           {items.map((item) => (
             <ActivityRow key={item.id} item={item} />
           ))}
