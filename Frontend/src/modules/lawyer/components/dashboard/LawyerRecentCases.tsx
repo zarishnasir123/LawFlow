@@ -20,6 +20,7 @@ const STATUS_BADGE: Record<CaseStatus, { label: string; className: string }> = {
   submitted: { label: "Submitted", className: "bg-blue-500" },
   returned: { label: "Returned", className: "bg-rose-500" },
   accepted: { label: "Accepted", className: "bg-green-600" },
+  disposed: { label: "Disposed", className: "bg-gray-600" },
 };
 
 // One mini case card. Keeps the shared CaseCard's visual layout (border, hover

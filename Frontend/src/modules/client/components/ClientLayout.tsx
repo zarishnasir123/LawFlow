@@ -33,9 +33,10 @@ export default function ClientLayout({
   const navigate = useNavigate();
   const performLogout = useLogout();
   const { data: currentUser } = useCurrentUser();
+  const { unreadCount } = useClientNotifications();
+  
   // Live unread count for the bell badge. An explicit notificationBadge prop
   // (rarely passed) still overrides it.
-  const { unreadCount } = useClientNotifications();
   const badgeCount = notificationBadge ?? unreadCount;
   const [notificationModalOpen, setNotificationModalOpen] = useState(false);
   const [logoutModalOpen, setLogoutModalOpen] = useState(false);

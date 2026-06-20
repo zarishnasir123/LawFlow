@@ -21,6 +21,7 @@ import { useCurrentUser, displayFullName } from "../../auth/hooks/useCurrentUser
 import { useEnforcePasswordChange } from "../../auth/hooks/useEnforcePasswordChange";
 import { getStoredAuthUser } from "../../auth/utils/authStorage";
 import { mySignaturesApi } from "../../../shared/api/mySignatures.api";
+import { clientHearingsApi } from "../api/hearings.api";
 
 import type {
   ActivityItem,
@@ -38,6 +39,27 @@ export default function Dashboard() {
   // count matches the dedicated Pending Signatures page. Refreshes on
   // dashboard mount; the page itself does its own refresh.
   const [pendingSignatureCount, setPendingSignatureCount] = useState(0);
+  const [upcomingHearings, setUpcomingHearings] = useState<HearingItem[]>([]);
+
+  useEffect(() => {
+    clientHearingsApi
+      .listMyHearings()
+      .then((rows) => {
+        const formatted = rows
+          .filter((h) => h.status === "scheduled" || h.status === "proposed")
+          .slice(0, 2)
+          .map((h) => ({
+            id: String(h.id),
+            caseNumber: `Hearing #${h.hearingNumber} (${h.hearingType})`,
+            title: h.caseTitle,
+            dateTime: h.status === "proposed"
+              ? `${h.hearingDate} at ${h.startTime} — Pending Confirmation`
+              : `${h.hearingDate} at ${h.startTime} (${h.courtroomName})`
+          }));
+        setUpcomingHearings(formatted);
+      })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -68,7 +90,7 @@ export default function Dashboard() {
 
   const stats: DashboardStat[] = [
     { label: "Active Cases", value: "2", icon: FileText, accentClassName: "bg-blue-500" },
-    { label: "Upcoming Hearings", value: "1", icon: Calendar, accentClassName: "bg-purple-500" },
+    { label: "Upcoming Hearings", value: String(upcomingHearings.length), icon: Calendar, accentClassName: "bg-purple-500", onClick: () => navigate({ to: "/client-hearings" }) },
     {
       label: "Pending Signatures",
       value: String(pendingSignatureCount || 0),
@@ -107,10 +129,6 @@ export default function Dashboard() {
       lastUpdate: "1 day ago",
       nextHearing: "February 5, 2025",
     },
-  ];
-
-  const hearings: HearingItem[] = [
-    { id: 1, caseNumber: "LC-2024-0156", title: "Property Dispute", dateTime: "January 30, 2025 - 10:00 AM" },
   ];
 
   const activityItems: ActivityItem[] = [
@@ -153,7 +171,7 @@ export default function Dashboard() {
           </div>
 
           <div className="space-y-6">
-            <UpcomingHearings hearings={hearings} onNavigate={() => navigate({ to: "/client-dashboard" })} />
+            <UpcomingHearings hearings={upcomingHearings} onNavigate={() => navigate({ to: "/client-hearings" })} />
             <RecentActivity items={activityItems} />
           </div>
         </section>

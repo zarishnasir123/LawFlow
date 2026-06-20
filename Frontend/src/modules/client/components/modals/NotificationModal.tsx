@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { X, Check, Trash2, SlidersHorizontal } from "lucide-react";
 import NotificationCard from "../NotificationCard";
 import NotificationPreferencesModal from "./NotificationPreferencesModal";
@@ -21,15 +21,32 @@ export default function NotificationModal({
   const {
     notifications,
     unreadCount,
-    isLoading: loading,
+    isLoading,
     markRead,
     markAllRead,
     remove,
   } = useClientNotifications();
 
-  const handleMarkAsRead = (notificationId: string) => markRead(notificationId);
-  const handleMarkAllAsRead = () => markAllRead();
-  const handleDelete = (notificationId: string) => remove(notificationId);
+  useEffect(() => {
+    if (!isOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [isOpen]);
+
+  const handleMarkAsRead = (notificationId: string) => {
+    markRead(notificationId);
+  };
+
+  const handleMarkAllAsRead = () => {
+    markAllRead();
+  };
+
+  const handleDelete = (notificationId: string) => {
+    remove(notificationId);
+  };
 
   const handleNotificationClick = (notification: Notification) => {
     if (!notification.read) markRead(notification.id);
@@ -127,7 +144,7 @@ export default function NotificationModal({
 
         {/* Notifications Content */}
         <div className="overflow-y-auto h-[calc(100%-180px)]">
-          {loading && (
+          {isLoading && (
             <div className="space-y-3 p-4">
               {[1, 2, 3].map((i) => (
                 <div key={i} className="h-16 animate-pulse rounded-lg bg-gray-200" />
@@ -135,7 +152,7 @@ export default function NotificationModal({
             </div>
           )}
 
-          {!loading && filteredNotifications.length === 0 && (
+          {!isLoading && filteredNotifications.length === 0 && (
             <div className="flex flex-col items-center justify-center py-12 text-center">
               <Trash2 className="h-10 w-10 text-gray-300" />
               <h3 className="mt-2 text-sm font-medium text-gray-600">No notifications</h3>
@@ -147,7 +164,7 @@ export default function NotificationModal({
             </div>
           )}
 
-          {!loading && filteredNotifications.length > 0 && (
+          {!isLoading && filteredNotifications.length > 0 && (
             <div className="px-4 py-3 space-y-2">
               {filteredNotifications.map((notification) => (
                 <NotificationCard

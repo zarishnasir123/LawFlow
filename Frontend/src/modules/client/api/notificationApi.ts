@@ -6,27 +6,24 @@ import type {
   NotificationResponse,
 } from "../types/notification";
 
-// Live client notification API (replaces the previous frontend-only mock).
-// Talks to the real backend (Backend/src/modules/notifications) via the shared
-// apiClient. Every endpoint is scoped server-side to the logged-in user, so a
-// client only ever sees / mutates their OWN notifications.
-
-// Map a backend `type` (e.g. "chat_message", "case_accepted") onto the broad
-// UI category NotificationCard keys its icon/color off. Unknown types fall
-// back to "system" so a new backend type still renders sensibly.
+// Map a backend `type` (e.g. "case_accepted", "case_returned") onto the
+// broad UI category the NotificationCard keys its icon/color off of.
 function mapType(backendType: string): Notification["type"] {
-  if (backendType.startsWith("chat")) return "message";
-  if (backendType.startsWith("message")) return "message";
+  if (backendType.startsWith("chat") || backendType.startsWith("message")) return "message";
   if (backendType.startsWith("case")) return "case";
   if (backendType.startsWith("hearing")) return "hearing";
   if (backendType.startsWith("document")) return "document";
   return "system";
 }
 
-// Where clicking a notification takes the client. Chat alerts open the
-// messages inbox; case-related ones open case tracking; others have no link
-// (clicking just marks read).
+// Derive a click-through route. Hearing and outcome notifications (completed,
+// adjourned, case_disposed) all go to the hearings page. Chat alerts open the
+// messages inbox; case-related ones open case tracking; others have no link.
 function mapActionUrl(backendType: string, caseId: string | null): string | undefined {
+  if (
+    backendType.startsWith("hearing") ||
+    backendType === "case_disposed"
+  ) return "/client-hearings";
   if (backendType.startsWith("chat") || backendType.startsWith("message")) {
     return "/client-messages";
   }

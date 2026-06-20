@@ -14,6 +14,10 @@ CREATE EXTENSION IF NOT EXISTS "citext";
 -- =====================================================================
 -- Drop in reverse dependency order. CASCADE removes dependent objects.
 -- =====================================================================
+DROP TABLE IF EXISTS hearing_outcomes               CASCADE;
+DROP TABLE IF EXISTS hearings                       CASCADE;
+DROP TABLE IF EXISTS holidays                       CASCADE;
+DROP TABLE IF EXISTS courtrooms                     CASCADE;
 DROP TABLE IF EXISTS ai_chat_messages               CASCADE;
 DROP TABLE IF EXISTS ai_chat_sessions               CASCADE;
 DROP TABLE IF EXISTS notifications                  CASCADE;
@@ -475,7 +479,8 @@ CREATE TABLE cases (
   -- returned = registrar bounced it back with remarks
   -- accepted = registrar approved it for filing
   status          VARCHAR(30) NOT NULL DEFAULT 'draft'
-                  CHECK (status IN ('draft', 'submitted', 'returned', 'accepted')),
+                  CHECK (status IN ('draft', 'submitted', 'returned', 'accepted', 'disposed')),
+  needs_manual_scheduling BOOLEAN NOT NULL DEFAULT false,
 
   created_at      TIMESTAMP NOT NULL DEFAULT NOW(),
   updated_at      TIMESTAMP NOT NULL DEFAULT NOW(),
@@ -783,7 +788,10 @@ CREATE TABLE case_events (
                   'lawyer_signed',
                   'signed_pdf_compiled',
                   'edited',
-                  'deleted'
+                  'deleted',
+                  'hearing_scheduled',
+                  'hearing_completed',
+                  'case_disposed'
                 )),
 
   -- Who did it. NULL after the actor's user row is deleted (SET NULL),
@@ -979,6 +987,77 @@ CREATE TABLE payouts (
 );
 
 -- =====================================================================
+-- Hearing Scheduling Tables
+-- =====================================================================
+
+CREATE TABLE courtrooms (
+  id       UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name     VARCHAR(100) NOT NULL UNIQUE,
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+-- Seed courtrooms
+INSERT INTO courtrooms (name) VALUES
+  ('Court Room 1'),
+  ('Court Room 2'),
+  ('Court Room 3');
+
+CREATE TABLE holidays (
+  id     UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  date   DATE NOT NULL UNIQUE,
+  reason VARCHAR(200) NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+-- Seed Pakistan public holidays (sample for 2025/2026)
+INSERT INTO holidays (date, reason) VALUES
+  ('2026-02-05', 'Kashmir Day'),
+  ('2026-03-23', 'Pakistan Day'),
+  ('2026-05-01', 'Labour Day'),
+  ('2026-08-14', 'Independence Day'),
+  ('2026-09-06', 'Defence Day'),
+  ('2026-11-09', 'Iqbal Day'),
+  ('2026-12-25', 'Quaid-e-Azam Day / Christmas');
+
+CREATE TABLE hearings (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  case_id         UUID NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
+  lawyer_user_id  UUID NOT NULL REFERENCES users(id),
+  courtroom_id    UUID NOT NULL REFERENCES courtrooms(id),
+
+  hearing_number  INTEGER NOT NULL DEFAULT 1,
+  hearing_type    VARCHAR(80) NOT NULL,
+
+  hearing_date    DATE NOT NULL,
+  start_time      TIME NOT NULL,
+  end_time        TIME NOT NULL,
+
+  status          VARCHAR(30) NOT NULL DEFAULT 'proposed'
+                  CHECK (status IN ('proposed','scheduled','completed','adjourned','cancelled')),
+
+  created_by_registrar_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  created_at      TIMESTAMP NOT NULL DEFAULT NOW(),
+  updated_at      TIMESTAMP NOT NULL DEFAULT NOW(),
+
+  -- No double-booking: same room + date + start_time can only be used once
+  CONSTRAINT uq_courtroom_slot UNIQUE (courtroom_id, hearing_date, start_time)
+);
+
+CREATE TABLE hearing_outcomes (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  hearing_id   UUID NOT NULL UNIQUE REFERENCES hearings(id) ON DELETE CASCADE,
+
+  outcome      VARCHAR(30) NOT NULL
+               CHECK (outcome IN ('completed','adjourned','disposed')),
+  remarks      TEXT,
+  next_hearing_type VARCHAR(80),
+
+  recorded_by_registrar_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  recorded_at  TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+-- =====================================================================
 -- Indexes (only for real query patterns; PRIMARY KEY / UNIQUE already
 -- get implicit indexes, so do not duplicate them here.)
 -- =====================================================================
@@ -1087,6 +1166,13 @@ CREATE INDEX idx_payment_receipts_lawyer_user_id ON payment_receipts(lawyer_user
 CREATE INDEX idx_payouts_lawyer_status
   ON payouts(lawyer_user_id, status, created_at DESC);
 
+-- Hearings and Holidays indexes
+CREATE INDEX idx_hearings_case_id ON hearings(case_id);
+CREATE INDEX idx_hearings_lawyer_date ON hearings(lawyer_user_id, hearing_date);
+CREATE INDEX idx_hearings_courtroom_date ON hearings(courtroom_id, hearing_date);
+CREATE INDEX idx_hearings_status ON hearings(status);
+CREATE INDEX idx_holidays_date ON holidays(date);
+
 -- =====================================================================
 -- Row Level Security: deny by default on every table.
 -- The Express backend uses SUPABASE_SERVICE_ROLE_KEY (and the local
@@ -1123,6 +1209,11 @@ ALTER TABLE payouts                        ENABLE ROW LEVEL SECURITY;
 ALTER TABLE notifications                  ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ai_chat_sessions               ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ai_chat_messages               ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE courtrooms                     ENABLE ROW LEVEL SECURITY;
+ALTER TABLE holidays                       ENABLE ROW LEVEL SECURITY;
+ALTER TABLE hearings                       ENABLE ROW LEVEL SECURITY;
+ALTER TABLE hearing_outcomes               ENABLE ROW LEVEL SECURITY;
 
 -- =====================================================================
 -- Seed data: supported case types (5 civil + 5 family at tehsil level).

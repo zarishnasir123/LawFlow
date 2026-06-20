@@ -1,48 +1,116 @@
-import { Calendar, CheckCircle } from "lucide-react";
-import { useState } from "react";
+import { Calendar, CheckCircle, AlertTriangle, Clock, MapPin, Tag } from "lucide-react";
+import { useState, useEffect } from "react";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import RegistrarLayout from "../components/RegistrarLayout";
 import Card from "../../../shared/components/dashboard/Card";
-import { useCaseFilingStore } from "../../lawyer/store/caseFiling.store";
-import { getFcfsSubmissionQueue } from "../utils/submissionQueue";
-import { getCaseDisplayTitle } from "../../../shared/utils/caseDisplay";
+import {
+  proposeHearing,
+  confirmHearing,
+  listCourtrooms,
+  getRegistrarErrorMessage,
+  type Courtroom,
+  type HearingProposal
+} from "../api";
 
 export default function ScheduleHearing() {
   const navigate = useNavigate();
   const { caseId } = useParams({ from: "/schedule-hearing/$caseId" });
-  const [scheduled, setScheduled] = useState(false);
-  const [hearingType, setHearingType] = useState<"first" | "final" | "custom">(
-    "first"
-  );
-  const [customHearingName, setCustomHearingName] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState(false);
 
-  const liveSubmittedCases = useCaseFilingStore((state) =>
-    state.getSubmittedCasesForRegistrar()
-  );
-  const submittedCases = getFcfsSubmissionQueue(liveSubmittedCases);
-  const caseData = submittedCases.find((item) => item.caseId === caseId);
-  const caseTitle = getCaseDisplayTitle(caseData?.title, caseData?.caseId);
-  const hearingTypeLabel =
-    hearingType === "custom"
-      ? customHearingName.trim() || "Custom Hearing"
-      : hearingType === "final"
-      ? "Final Hearing"
-      : "First Hearing";
-  const canSchedule =
-    hearingType !== "custom" || customHearingName.trim().length > 0;
+  // Proposal and options state
+  const [proposal, setProposal] = useState<HearingProposal | null>(null);
+  const [courtrooms, setCourtrooms] = useState<Courtroom[]>([]);
+  
+  // Form fields
+  const [date, setDate] = useState("");
+  const [startTime, setStartTime] = useState("");
+  const [courtroomId, setCourtroomId] = useState("");
+  const [hearingType, setHearingType] = useState("");
 
-  if (scheduled) {
+  useEffect(() => {
+    async function loadData() {
+      try {
+        setLoading(true);
+        setError(null);
+        
+        // Fetch proposal and active courtrooms in parallel
+        const [propData, rooms] = await Promise.all([
+          proposeHearing(caseId),
+          listCourtrooms()
+        ]);
+        
+        setProposal(propData);
+        setCourtrooms(rooms);
+
+        // Pre-fill form from proposal if available
+        if (propData) {
+          setHearingType(propData.hearingType || "");
+          if (!propData.needsManualScheduling) {
+            setDate(propData.hearingDate || "");
+            setStartTime(propData.startTime || "");
+            setCourtroomId(propData.courtroomId || "");
+          }
+        }
+      } catch (err) {
+        setError(getRegistrarErrorMessage(err));
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadData();
+  }, [caseId]);
+
+  const handleConfirm = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!date || !startTime || !courtroomId || !hearingType) {
+      setError("Please fill out all fields.");
+      return;
+    }
+
+    try {
+      setError(null);
+      await confirmHearing(caseId, {
+        date,
+        startTime,
+        courtroomId,
+        hearingType
+      });
+      setSuccess(true);
+    } catch (err) {
+      setError(getRegistrarErrorMessage(err));
+    }
+  };
+
+  const isWeekend = (dateStr: string) => {
+    if (!dateStr) return false;
+    const d = new Date(dateStr);
+    const day = d.getDay();
+    return day === 0 || day === 6;
+  };
+
+  if (loading) {
     return (
-      <RegistrarLayout pageSubtitle="Schedule Hearing" notificationBadge={submittedCases.length}>
+      <RegistrarLayout pageSubtitle="Schedule Hearing" notificationBadge={0}>
+        <div className="flex h-64 items-center justify-center">
+          <div className="h-8 w-8 animate-spin rounded-full border-4 border-[#01411C] border-t-transparent"></div>
+        </div>
+      </RegistrarLayout>
+    );
+  }
+
+  if (success) {
+    return (
+      <RegistrarLayout pageSubtitle="Schedule Hearing" notificationBadge={0}>
         <div className="mx-auto max-w-md">
-          <Card className="border-t-4 border-[#01411C] p-8 text-center">
+          <Card className="border-t-4 border-[#01411C] p-8 text-center shadow-lg">
             <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-emerald-100">
               <CheckCircle className="h-10 w-10 text-emerald-600" />
             </div>
             <h2 className="mb-4 text-2xl font-bold text-[#01411C]">Hearing Scheduled</h2>
             <p className="mb-6 text-gray-600">
-              The <b>{hearingTypeLabel}</b> for <b>{caseTitle}</b> has been
-              scheduled successfully.
+              The <b>{hearingType}</b> (Hearing #{proposal?.hearingNumber}) has been scheduled successfully.
             </p>
             <button
               onClick={() => navigate({ to: "/registrar-dashboard" })}
@@ -57,7 +125,7 @@ export default function ScheduleHearing() {
   }
 
   return (
-    <RegistrarLayout pageSubtitle="Schedule Hearing" notificationBadge={submittedCases.length}>
+    <RegistrarLayout pageSubtitle="Schedule Hearing" notificationBadge={0}>
       <style>{`
         .hearing-green-select option {
           background-color: #f0fdf4;
@@ -70,87 +138,142 @@ export default function ScheduleHearing() {
           color: #065f46;
         }
       `}</style>
-      <div className="mx-auto max-w-2xl">
-        <Card className="p-8">
-          <h3 className="mb-2 text-xl font-bold text-[#01411C]">Hearing Details</h3>
-          <p className="mb-6 text-sm text-gray-600">Case: {caseTitle}</p>
 
-          <div className="space-y-6">
+      <div className="mx-auto max-w-2xl">
+        {error && (
+          <div className="mb-6 rounded-lg bg-red-50 p-4 text-red-700 border border-red-200">
+            {error}
+          </div>
+        )}
+
+        <Card className="p-8 shadow-md">
+          <div className="mb-6 flex items-center justify-between border-b pb-4">
+            <div>
+              <h3 className="text-xl font-bold text-[#01411C]">Schedule Court Hearing</h3>
+              <p className="text-sm text-gray-500 mt-1">Case: {proposal?.caseTitle || "Case Details"}</p>
+            </div>
+            <span className="rounded bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-800">
+              Hearing #{proposal?.hearingNumber}
+            </span>
+          </div>
+
+          {proposal?.needsManualScheduling && (
+            <div className="mb-6 rounded-lg bg-amber-50 p-4 border border-amber-200 flex items-start gap-3">
+              <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+              <div>
+                <h4 className="font-semibold text-amber-800">Auto-Scheduler Unavailable</h4>
+                <p className="text-xs text-amber-700 mt-1">
+                  No conflict-free slots were found within the next 60 days. Please coordinate with the lawyer and assign a slot manually below.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {!proposal?.needsManualScheduling && (
+            <div className="mb-6 rounded-lg bg-emerald-50 p-4 border border-emerald-200 flex items-start gap-3">
+              <CheckCircle className="h-5 w-5 text-emerald-600 shrink-0 mt-0.5" />
+              <div>
+                <h4 className="font-semibold text-emerald-800">Optimal Slot Proposed</h4>
+                <p className="text-xs text-emerald-700 mt-1">
+                  The auto-scheduler found an open slot matching both courtroom availability and the lawyer's daily calendar rules.
+                </p>
+              </div>
+            </div>
+          )}
+
+          <form onSubmit={handleConfirm} className="space-y-6">
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <div className="space-y-2">
-                <label className="block text-sm font-medium text-gray-700">Hearing Date</label>
+                <label className="block text-sm font-medium text-gray-700 flex items-center gap-1.5">
+                  <Calendar className="h-4 w-4 text-gray-400" />
+                  Hearing Date
+                </label>
                 <input
                   type="date"
-                  className="w-full rounded-md border border-gray-300 p-2 outline-none focus:ring-1 focus:ring-[#01411C]"
+                  value={date}
+                  onChange={(e) => setDate(e.target.value)}
+                  className="w-full rounded-md border border-gray-300 p-2.5 outline-none focus:ring-1 focus:ring-[#01411C]"
+                  required
                 />
+                {isWeekend(date) && (
+                  <p className="text-xs text-red-600 font-medium">Warning: Selected date is a weekend.</p>
+                )}
               </div>
+
               <div className="space-y-2">
-                <label className="block text-sm font-medium text-gray-700">Hearing Time</label>
-                <input
-                  type="time"
-                  className="w-full rounded-md border border-gray-300 p-2 outline-none focus:ring-1 focus:ring-[#01411C]"
-                />
+                <label className="block text-sm font-medium text-gray-700 flex items-center gap-1.5">
+                  <Clock className="h-4 w-4 text-gray-400" />
+                  Hearing Time (Hourly Slot)
+                </label>
+                <select
+                  value={startTime}
+                  onChange={(e) => setStartTime(e.target.value)}
+                  className="hearing-green-select w-full rounded-md border border-gray-300 bg-white p-2.5 outline-none focus:ring-1 focus:ring-[#01411C]"
+                  required
+                >
+                  <option value="">Select time slot</option>
+                  <option value="09:00">09:00 AM - 10:00 AM</option>
+                  <option value="10:00">10:00 AM - 11:00 AM</option>
+                  <option value="11:00">11:00 AM - 12:00 PM</option>
+                  <option value="12:00">12:00 PM - 01:00 PM</option>
+                  <option value="14:00">02:00 PM - 03:00 PM</option>
+                  <option value="15:00">03:00 PM - 04:00 PM</option>
+                </select>
               </div>
             </div>
 
             <div className="space-y-2">
-              <label className="block text-sm font-medium text-gray-700">Court Room</label>
-              <select className="hearing-green-select w-full rounded-md border border-gray-300 bg-white p-2 outline-none focus:ring-1 focus:ring-[#01411C]">
+              <label className="block text-sm font-medium text-gray-700 flex items-center gap-1.5">
+                <MapPin className="h-4 w-4 text-gray-400" />
+                Court Room
+              </label>
+              <select
+                value={courtroomId}
+                onChange={(e) => setCourtroomId(e.target.value)}
+                className="hearing-green-select w-full rounded-md border border-gray-300 bg-white p-2.5 outline-none focus:ring-1 focus:ring-[#01411C]"
+                required
+              >
                 <option value="">Select court room</option>
-                <option value="room1">Court Room 1</option>
-                <option value="room2">Court Room 2</option>
-                <option value="room3">Court Room 3</option>
-              </select>
-            </div>
-
-            <div className="space-y-2">
-              <label className="block text-sm font-medium text-gray-700">Presiding Judge</label>
-              <select className="hearing-green-select w-full rounded-md border border-gray-300 bg-white p-2 outline-none focus:ring-1 focus:ring-[#01411C]">
-                <option value="">Select judge</option>
-                <option value="judge1">Hon. Justice Muhammad Iqbal</option>
-                <option value="judge2">Hon. Justice Ayesha Malik</option>
+                {courtrooms.map((room) => (
+                  <option key={room.id} value={room.id}>
+                    {room.name}
+                  </option>
+                ))}
               </select>
             </div>
 
             <div className="space-y-2 pb-2">
-              <label className="block text-sm font-medium text-gray-700">Hearing Type</label>
-              <select
+              <label className="block text-sm font-medium text-gray-700 flex items-center gap-1.5">
+                <Tag className="h-4 w-4 text-gray-400" />
+                Hearing Type / Stage Name
+              </label>
+              <input
+                type="text"
                 value={hearingType}
-                onChange={(event) =>
-                  setHearingType(event.target.value as "first" | "final" | "custom")
-                }
-                className="hearing-green-select w-full rounded-md border border-gray-300 bg-white p-2 outline-none focus:ring-1 focus:ring-[#01411C]"
-              >
-                <option value="first">First Hearing</option>
-                <option value="final">Final Hearing</option>
-                <option value="custom">Custom Hearing Name</option>
-              </select>
+                onChange={(e) => setHearingType(e.target.value)}
+                placeholder="e.g. First Appearance / Summons"
+                className="w-full rounded-md border border-gray-300 p-2.5 outline-none focus:ring-1 focus:ring-[#01411C]"
+                required
+              />
             </div>
 
-            {hearingType === "custom" && (
-              <div className="space-y-2 pb-2">
-                <label className="block text-sm font-medium text-gray-700">
-                  Custom Hearing Name
-                </label>
-                <input
-                  type="text"
-                  value={customHearingName}
-                  onChange={(event) => setCustomHearingName(event.target.value)}
-                  placeholder="Enter custom hearing name"
-                  className="w-full rounded-md border border-gray-300 p-2 outline-none focus:ring-1 focus:ring-[#01411C]"
-                />
-              </div>
-            )}
-
-            <button
-              onClick={() => setScheduled(true)}
-              disabled={!canSchedule}
-              className="flex w-full items-center justify-center gap-2 rounded-lg bg-[#01411C] py-4 font-bold text-white shadow-md transition-all hover:bg-[#024a23] disabled:cursor-not-allowed disabled:bg-gray-300"
-            >
-              <Calendar className="h-5 w-5" />
-              Confirm & Schedule Hearing
-            </button>
-          </div>
+            <div className="flex gap-4">
+              <button
+                type="button"
+                onClick={() => navigate({ to: "/registrar-dashboard" })}
+                className="w-1/3 rounded-lg border border-gray-300 py-3.5 font-bold text-gray-700 transition-all hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="flex-1 flex items-center justify-center gap-2 rounded-lg bg-[#01411C] py-3.5 font-bold text-white shadow-md transition-all hover:bg-[#024a23]"
+              >
+                <Calendar className="h-5 w-5" />
+                Confirm & Schedule Hearing
+              </button>
+            </div>
+          </form>
         </Card>
       </div>
     </RegistrarLayout>

@@ -2,7 +2,7 @@ import { apiClient } from "../../../shared/api/axios";
 
 // Raw status as stored on the backend `cases` row. The client never sees the
 // registrar's internal review trail — only this high-level lifecycle value.
-export type ClientCaseStatus = "draft" | "submitted" | "returned" | "accepted";
+export type ClientCaseStatus = "draft" | "submitted" | "returned" | "accepted" | "disposed";
 
 // Read-only case row returned by GET /api/clients/cases. Mirrors the backend
 // ClientCase contract exactly (camelCase). Deliberately high-level: no review

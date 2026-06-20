@@ -32,9 +32,7 @@ export function useClientNotifications() {
     mutationFn: (notificationId: string) => markNotificationAsRead(notificationId),
     onMutate: async (notificationId: string) => {
       await queryClient.cancelQueries({ queryKey: CLIENT_NOTIFICATIONS_KEY });
-      const previous = queryClient.getQueryData<NotificationResponse>(
-        CLIENT_NOTIFICATIONS_KEY
-      );
+      const previous = queryClient.getQueryData<NotificationResponse>(CLIENT_NOTIFICATIONS_KEY);
       if (previous) {
         const target = previous.notifications.find((n) => n.id === notificationId);
         const wasUnread = target ? !target.read : false;
@@ -63,9 +61,7 @@ export function useClientNotifications() {
     mutationFn: () => markAllNotificationsAsRead(),
     onMutate: async () => {
       await queryClient.cancelQueries({ queryKey: CLIENT_NOTIFICATIONS_KEY });
-      const previous = queryClient.getQueryData<NotificationResponse>(
-        CLIENT_NOTIFICATIONS_KEY
-      );
+      const previous = queryClient.getQueryData<NotificationResponse>(CLIENT_NOTIFICATIONS_KEY);
       if (previous) {
         queryClient.setQueryData<NotificationResponse>(CLIENT_NOTIFICATIONS_KEY, {
           notifications: previous.notifications.map((n) => ({ ...n, read: true })),

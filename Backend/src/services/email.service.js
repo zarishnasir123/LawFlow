@@ -708,6 +708,57 @@ export function queuePaymentReceiptClientEmail(params) {
   return queueEmailTask("payment-receipt-client", () => sendPaymentReceiptClientEmail(params));
 }
 
+// --- Hearing emails ---------------------------------------------------------
+
+// One reusable hearing email used for every hearing event (scheduled,
+// rescheduled, cancelled, completed, adjourned, disposed) for both the lawyer
+// and the client. The caller supplies the event-specific wording + which blocks
+// to show; the hearing TYPE/STAGE (e.g. "Framing of Issues", "Pre-Trial
+// Reconciliation") rides along in `hearingLine`, so civil and family cases read
+// correctly without separate templates.
+export function sendHearingNotificationEmail({
+  email,
+  firstName,
+  subject,
+  heading,
+  intro,
+  caseTitle,
+  hearingLine,
+  showSchedule = false,
+  date,
+  timeLabel,
+  courtroomName,
+  showRemarks = false,
+  remarksLabel,
+  remarks,
+  footerNote,
+  dashboardUrl,
+}) {
+  return send(email, subject, "hearingNotification", {
+    recipientName: firstName || "there",
+    heading: heading || "Hearing Update",
+    intro: intro || "",
+    caseTitle: caseTitle || "your case",
+    hearingLine: hearingLine || "Hearing",
+    showSchedule: Boolean(showSchedule),
+    dateLabel: formatDateLabel(date, "—"),
+    timeLabel: timeLabel || "—",
+    courtroomName: courtroomName || "—",
+    showRemarks: Boolean(showRemarks && remarks),
+    remarksLabel: remarksLabel || "Remarks",
+    remarks: remarks || "",
+    footerNote:
+      footerNote || "Hearings are held in person at the court. Please attend on time.",
+    dashboardUrl: dashboardUrl || `${getFrontendUrl()}/login`,
+  });
+}
+
+export function queueHearingNotificationEmail(params) {
+  return queueEmailTask("hearing-notification", () =>
+    sendHearingNotificationEmail(params)
+  );
+}
+
 export async function warmEmailTransport() {
   preloadEmailTemplates(["verificationOtp"]);
 
