@@ -55,6 +55,13 @@ export function getSupabaseStorageConfig() {
   // to create this bucket in Supabase Studio (keep it Private).
   const chatAttachmentBucket =
     process.env.SUPABASE_CHAT_BUCKET || "chat-attachments";
+  // Private bucket for admin-uploaded case-type templates — one complete Word
+  // document per case type. Separate bucket: different lifecycle (per case
+  // type, not per case/lawyer/conversation) and access (admin writes; the
+  // lawyer editor reads the bytes server-side, never via a client URL). The
+  // dev needs to create this bucket in Supabase Studio (keep it Private).
+  const caseTemplateBucket =
+    process.env.SUPABASE_CASE_TEMPLATE_BUCKET || "case-type-templates";
   const previewUrlExpiresIn = Number(process.env.SUPABASE_PREVIEW_URL_EXPIRES_IN || 900);
 
   const issues = [];
@@ -72,6 +79,7 @@ export function getSupabaseStorageConfig() {
     caseAttachmentBucket,
     payoutReceiptBucket,
     chatAttachmentBucket,
+    caseTemplateBucket,
     previewUrlExpiresIn: Number.isFinite(previewUrlExpiresIn) && previewUrlExpiresIn > 0
       ? previewUrlExpiresIn
       : 900

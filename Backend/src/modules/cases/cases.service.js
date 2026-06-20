@@ -70,14 +70,32 @@ function mapCase(row) {
   };
 }
 
+// The lawyer's case-type picker. Only returns types a lawyer can actually
+// draft on — i.e. types that HAVE a template available, either an admin
+// upload (case_type_templates row) or a built-in .docx on disk (the original
+// 10). An admin-added type with no template yet is hidden so a half-finished
+// type never appears broken; it shows up the moment a template is uploaded.
 export async function listCaseTypes() {
   const result = await pool.query(
-    `SELECT id, category, code, display_name, governing_law, sort_order
-     FROM case_types
-     ORDER BY category, sort_order, display_name`
+    `SELECT ct.id, ct.category, ct.code, ct.display_name, ct.governing_law,
+            ct.sort_order,
+            (ctt.id IS NOT NULL) AS has_custom_template
+     FROM case_types ct
+     LEFT JOIN case_type_templates ctt ON ctt.case_type_id = ct.id
+     ORDER BY ct.category, ct.sort_order, ct.display_name`
   );
 
-  return result.rows.map(mapCaseType);
+  const available = [];
+  for (const row of result.rows) {
+    const hasTemplate =
+      row.has_custom_template === true ||
+      (await findDiskTemplatePath(row.category, row.code)) !== null;
+    if (hasTemplate) {
+      available.push(mapCaseType(row));
+    }
+  }
+
+  return available;
 }
 
 async function findCaseTypeById(caseTypeId) {
@@ -158,9 +176,12 @@ async function resolveClientUserId({ clientUserId, clientEmail }) {
 //      simple string equality, no escape needed.
 export async function resolveCaseTemplate(code) {
   const result = await pool.query(
-    `SELECT code, category, display_name
-     FROM case_types
-     WHERE code = $1`,
+    `SELECT ct.code, ct.category, ct.display_name,
+            ctt.storage_path AS template_storage_path,
+            ctt.file_name    AS template_file_name
+     FROM case_types ct
+     LEFT JOIN case_type_templates ctt ON ctt.case_type_id = ct.id
+     WHERE ct.code = $1`,
     [code]
   );
 
@@ -169,29 +190,59 @@ export async function resolveCaseTemplate(code) {
   }
 
   const row = result.rows[0];
-  const filePath = path.resolve(CASE_TEMPLATES_DIR, row.category, `${row.code}.docx`);
 
-  if (!filePath.startsWith(CASE_TEMPLATES_DIR + path.sep)) {
-    // Path-traversal guard. Should never trigger because category + code are
-    // DB-controlled, but bail before touching the filesystem if anything is
-    // off (e.g., schema seed accidentally inserts ".." in category).
-    throw new ApiError(500, "Invalid template path");
+  // Prefer the admin-uploaded template when one exists for this type. The
+  // bytes live in Supabase; the controller downloads + streams them. The
+  // storage path is DB-controlled (built by the admin upload service), never
+  // user input, so there's no traversal surface here.
+  if (row.template_storage_path) {
+    return {
+      source: "supabase",
+      storagePath: row.template_storage_path,
+      fileName: row.template_file_name || `${row.code}.docx`,
+      displayName: row.display_name,
+      category: row.category
+    };
   }
 
-  try {
-    await fs.access(filePath);
-  } catch {
-    // DB has the case type but the .docx hasn't been generated on this host.
-    // Run `npm run generate:case-templates` once and the file will appear.
+  // Fall back to the built-in on-disk template (the original 10). The shared
+  // findDiskTemplatePath helper applies the path-traversal guard + existence
+  // check. If it's missing, the .docx hasn't been generated on this host —
+  // run `npm run generate:case-templates` once and the file will appear.
+  const filePath = await findDiskTemplatePath(row.category, row.code);
+  if (!filePath) {
     throw new ApiError(404, "Template file is not available on the server");
   }
 
   return {
+    source: "disk",
     filePath,
     fileName: `${row.code}.docx`,
     displayName: row.display_name,
     category: row.category
   };
+}
+
+// Non-throwing disk-template lookup. Returns the absolute path to the built-in
+// .docx for this category+code when it exists on disk, else null. Shares the
+// CASE_TEMPLATES_DIR root + path-traversal guard with resolveCaseTemplate so
+// the on-disk template convention has a single owner. Used by the admin
+// case-type service (to compute template status / serve the built-in default
+// for preview) and, in Chunk 3, by resolveCaseTemplate's fallback path.
+export async function findDiskTemplatePath(category, code) {
+  if (!category || !code) return null;
+
+  const filePath = path.resolve(CASE_TEMPLATES_DIR, category, `${code}.docx`);
+  if (!filePath.startsWith(CASE_TEMPLATES_DIR + path.sep)) {
+    return null;
+  }
+
+  try {
+    await fs.access(filePath);
+    return filePath;
+  } catch {
+    return null;
+  }
 }
 
 // Build the SELECT used by every "fetch a case" path so the joined case_type

@@ -1,5 +1,13 @@
 import { getDashboardStats, getRecentActivityFeed } from "./admin.service.js";
 import { getAdminCaseDetail, listAdminCases } from "./adminCases.service.js";
+import {
+  listCaseTypesForAdmin,
+  createCaseType,
+  uploadTemplateForCaseType,
+  removeTemplateForCaseType,
+  deleteCaseType,
+  getCaseTypeTemplateForPreview,
+} from "./adminCaseTypes.service.js";
 import { getMoneyOverview } from "./adminMoney.service.js";
 import {
   getCommissionRateSetting,
@@ -263,4 +271,73 @@ export async function getPayoutReceiptHandler(req, res) {
     throw new ApiError(503, "Receipt storage is not available right now.");
   }
   return res.status(200).json({ url });
+}
+
+// =====================================================================
+// Case-type template management (admin-only).
+// The admin maintains the real Word templates lawyers draft from: list
+// every type with its template status, add new types, upload/replace a
+// type's .docx, remove an upload (revert to built-in), preview the bytes,
+// and delete a type (blocked when cases reference it).
+// =====================================================================
+
+// GET /api/admin/case-types → { caseTypes: AdminCaseType[] }
+export async function listCaseTypesHandler(req, res) {
+  const caseTypes = await listCaseTypesForAdmin();
+  return res.status(200).json({ caseTypes });
+}
+
+// POST /api/admin/case-types { category, displayName, governingLaw } →
+// creates the type (hidden from lawyers until a template is uploaded).
+export async function createCaseTypeHandler(req, res) {
+  const caseType = await createCaseType({
+    category: req.body.category,
+    displayName: req.body.displayName,
+    governingLaw: req.body.governingLaw,
+  });
+  return res.status(201).json({ message: "Case type created", caseType });
+}
+
+// POST /api/admin/case-types/:id/template (multipart, field "template") →
+// uploads/replaces the .docx and returns the refreshed type row.
+export async function uploadCaseTypeTemplateHandler(req, res) {
+  const caseType = await uploadTemplateForCaseType({
+    caseTypeId: req.params.id,
+    file: req.file,
+    adminUserId: req.user.sub,
+  });
+  return res.status(200).json({ message: "Template uploaded", caseType });
+}
+
+// DELETE /api/admin/case-types/:id/template → removes the upload, reverting
+// to the built-in default (or "missing" for an admin-added type).
+export async function removeCaseTypeTemplateHandler(req, res) {
+  const caseType = await removeTemplateForCaseType({ caseTypeId: req.params.id });
+  return res.status(200).json({ message: "Template removed", caseType });
+}
+
+// GET /api/admin/case-types/:id/template → streams the .docx bytes for the
+// admin preview (custom upload, else built-in default). 404 when neither.
+export async function previewCaseTypeTemplateHandler(req, res) {
+  const tpl = await getCaseTypeTemplateForPreview(req.params.id);
+
+  res.setHeader(
+    "Content-Type",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+  );
+  res.setHeader(
+    "Content-Disposition",
+    `inline; filename="${tpl.fileName}"`
+  );
+
+  if (tpl.source === "custom") {
+    return res.send(tpl.buffer);
+  }
+  return res.sendFile(tpl.filePath);
+}
+
+// DELETE /api/admin/case-types/:id → deletes the type (409 when cases use it).
+export async function deleteCaseTypeHandler(req, res) {
+  const result = await deleteCaseType({ caseTypeId: req.params.id });
+  return res.status(200).json({ message: "Case type deleted", ...result });
 }

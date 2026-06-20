@@ -12,7 +12,13 @@ import {
   markPayoutPaidHandler,
   disbursePayoutHandler,
   updateCommissionRateHandler,
-  updatePayoutHandler
+  updatePayoutHandler,
+  listCaseTypesHandler,
+  createCaseTypeHandler,
+  uploadCaseTypeTemplateHandler,
+  removeCaseTypeTemplateHandler,
+  previewCaseTypeTemplateHandler,
+  deleteCaseTypeHandler
 } from "./admin.controller.js";
 import {
   adminCaseIdParamValidator,
@@ -21,12 +27,15 @@ import {
   markPayoutPaidValidator,
   disbursePayoutValidator,
   updateCommissionRateValidator,
-  updatePayoutValidator
+  updatePayoutValidator,
+  caseTypeIdParamValidator,
+  createCaseTypeValidator
 } from "./admin.validators.js";
 import { asyncHandler } from "../../middleware/asyncHandler.js";
 import { authenticate } from "../../middleware/authenticate.js";
 import { authorizeRoles } from "../../middleware/authorizeRoles.js";
 import { uploadPayoutReceipt } from "../../middleware/uploadPayoutReceipt.js";
+import { uploadCaseTemplate } from "../../middleware/uploadCaseTemplate.js";
 import { validateRequest } from "../../middleware/validateRequest.js";
 
 const router = Router();
@@ -98,6 +107,50 @@ router.post(
 router.get(
   "/payouts/:payoutId/receipt",
   asyncHandler(getPayoutReceiptHandler)
+);
+
+// =====================================================================
+// Case-type template management (admin-only, gated by the router.use above).
+// =====================================================================
+router.get("/case-types", asyncHandler(listCaseTypesHandler));
+
+router.post(
+  "/case-types",
+  createCaseTypeValidator,
+  validateRequest,
+  asyncHandler(createCaseTypeHandler)
+);
+
+router.delete(
+  "/case-types/:id",
+  caseTypeIdParamValidator,
+  validateRequest,
+  asyncHandler(deleteCaseTypeHandler)
+);
+
+// Upload/replace a type's template. multer parses the multipart body first
+// (field "template"); the .docx-only + size checks live in the middleware.
+router.post(
+  "/case-types/:id/template",
+  uploadCaseTemplate,
+  caseTypeIdParamValidator,
+  validateRequest,
+  asyncHandler(uploadCaseTypeTemplateHandler)
+);
+
+// Stream the template bytes for the admin preview (custom upload or built-in).
+router.get(
+  "/case-types/:id/template",
+  caseTypeIdParamValidator,
+  validateRequest,
+  asyncHandler(previewCaseTypeTemplateHandler)
+);
+
+router.delete(
+  "/case-types/:id/template",
+  caseTypeIdParamValidator,
+  validateRequest,
+  asyncHandler(removeCaseTypeTemplateHandler)
 );
 
 export default router;

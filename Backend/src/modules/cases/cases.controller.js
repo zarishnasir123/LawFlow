@@ -15,6 +15,8 @@ import {
   updateCase,
   uploadAttachmentToCase
 } from "./cases.service.js";
+import { downloadCaseTypeTemplate } from "../../services/storage.service.js";
+import { ApiError } from "../../utils/apiError.js";
 
 export async function getCaseTypes(req, res) {
   const types = await listCaseTypes();
@@ -37,6 +39,19 @@ export async function downloadCaseTemplate(req, res) {
     "Content-Disposition",
     `attachment; filename="${template.fileName}"`
   );
+
+  // An admin-uploaded template lives in Supabase — download the bytes and
+  // stream them. The built-in 10 are served straight off disk as before.
+  if (template.source === "supabase") {
+    const buffer = await downloadCaseTypeTemplate(template.storagePath);
+    if (!buffer) {
+      throw new ApiError(
+        502,
+        "Template file could not be retrieved from storage"
+      );
+    }
+    return res.send(buffer);
+  }
 
   return res.sendFile(template.filePath);
 }
