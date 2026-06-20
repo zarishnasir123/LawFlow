@@ -9,29 +9,6 @@ export type AdminStat = {
   change: string;
 };
 
-export type CaseDomain = "civil" | "family";
-
-export type TemplateDocument = {
-  id: string;
-  name: string;
-  status: "active" | "archived";
-  updatedAt: string;
-  source: "manual" | "device_upload";
-  fileName?: string;
-  fileSizeBytes?: number;
-  mimeType?: string;
-};
-
-export type CaseTemplateCategory = {
-  id: string;
-  domain: CaseDomain;
-  caseType: string;
-  governingLaw: string;
-  documents: TemplateDocument[];
-  createdAt: string;
-  updatedAt: string;
-};
-
 export type StatisticsRange = "week" | "month" | "year";
 
 export type StatisticsMetricTone = "emerald" | "blue" | "violet" | "orange";

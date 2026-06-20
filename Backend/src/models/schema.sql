@@ -29,6 +29,7 @@ DROP TABLE IF EXISTS case_events                    CASCADE;
 DROP TABLE IF EXISTS signature_requests             CASCADE;
 DROP TABLE IF EXISTS case_attachments               CASCADE;
 DROP TABLE IF EXISTS cases                          CASCADE;
+DROP TABLE IF EXISTS case_type_templates            CASCADE;
 DROP TABLE IF EXISTS case_types                     CASCADE;
 DROP TABLE IF EXISTS lawyer_rejection_history       CASCADE;
 DROP TABLE IF EXISTS auth_identities                CASCADE;
@@ -391,6 +392,32 @@ CREATE TABLE case_types (
   sort_order    INT NOT NULL DEFAULT 0,
 
   created_at    TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+-- Admin-uploaded Word template for a case type. One row per case type (the
+-- UNIQUE on case_type_id enforces "one complete document per type"; a replace
+-- is an upsert, not a second row). When a row exists here, the lawyer editor
+-- serves THIS file; when it doesn't, the editor falls back to the built-in
+-- .docx shipped on disk under services/case-templates/. The actual bytes live
+-- in the private Supabase bucket recorded in storage_bucket/storage_path, so
+-- this table only ever holds metadata + the pointer.
+CREATE TABLE case_type_templates (
+  id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+
+  case_type_id        UUID NOT NULL UNIQUE REFERENCES case_types(id) ON DELETE CASCADE,
+
+  storage_bucket      VARCHAR(120),
+  storage_path        VARCHAR(400) NOT NULL,
+  file_name           VARCHAR(300),
+  mime_type           VARCHAR(150),
+  file_size           BIGINT,
+
+  -- Who uploaded it (an admin). SET NULL on user delete so an audit pointer
+  -- never blocks removing an admin account; the template itself survives.
+  uploaded_by_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+
+  created_at          TIMESTAMP NOT NULL DEFAULT NOW(),
+  updated_at          TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
 -- A case is owned by exactly one lawyer (lawyer_user_id) and references one
@@ -1081,6 +1108,7 @@ ALTER TABLE auth_sessions                  ENABLE ROW LEVEL SECURITY;
 ALTER TABLE auth_identities                ENABLE ROW LEVEL SECURITY;
 ALTER TABLE lawyer_rejection_history       ENABLE ROW LEVEL SECURITY;
 ALTER TABLE case_types                     ENABLE ROW LEVEL SECURITY;
+ALTER TABLE case_type_templates            ENABLE ROW LEVEL SECURITY;
 ALTER TABLE cases                          ENABLE ROW LEVEL SECURITY;
 ALTER TABLE signature_requests             ENABLE ROW LEVEL SECURITY;
 ALTER TABLE case_events                    ENABLE ROW LEVEL SECURITY;

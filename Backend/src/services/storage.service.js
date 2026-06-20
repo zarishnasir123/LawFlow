@@ -812,3 +812,124 @@ export async function deleteChatStorageForConversation(conversationId) {
     });
   }
 }
+
+// =====================================================================
+// Case-type templates (private bucket — see config/supabase.js).
+//
+// One complete Word document per case type, uploaded by an admin. Path
+// convention: case-types/{caseTypeId}/template.docx — exactly one slot per
+// case type, so `upsert: true` lets a replace overwrite the previous file in
+// place (no version history; the plan deliberately overwrites). The lawyer
+// editor reads these bytes server-side via downloadCaseTypeTemplate() and
+// streams them — the storage path is never handed to the client. The admin
+// panel previews them via a short-lived signed URL.
+// =====================================================================
+
+function buildCaseTypeTemplatePath({ caseTypeId }) {
+  return `case-types/${caseTypeId}/template.docx`;
+}
+
+export async function uploadCaseTypeTemplate({
+  caseTypeId,
+  fileBuffer,
+  mimeType,
+}) {
+  if (!fileBuffer || fileBuffer.length === 0) {
+    throw new ApiError(400, "Template file is empty");
+  }
+
+  const config = getSupabaseStorageConfig();
+  const supabase = getSupabaseClient();
+  if (!supabase) {
+    throw new ApiError(
+      503,
+      `Template storage is not configured. Missing or placeholder values: ${config.issues.join(", ")}`
+    );
+  }
+
+  const storagePath = buildCaseTypeTemplatePath({ caseTypeId });
+
+  const { error } = await supabase.storage
+    .from(config.caseTemplateBucket)
+    .upload(storagePath, fileBuffer, {
+      contentType:
+        mimeType ||
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      // upsert: true — one slot per case type, so replacing overwrites the
+      // current template in place rather than 409-ing on a name collision.
+      upsert: true,
+    });
+
+  if (error) {
+    throw new ApiError(
+      502,
+      `Failed to upload case template: ${error.message}`
+    );
+  }
+
+  return { storageBucket: config.caseTemplateBucket, storagePath };
+}
+
+// Short-lived signed URL for the admin preview panel. The bytes for the
+// lawyer editor are streamed via downloadCaseTypeTemplate() instead, never
+// this URL.
+export async function getCaseTypeTemplateSignedUrl(
+  storagePath,
+  expiresInSeconds
+) {
+  if (!storagePath) return null;
+
+  const config = getSupabaseStorageConfig();
+  const supabase = getSupabaseClient();
+  if (!supabase) return null;
+
+  const ttl =
+    Number.isFinite(expiresInSeconds) && expiresInSeconds > 0
+      ? expiresInSeconds
+      : config.previewUrlExpiresIn;
+
+  const { data, error } = await supabase.storage
+    .from(config.caseTemplateBucket)
+    .createSignedUrl(storagePath, ttl);
+
+  if (error || !data?.signedUrl) return null;
+  return data.signedUrl;
+}
+
+// Download the raw template bytes as a Buffer so the lawyer editor endpoint
+// can stream them with res.send() — mirrors how downloadCaseTemplate serves
+// the on-disk default with res.sendFile. Returns null when Supabase isn't
+// wired up or the object is missing, so the caller can fall back to disk.
+export async function downloadCaseTypeTemplate(storagePath) {
+  if (!storagePath) return null;
+
+  const config = getSupabaseStorageConfig();
+  const supabase = getSupabaseClient();
+  if (!supabase) return null;
+
+  const { data, error } = await supabase.storage
+    .from(config.caseTemplateBucket)
+    .download(storagePath);
+
+  if (error || !data) return null;
+
+  // supabase-js returns a Blob in Node; convert to a Buffer for res.send().
+  const arrayBuffer = await data.arrayBuffer();
+  return Buffer.from(arrayBuffer);
+}
+
+export async function deleteCaseTypeTemplate(storagePath) {
+  if (!storagePath) return;
+
+  const supabase = getSupabaseClient();
+  if (!supabase) return;
+
+  const config = getSupabaseStorageConfig();
+  // Best-effort cleanup — orphaning a storage object is far better than
+  // blocking the admin's remove/delete click. Matches the chat / case-
+  // attachment / avatar pattern.
+  await supabase.storage
+    .from(config.caseTemplateBucket)
+    .remove([storagePath])
+    .catch(() => {});
+}
