@@ -78,7 +78,7 @@ function getStatusBadge(status: CaseStatus) {
       return {
         label: "Disposed",
         icon: <CheckCircle className="w-3.5 h-3.5" />,
-        className: "bg-gray-100 text-gray-800 ring-1 ring-gray-200",
+        className: "bg-purple-100 text-purple-800 ring-1 ring-purple-200",
       };
     default:
       return {
@@ -183,6 +183,7 @@ export default function LawyerCases() {
       submitted: 0,
       returned: 0,
       accepted: 0,
+      disposed: 0,
     };
     for (const c of cases) acc[c.status] += 1;
     return acc;
@@ -517,19 +518,19 @@ function SubmitAffordance({
     return null;
   }
 
-  // submitted | accepted -> muted indicator, no active submit.
+  // submitted | accepted | disposed -> muted indicator, no active submit.
+  const isDisposed = status === "disposed";
   const isAccepted = status === "accepted";
+  const label = isDisposed ? "Disposed" : isAccepted ? "Accepted" : "Submitted";
+  const Icon = isDisposed || isAccepted ? CheckCircle : Clock;
+  
   return (
     <span
       aria-disabled="true"
       className="inline-flex w-full cursor-default items-center justify-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-4 py-2 text-sm font-medium text-gray-400"
     >
-      {isAccepted ? (
-        <CheckCircle className="h-4 w-4" />
-      ) : (
-        <Clock className="h-4 w-4" />
-      )}
-      {isAccepted ? "Accepted" : "Submitted"}
+      <Icon className="h-4 w-4" />
+      {label}
     </span>
   );
 }

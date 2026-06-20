@@ -212,6 +212,11 @@ export async function getProposedHearingSlot({ caseId, registrarUserId }) {
     throw new ApiError(403, "You do not have access to cases outside your tehsil.");
   }
 
+  // Only accepted cases can have hearings scheduled
+  if (caseRow.status !== 'accepted') {
+    throw new ApiError(400, "Hearings can only be scheduled for accepted cases.");
+  }
+
   // Check if proposed hearing exists
   const existingRes = await pool.query(
     `${SELECT_HEARING_DETAILS} WHERE h.case_id = $1 AND h.status = 'proposed'`,
@@ -280,6 +285,19 @@ export async function confirmHearing({
   
   if (caseRow.assigned_tehsil.toLowerCase() !== tehsil.toLowerCase()) {
     throw new ApiError(403, "You do not have access to cases outside your tehsil.");
+  }
+
+  // Only accepted cases can have hearings scheduled
+  if (caseRow.status !== 'accepted') {
+    throw new ApiError(400, "Hearings can only be scheduled for accepted cases.");
+  }
+
+  // Validate date is not in the past
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const hearingDate = new Date(date);
+  if (hearingDate < today) {
+    throw new ApiError(400, "Hearing date cannot be in the past.");
   }
 
   // Determine end time (1 hour duration)
@@ -589,23 +607,22 @@ export async function recordOutcome({
     }
 
     // Schedule next hearing (Completed / Adjourned)
-    // Run auto-proposal inside setImmediate to keep request fast
-    setImmediate(async () => {
-      try {
-        // If adjourned and nextHearingType was specified, use that as next type
-        const nextType = outcome === "adjourned" && nextHearingType 
-          ? nextHearingType 
-          : null;
+    // We await this synchronously so the frontend's subsequent GET /hearings
+    // immediately sees the newly proposed hearing without needing a manual refresh.
+    try {
+      // If adjourned and nextHearingType was specified, use that as next type
+      const nextType = outcome === "adjourned" && nextHearingType 
+        ? nextHearingType 
+        : null;
 
-        await proposeNextHearing({
-          caseId: hearing.caseId,
-          registrarUserId,
-          forcedHearingType: nextType
-        });
-      } catch (err) {
-        console.error("Failed to auto-propose next hearing after outcome", err);
-      }
-    });
+      await proposeNextHearing({
+        caseId: hearing.caseId,
+        registrarUserId,
+        forcedHearingType: nextType
+      });
+    } catch (err) {
+      console.error("Failed to auto-propose next hearing after outcome", err);
+    }
   }
 
   return { hearingId, outcome, status: outcome === "adjourned" ? "adjourned" : "completed" };
@@ -645,8 +662,21 @@ async function proposeNextHearing({ caseId, registrarUserId, forcedHearingType =
     });
 
     if (!slot) {
+      const TIME_SLOTS = ["09:00", "10:00", "11:00", "12:00", "14:00", "15:00"];
+      const SLOT_END_TIMES = {
+        "09:00": "10:00",
+        "10:00": "11:00",
+        "11:00": "12:00",
+        "12:00": "13:00",
+        "14:00": "15:00",
+        "15:00": "16:00"
+      };
+
+      const dayOffset = 1 + Math.floor(attempts / TIME_SLOTS.length);
+      const slotIndex = attempts % TIME_SLOTS.length;
+      
       const fallbackDate = new Date();
-      fallbackDate.setDate(fallbackDate.getDate() + 1 + attempts);
+      fallbackDate.setDate(fallbackDate.getDate() + dayOffset);
       while (fallbackDate.getDay() === 0 || fallbackDate.getDay() === 6) {
         fallbackDate.setDate(fallbackDate.getDate() + 1);
       }
@@ -659,10 +689,11 @@ async function proposeNextHearing({ caseId, registrarUserId, forcedHearingType =
         throw new Error("No courtrooms found in the database.");
       }
 
+      const startTime = TIME_SLOTS[slotIndex];
       slot = {
         date: dateStr,
-        startTime: "09:00",
-        endTime: "10:00",
+        startTime: startTime,
+        endTime: SLOT_END_TIMES[startTime],
         courtroomId: fallbackCourtroomId,
         isFallback: true
       };
@@ -756,6 +787,14 @@ export async function rescheduleHearing({
 
   if (hearing.status !== "scheduled" && hearing.status !== "proposed") {
     throw new ApiError(400, "Can only reschedule scheduled or proposed hearings.");
+  }
+
+  // Validate date is not in the past
+  const todayR = new Date();
+  todayR.setHours(0, 0, 0, 0);
+  const newHearingDate = new Date(newDate);
+  if (newHearingDate < todayR) {
+    throw new ApiError(400, "Hearing date cannot be in the past.");
   }
 
   // Calculate end time

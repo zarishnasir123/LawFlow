@@ -26,7 +26,7 @@ export type CaseItem = {
 };
 
 export type HearingItem = {
-  id: number;
+  id: number | string;
   caseNumber: string;
   title: string;
   dateTime: string;

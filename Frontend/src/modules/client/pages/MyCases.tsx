@@ -32,6 +32,10 @@ const STATUS_META: Record<
     label: "Accepted / Filed",
     badgeClass: "bg-emerald-100 text-emerald-700",
   },
+  disposed: {
+    label: "Case Disposed",
+    badgeClass: "bg-red-100 text-red-700",
+  },
 };
 
 function getStatusMeta(status: ClientCaseStatus) {
@@ -57,6 +61,7 @@ const STATUS_FILTERS: Array<"all" | ClientCaseStatus> = [
   "submitted",
   "returned",
   "accepted",
+  "disposed",
 ];
 
 export default function ClientMyCases() {

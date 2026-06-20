@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import RegistrarLayout from "../components/RegistrarLayout";
 import Card from "../../../shared/components/dashboard/Card";
@@ -38,21 +38,22 @@ export default function RegistrarHearings() {
   const [rescheduleTime, setRescheduleTime] = useState("");
   const [rescheduleRoom, setRescheduleRoom] = useState("");
 
-  useEffect(() => {
-    const loadHearings = async () => {
-      try {
-        setLoading(true);
-        setError(null);
-        const data = await listRegistrarHearings(filter === "all" ? undefined : filter);
-        setHearings(data);
-      } catch (err) {
-        setError(getRegistrarErrorMessage(err));
-      } finally {
-        setLoading(false);
-      }
-    };
-    loadHearings();
+  const loadHearings = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const data = await listRegistrarHearings(filter === "all" ? undefined : filter);
+      setHearings(data);
+    } catch (err) {
+      setError(getRegistrarErrorMessage(err));
+    } finally {
+      setLoading(false);
+    }
   }, [filter]);
+
+  useEffect(() => {
+    loadHearings();
+  }, [loadHearings]);
 
   useEffect(() => {
     async function loadRooms() {
@@ -159,7 +160,7 @@ export default function RegistrarHearings() {
         acc[hearing.caseId] = {
           caseId: hearing.caseId,
           caseTitle: hearing.caseTitle,
-          lawyerName: hearing.lawyerName,
+          lawyerName: hearing.lawyerName ?? "—",
           hearings: []
         };
       }
@@ -340,7 +341,7 @@ export default function RegistrarHearings() {
                                 </div>
                                 <div className="flex items-center gap-2.5">
                                   <Clock className="h-4 w-4 text-emerald-600 shrink-0" />
-                                  <span className="font-medium text-gray-800">{formatTime(hearing.startTime)}</span>
+                                  <span className="font-medium text-gray-800">{formatTime(hearing.startTime)} - {formatTime(hearing.endTime)}</span>
                                 </div>
                                 <div className="flex items-center gap-2.5">
                                   <MapPin className="h-4 w-4 text-emerald-600 shrink-0" />
