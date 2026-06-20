@@ -6,6 +6,7 @@ import {
 } from "../../services/storage.service.js";
 import { createNotification } from "../notifications/notifications.service.js";
 import { safeRecordCaseEvent } from "../cases/caseEvents.service.js";
+import { proposeFirstHearing } from "../hearings/hearings.service.js";
 
 // =====================================================================
 // Registrar-facing case review.
@@ -258,17 +259,17 @@ export async function getCaseForRegistrar({ caseId, registrarUserId }) {
   return mapCaseDetail(result.rows[0]);
 }
 
-// Build the lawyer-facing notification payload for a completed transition.
+// Build the notification payload for a completed transition.
 // Returns null for any status we don't notify on (defensive — only the two
 // real transitions produce a notification). The message embeds the case
 // title; the return variant appends the registrar's remarks so the lawyer
 // sees why it bounced. No PII (lawyer/client names) goes into the text.
-function buildLawyerNotification({ status, caseId, title, lawyerUserId, reviewRemarks }) {
+function buildNotificationPayload({ status, caseId, title, userId, reviewRemarks }) {
   const safeTitle = title ?? "your case";
 
   if (status === "accepted") {
     return {
-      userId: lawyerUserId,
+      userId,
       type: "case_accepted",
       title: "Case accepted",
       message: `Your case "${safeTitle}" was accepted by the registrar and can proceed.`,
@@ -279,7 +280,7 @@ function buildLawyerNotification({ status, caseId, title, lawyerUserId, reviewRe
   if (status === "returned") {
     const reason = reviewRemarks?.trim() || "No reason provided.";
     return {
-      userId: lawyerUserId,
+      userId,
       type: "case_returned",
       title: "Case returned for corrections",
       message: `Your case "${safeTitle}" was returned by the registrar. Reason: ${reason}`,
@@ -290,31 +291,33 @@ function buildLawyerNotification({ status, caseId, title, lawyerUserId, reviewRe
   return null;
 }
 
-// Fire-and-forget notification for the case lawyer after a transition.
+// Fire-and-forget notification for the case participants after a transition.
 // BEST-EFFORT: a failure here must never break or roll back the approve /
 // return response, so we swallow any error and log a non-PII line. The
 // notification INSERT is intentionally outside the transition's success
 // path's return value — the registrar's action has already committed.
-async function notifyLawyerOfTransition({ status, caseId, title, lawyerUserId, reviewRemarks }) {
-  if (!lawyerUserId) return;
+async function notifyUsersOfTransition({ status, caseId, title, lawyerUserId, clientUserId, reviewRemarks }) {
+  const userIds = [lawyerUserId, clientUserId].filter(Boolean);
 
-  const payload = buildLawyerNotification({
-    status,
-    caseId,
-    title,
-    lawyerUserId,
-    reviewRemarks
-  });
-  if (!payload) return;
+  for (const userId of userIds) {
+    const payload = buildNotificationPayload({
+      status,
+      caseId,
+      title,
+      userId,
+      reviewRemarks
+    });
+    if (!payload) continue;
 
-  try {
-    await createNotification(payload);
-  } catch (error) {
-    // Log enough to debug, but never the case title / lawyer identity (PII).
-    console.error(
-      `Failed to create ${status} notification for case ${caseId}:`,
-      error?.message ?? error
-    );
+    try {
+      await createNotification(payload);
+    } catch (error) {
+      // Log enough to debug, but never the case title / user identity (PII).
+      console.error(
+        `Failed to create ${status} notification for user ${userId} on case ${caseId}:`,
+        error?.message ?? error
+      );
+    }
   }
 }
 
@@ -344,7 +347,7 @@ async function transitionCase({
      WHERE id = $4
        AND status = 'submitted'
        AND LOWER(assigned_tehsil) = LOWER($5)
-     RETURNING id, lawyer_user_id, title`,
+     RETURNING id, lawyer_user_id, client_user_id, title`,
     [newStatus, reviewRemarks, registrarUserId, caseId, tehsil]
   );
 
@@ -361,14 +364,15 @@ async function transitionCase({
   // detail endpoint exactly (signed URL + review trail included).
   const detail = await getCaseForRegistrar({ caseId, registrarUserId });
 
-  // Best-effort lawyer notification. Awaited (so the helper's own try/catch
+  // Best-effort participants notification. Awaited (so the helper's own try/catch
   // runs) but it can never throw out here — a notification failure leaves the
   // approve/return response untouched.
-  await notifyLawyerOfTransition({
+  await notifyUsersOfTransition({
     status: newStatus,
     caseId,
     title: updatedRow.title,
     lawyerUserId: updatedRow.lawyer_user_id,
+    clientUserId: updatedRow.client_user_id,
     reviewRemarks
   });
 
@@ -397,13 +401,24 @@ async function transitionCase({
 export async function approveCaseForRegistrar({ caseId, registrarUserId }) {
   const tehsil = await getRegistrarTehsil(registrarUserId);
 
-  return transitionCase({
+  const detail = await transitionCase({
     caseId,
     registrarUserId,
     tehsil,
     newStatus: "accepted",
     reviewRemarks: null
   });
+
+  // After the case is accepted, propose Hearing #1
+  setImmediate(async () => {
+    try {
+      await proposeFirstHearing({ caseId, registrarUserId });
+    } catch (err) {
+      console.error(`Failed to auto-propose hearing for case ${caseId}:`, err?.message);
+    }
+  });
+
+  return detail;
 }
 
 // R4: return -> status='returned' with the registrar's remarks recorded so the

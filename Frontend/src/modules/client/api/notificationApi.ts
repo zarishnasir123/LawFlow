@@ -1,75 +1,62 @@
-import type { Notification, NotificationResponse } from "../types/notification";
+import { apiClient } from "../../../shared/api/axios";
+import type {
+  ApiNotification,
+  ApiNotificationResponse,
+  Notification,
+  NotificationResponse,
+} from "../types/notification";
 
-const minutesAgo = (minutes: number) =>
-  new Date(Date.now() - minutes * 60 * 1000).toISOString();
+// Map a backend `type` (e.g. "case_accepted", "case_returned") onto the
+// broad UI category the NotificationCard keys its icon/color off of.
+function mapType(backendType: string): Notification["type"] {
+  if (backendType.startsWith("case")) return "case";
+  if (backendType.startsWith("hearing")) return "hearing";
+  if (backendType.startsWith("message")) return "message";
+  if (backendType.startsWith("document")) return "document";
+  return "system";
+}
 
-// Frontend-only mock data for client notifications.
-let mockNotifications: Notification[] = [
-  {
-    id: "1",
-    title: "Document Sent for Signature",
-    message: "Your lawyer sent a Vakalatnama for review and signature.",
-    type: "document",
-    read: false,
-    createdAt: minutesAgo(10),
-    actionUrl: "/case-tracking?view=pending",
-  },
-  {
-    id: "2",
-    title: "Hearing Scheduled",
-    message: "Your hearing is scheduled for Jan 30, 2025 at 10:00 AM.",
-    type: "hearing",
-    read: false,
-    createdAt: minutesAgo(60),
-    actionUrl: "/client-hearings",
-  },
-  {
-    id: "3",
-    title: "New Message",
-    message: "Your lawyer sent you a new message.",
-    type: "message",
-    read: false,
-    createdAt: minutesAgo(120),
-    actionUrl: "/client-messages",
-  },
-  {
-    id: "4",
-    title: "Case Status Updated",
-    message: "Your case status was updated to Hearing Scheduled.",
-    type: "case",
-    read: true,
-    createdAt: minutesAgo(240),
-    actionUrl: "/case-tracking",
-  },
-  {
-    id: "5",
-    title: "System Update",
-    message: "A system update is planned for this weekend.",
-    type: "system",
-    read: true,
-    createdAt: minutesAgo(1440),
-  },
-];
+// Derive a click-through route. Hearing and outcome notifications (completed,
+// adjourned, case_disposed) all go to the hearings page. Case-level
+// notifications go to case-tracking. Anything else falls back to undefined.
+function mapActionUrl(backendType: string, caseId: string | null): string | undefined {
+  if (
+    backendType.startsWith("hearing") ||
+    backendType === "case_disposed"
+  ) return "/client-hearings";
+  if (caseId) return "/case-tracking";
+  return undefined;
+}
 
-const buildResponse = (): NotificationResponse => ({
-  notifications: [...mockNotifications],
-  unreadCount: mockNotifications.filter((n) => !n.read).length,
-});
+function mapNotification(row: ApiNotification): Notification {
+  return {
+    id: row.id,
+    title: row.title,
+    message: row.message,
+    type: mapType(row.type),
+    read: row.isRead,
+    createdAt: row.createdAt,
+    caseId: row.caseId ?? undefined,
+    actionUrl: mapActionUrl(row.type, row.caseId),
+  };
+}
 
 export async function fetchNotifications(): Promise<NotificationResponse> {
-  return buildResponse();
+  const { data } = await apiClient.get<ApiNotificationResponse>("/notifications");
+  return {
+    notifications: data.notifications.map(mapNotification),
+    unreadCount: data.unreadCount,
+  };
 }
 
 export async function markNotificationAsRead(notificationId: string): Promise<void> {
-  mockNotifications = mockNotifications.map((n) =>
-    n.id === notificationId ? { ...n, read: true } : n
-  );
+  await apiClient.patch(`/notifications/${notificationId}/read`);
 }
 
 export async function markAllNotificationsAsRead(): Promise<void> {
-  mockNotifications = mockNotifications.map((n) => ({ ...n, read: true }));
+  await apiClient.patch("/notifications/read-all");
 }
 
 export async function deleteNotification(notificationId: string): Promise<void> {
-  mockNotifications = mockNotifications.filter((n) => n.id !== notificationId);
+  await apiClient.delete(`/notifications/${notificationId}`);
 }

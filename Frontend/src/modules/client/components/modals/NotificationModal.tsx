@@ -3,12 +3,7 @@ import { X, Check, Trash2, SlidersHorizontal } from "lucide-react";
 import NotificationCard from "../NotificationCard";
 import NotificationPreferencesModal from "./NotificationPreferencesModal";
 import type { Notification } from "../../types/notification";
-import {
-  fetchNotifications,
-  markNotificationAsRead,
-  markAllNotificationsAsRead,
-  deleteNotification,
-} from "../../api/notificationApi";
+import { useClientNotifications } from "../../hooks/useClientNotifications";
 
 interface NotificationModalProps {
   isOpen: boolean;
@@ -19,69 +14,37 @@ export default function NotificationModal({
   isOpen,
   onClose,
 }: NotificationModalProps) {
-  const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [unreadCount, setUnreadCount] = useState(0);
-  const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<"all" | "unread">("all");
   const [preferencesOpen, setPreferencesOpen] = useState(false);
 
+  const {
+    notifications,
+    unreadCount,
+    isLoading,
+    markRead,
+    markAllRead,
+    deleteNotif,
+  } = useClientNotifications();
+
   useEffect(() => {
-    if (isOpen) {
-      loadNotifications();
-    }
+    if (!isOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
   }, [isOpen]);
 
-  const loadNotifications = async () => {
-    try {
-      setLoading(true);
-      const response = await fetchNotifications();
-      setNotifications(response.notifications);
-      setUnreadCount(response.unreadCount);
-    } catch (err) {
-      console.error("Error fetching notifications:", err);
-    } finally {
-      setLoading(false);
-    }
+  const handleMarkAsRead = (notificationId: string) => {
+    markRead(notificationId);
   };
 
-  const handleMarkAsRead = async (notificationId: string) => {
-    try {
-      setNotifications((prev) =>
-        prev.map((notif) =>
-          notif.id === notificationId ? { ...notif, read: true } : notif
-        )
-      );
-      setUnreadCount((prev) => Math.max(0, prev - 1));
-      await markNotificationAsRead(notificationId);
-    } catch (err) {
-      console.error("Error marking notification as read:", err);
-      loadNotifications();
-    }
+  const handleMarkAllAsRead = () => {
+    markAllRead();
   };
 
-  const handleMarkAllAsRead = async () => {
-    try {
-      setNotifications((prev) => prev.map((notif) => ({ ...notif, read: true })));
-      setUnreadCount(0);
-      await markAllNotificationsAsRead();
-    } catch (err) {
-      console.error("Error marking all as read:", err);
-      loadNotifications();
-    }
-  };
-
-  const handleDelete = async (notificationId: string) => {
-    try {
-      const deletedNotif = notifications.find((n) => n.id === notificationId);
-      setNotifications((prev) => prev.filter((notif) => notif.id !== notificationId));
-      if (deletedNotif && !deletedNotif.read) {
-        setUnreadCount((prev) => Math.max(0, prev - 1));
-      }
-      await deleteNotification(notificationId);
-    } catch (err) {
-      console.error("Error deleting notification:", err);
-      loadNotifications();
-    }
+  const handleDelete = (notificationId: string) => {
+    deleteNotif(notificationId);
   };
 
   const handleNotificationClick = (notification: Notification) => {
@@ -179,7 +142,7 @@ export default function NotificationModal({
 
         {/* Notifications Content */}
         <div className="overflow-y-auto h-[calc(100%-180px)]">
-          {loading && (
+          {isLoading && (
             <div className="space-y-3 p-4">
               {[1, 2, 3].map((i) => (
                 <div key={i} className="h-16 animate-pulse rounded-lg bg-gray-200" />
@@ -187,7 +150,7 @@ export default function NotificationModal({
             </div>
           )}
 
-          {!loading && filteredNotifications.length === 0 && (
+          {!isLoading && filteredNotifications.length === 0 && (
             <div className="flex flex-col items-center justify-center py-12 text-center">
               <Trash2 className="h-10 w-10 text-gray-300" />
               <h3 className="mt-2 text-sm font-medium text-gray-600">No notifications</h3>
@@ -199,7 +162,7 @@ export default function NotificationModal({
             </div>
           )}
 
-          {!loading && filteredNotifications.length > 0 && (
+          {!isLoading && filteredNotifications.length > 0 && (
             <div className="px-4 py-3 space-y-2">
               {filteredNotifications.map((notification) => (
                 <NotificationCard

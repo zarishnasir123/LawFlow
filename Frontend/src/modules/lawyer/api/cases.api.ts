@@ -3,7 +3,7 @@ import axios from "axios";
 import { apiClient } from "../../../shared/api/axios";
 
 export type CaseCategory = "civil" | "family";
-export type CaseStatus = "draft" | "submitted" | "returned" | "accepted";
+export type CaseStatus = "draft" | "submitted" | "returned" | "accepted" | "disposed";
 export type CaseSignerRole = "client" | "lawyer";
 
 // Court/tehsil jurisdictions the backend routes cases to. Mirrors the

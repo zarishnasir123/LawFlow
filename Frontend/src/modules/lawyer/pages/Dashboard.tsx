@@ -11,19 +11,9 @@ import { useCurrentUser, displayFullName } from "../../auth/hooks/useCurrentUser
 import { useEnforcePasswordChange } from "../../auth/hooks/useEnforcePasswordChange";
 import { useSignatureRequestsStore } from "../signatures/store/signatureRequests.store";
 import { casesApi } from "../api/cases.api";
-import {
-  lawyerDashboardHearings,
-  lawyerDashboardQuickActions,
-  lawyerDashboardStats,
-} from "../data/dashboard.mock";
-
-// The "Client Messages" tile stays mock (in-app messaging has no backend), so
-// pull it out of the stat list by label and render the other three from live
-// data. Keeps the card's icon/colour/order exactly as designed.
-const CLIENT_MESSAGES_STAT = lawyerDashboardStats.find(
-  (stat) => stat.label === "Client Messages"
-);
-
+import { lawyerHearingsApi } from "../api/hearings.api";
+import { useMemo } from "react";
+import { lawyerDashboardQuickActions } from "../data/dashboard.mock";
 // Compact PKR formatting for the Total Earnings tile: large amounts collapse to
 // "Rs. 450K" / "Rs. 1.2M" so the number fits the card; smaller amounts show
 // with thousands separators. null → "Rs. —" (no clean earnings source).
@@ -59,6 +49,25 @@ export default function LawyerDashboard() {
     staleTime: 0,
     refetchOnWindowFocus: true,
   });
+
+  const { data: upcomingHearingsList = [] } = useQuery({
+    queryKey: ["lawyer", "hearings"],
+    queryFn: lawyerHearingsApi.listMyHearings,
+  });
+
+  const formattedHearings = useMemo(() => {
+    return upcomingHearingsList
+      .filter((h) => h.status === "scheduled" || h.status === "proposed")
+      .slice(0, 2)
+      .map((h) => ({
+        id: h.id,
+        caseNumber: `Hearing #${h.hearingNumber} (${h.hearingType})`,
+        title: h.caseTitle,
+        dateTime: h.status === "proposed"
+          ? `${h.hearingDate} at ${h.startTime} — Pending Confirmation`
+          : `${h.hearingDate} at ${h.startTime} (${h.courtroomName})`
+      }));
+  }, [upcomingHearingsList]);
 
   // While loading we show a subtle dash placeholder; on error we fall back to
   // 0 / "Rs. —" so the dashboard still renders rather than blanking out.
@@ -104,9 +113,6 @@ export default function LawyerDashboard() {
             icon={FolderOpen}
             accentClassName="bg-yellow-500"
           />
-          {/* Client Messages — mock; in-app messaging has no backend. Left
-              exactly as designed. */}
-          {CLIENT_MESSAGES_STAT && <StatCard {...CLIENT_MESSAGES_STAT} />}
           {/* Total Earnings — lawyer's received money from successful payments;
               "Rs. —" while loading / on error / when null. */}
           <StatCard
@@ -145,10 +151,9 @@ export default function LawyerDashboard() {
           </div>
 
           <div className="space-y-6">
-            {/* Upcoming Hearings — OUT OF SCOPE: hearings have no backend, so
-                this panel stays mock and is left untouched. */}
+            {/* Upcoming Hearings — Real-time hearings from the backend. */}
             <UpcomingHearings
-              hearings={lawyerDashboardHearings}
+              hearings={formattedHearings}
               onNavigate={() => navigate({ to: "/lawyer-hearings" })}
             />
             {/* PANEL 2: Recent Activity — real lawyer feed. */}

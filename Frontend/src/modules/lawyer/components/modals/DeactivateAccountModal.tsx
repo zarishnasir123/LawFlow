@@ -26,6 +26,7 @@ export default function DeactivateAccountModal({
   // Reset the confirm input every time the modal closes so a
   // re-open doesn't show "DEACTIVATE" already typed.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!isOpen) setConfirmText("");
   }, [isOpen]);
 

@@ -784,6 +784,21 @@ export async function deleteCaseForLawyer({ caseId, lawyerUserId }) {
     );
   }
 
+  // Block delete if the case has any hearings scheduled or recorded
+  const hasHearings = await pool.query(
+    `SELECT 1
+     FROM hearings
+     WHERE case_id = $1
+     LIMIT 1`,
+    [caseId]
+  );
+  if (hasHearings.rows.length > 0) {
+    throw new ApiError(
+      409,
+      "This case has hearings scheduled or recorded and cannot be deleted."
+    );
+  }
+
   // Capture the storage paths we'll want to sweep, scoped to the owning
   // lawyer so a non-owner learns nothing. If the case isn't theirs we get
   // zero rows and fall through to the 404 below after the DELETE no-ops.

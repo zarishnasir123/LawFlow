@@ -18,7 +18,7 @@ import { getCaseDisplayTitle } from "../../../shared/utils/caseDisplay";
 import RegistrarLayout from "../components/RegistrarLayout";
 import { useCurrentUser, displayFullName } from "../../auth/hooks/useCurrentUser";
 import { useEnforcePasswordChange } from "../../auth/hooks/useEnforcePasswordChange";
-import { listCases } from "../api";
+import { listCases, listRegistrarHearings } from "../api";
 
 type QueueCase = {
   caseId: string;
@@ -48,6 +48,10 @@ export function RegistrarDashboard() {
     queryKey: ["registrar", "cases", "returned"],
     queryFn: () => listCases("returned"),
   });
+  const { data: scheduledHearings = [] } = useQuery({
+    queryKey: ["registrar", "hearings", "scheduled"],
+    queryFn: () => listRegistrarHearings("scheduled"),
+  });
   const displayName = displayFullName(currentUser) || "Registrar";
   const greeting = currentUser?.firstLoginCompleted ? "Welcome back" : "Welcome";
 
@@ -63,6 +67,21 @@ export function RegistrarDashboard() {
       returnedCases.filter((item) => isToday(item.reviewedAt)).length
     );
   }, [acceptedCases, returnedCases]);
+
+  const hearingsThisWeekCount = useMemo(() => {
+    const today = new Date();
+    const startOfWeek = new Date(today);
+    startOfWeek.setDate(today.getDate() - today.getDay());
+    startOfWeek.setHours(0, 0, 0, 0);
+
+    const endOfWeek = new Date(startOfWeek);
+    endOfWeek.setDate(startOfWeek.getDate() + 7);
+
+    return scheduledHearings.filter((h) => {
+      const hDate = new Date(h.hearingDate);
+      return hDate >= startOfWeek && hDate < endOfWeek;
+    }).length;
+  }, [scheduledHearings]);
 
   const queueCases: QueueCase[] = useMemo(
     () =>
@@ -105,7 +124,7 @@ export function RegistrarDashboard() {
     },
     {
       label: "Hearings This Week",
-      value: "0",
+      value: String(hearingsThisWeekCount),
       icon: CalendarDays,
       accentClassName: "bg-teal-600",
     },
@@ -143,10 +162,10 @@ export function RegistrarDashboard() {
       to: "/returned-cases",
     },
     {
-      label: "Schedule Hearing",
+      label: "Manage Hearings",
       icon: CalendarDays,
       className: "bg-[#01411C] hover:bg-[#025a27]",
-      to: "/view-cases",
+      to: "/registrar-hearings",
     },
   ];
 

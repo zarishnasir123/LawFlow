@@ -7,6 +7,7 @@ import { useLogout } from "../../auth/hooks/useLogout";
 import { useCurrentUser, displayFullName } from "../../auth/hooks/useCurrentUser";
 import { LogoutConfirmationModal, NotificationModal } from "./modals";
 import ClientLayoutContext from "./ClientLayoutContext";
+import { useClientNotifications } from "../hooks/useClientNotifications";
 
 type ClientLayoutProps = {
   brandTitle?: ReactNode;
@@ -15,7 +16,6 @@ type ClientLayoutProps = {
   showBackButton?: boolean;
   onBackClick?: () => void;
   backLabel?: string;
-  notificationBadge?: number;
   children: ReactNode;
 };
 
@@ -26,12 +26,12 @@ export default function ClientLayout({
   showBackButton = false,
   onBackClick,
   backLabel,
-  notificationBadge = 3,
   children,
 }: ClientLayoutProps) {
   const navigate = useNavigate();
   const performLogout = useLogout();
   const { data: currentUser } = useCurrentUser();
+  const { unreadCount } = useClientNotifications();
   const [notificationModalOpen, setNotificationModalOpen] = useState(false);
   const [logoutModalOpen, setLogoutModalOpen] = useState(false);
 
@@ -101,11 +101,11 @@ export default function ClientLayout({
       {
         label: "Notifications",
         icon: Bell,
-        badge: notificationBadge,
+        badge: unreadCount,
         onClick: openNotificationModal,
       },
     ],
-    [navigate, notificationBadge, openNotificationModal]
+    [navigate, unreadCount, openNotificationModal]
   );
 
   return (

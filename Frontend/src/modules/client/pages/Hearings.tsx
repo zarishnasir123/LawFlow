@@ -1,49 +1,86 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Clock,
   CheckCircle,
   ClipboardList,
   Calendar,
   MapPin,
-  Gavel,
-  Building2,
-  RotateCw,
-  AlertTriangle,
-  FileText,
-  Download,
+  AlertCircle
 } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
 import ClientLayout from "../components/ClientLayout";
-import { getInitialHearings } from "../data/hearings.mock";
+import { clientHearingsApi } from "../api/hearings.api";
+import { getRegistrarErrorMessage, type Hearing } from "../../registrar/api";
 
-interface Hearing {
-  id: string;
-  caseNumber: string;
-  caseTitle: string;
-  client: string;
-  caseType: "civil" | "family";
-  courtName: string;
-  location: string;
-  dateTime: string;
-  judge?: string;
-  status: "upcoming" | "completed" | "postponed" | "adjourned";
-  notes?: string;
-  nextHearing?: string;
-}
-
-const mockHearings: Hearing[] = getInitialHearings();
-
-export default function LawyerHearings() {
+export default function ClientHearings() {
   const navigate = useNavigate();
+  const [hearings, setHearings] = useState<Hearing[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<"all" | "upcoming" | "completed">("upcoming");
 
-  const filteredHearings = mockHearings.filter((hearing) => {
+  const fetchHearings = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const data = await clientHearingsApi.listMyHearings();
+      setHearings(data);
+    } catch (err) {
+      setError(getRegistrarErrorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchHearings();
+  }, []);
+
+  const filteredHearings = hearings.filter((hearing) => {
     if (filter === "all") return true;
-    return hearing.status === filter;
+    if (filter === "upcoming") return hearing.status === "scheduled" || hearing.status === "proposed";
+    if (filter === "completed") return hearing.status === "completed" || hearing.status === "adjourned";
+    return true;
   });
 
-  const upcomingCount = mockHearings.filter((h) => h.status === "upcoming").length;
-  const completedCount = mockHearings.filter((h) => h.status === "completed").length;
+  const upcomingCount = hearings.filter((h) => h.status === "scheduled" || h.status === "proposed").length;
+  const completedCount = hearings.filter((h) => h.status === "completed" || h.status === "adjourned").length;
+
+  const formatTime = (timeStr: string) => {
+    if (!timeStr) return "";
+    const hour = parseInt(timeStr.substring(0, 2), 10);
+    const suffix = hour >= 12 ? "PM" : "AM";
+    const formattedHour = hour > 12 ? hour - 12 : hour === 0 ? 12 : hour;
+    return `${String(formattedHour).padStart(2, "0")}:${timeStr.substring(3, 5)} ${suffix}`;
+  };
+
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case "proposed":
+        return "bg-amber-100 text-amber-800";
+      case "scheduled":
+        return "bg-blue-100 text-blue-800";
+      case "completed":
+        return "bg-emerald-100 text-emerald-800";
+      case "adjourned":
+        return "bg-purple-100 text-purple-800";
+      case "cancelled":
+        return "bg-red-100 text-red-800";
+      default:
+        return "bg-gray-100 text-gray-800";
+    }
+  };
+
+  const getStatusLabel = (status: string) => {
+    switch (status) {
+      case "proposed":  return "Pending Confirmation";
+      case "scheduled": return "Scheduled";
+      case "completed": return "Completed";
+      case "adjourned": return "Adjourned";
+      case "cancelled": return "Cancelled";
+      default: return status;
+    }
+  };
 
   return (
     <ClientLayout
@@ -60,220 +97,139 @@ export default function LawyerHearings() {
           </p>
         </div>
 
+        {error && (
+          <div className="rounded-lg bg-red-50 p-4 text-red-700 border border-red-200 shadow-sm flex items-center gap-2">
+            <AlertCircle className="h-5 w-5 shrink-0" />
+            <span>{error}</span>
+          </div>
+        )}
+
         {/* Stats */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="bg-white border border-gray-200 rounded-lg p-4">
+          <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-600">Upcoming Hearings</p>
-                <p className="text-2xl font-bold text-blue-600">{upcomingCount}</p>
+                <p className="text-sm text-gray-500 font-medium">Upcoming Hearings</p>
+                <p className="text-2xl font-bold text-blue-600 mt-1">{upcomingCount}</p>
               </div>
-              <Clock className="w-10 h-10 text-blue-500" />
+              <Clock className="w-10 h-10 text-blue-500 bg-blue-50 p-1.5 rounded-full" />
             </div>
           </div>
 
-          <div className="bg-white border border-gray-200 rounded-lg p-4">
+          <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-600">Completed Hearings</p>
-                <p className="text-2xl font-bold text-green-600">{completedCount}</p>
+                <p className="text-sm text-gray-500 font-medium">Completed Hearings</p>
+                <p className="text-2xl font-bold text-emerald-600 mt-1">{completedCount}</p>
               </div>
-              <CheckCircle className="w-10 h-10 text-green-500" />
+              <CheckCircle className="w-10 h-10 text-emerald-500 bg-emerald-50 p-1.5 rounded-full" />
             </div>
           </div>
 
-          <div className="bg-white border border-gray-200 rounded-lg p-4">
+          <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-600">Total Hearings</p>
-                <p className="text-2xl font-bold text-purple-600">{mockHearings.length}</p>
+                <p className="text-sm text-gray-500 font-medium">Total Hearings</p>
+                <p className="text-2xl font-bold text-[#01411C] mt-1">{hearings.length}</p>
               </div>
-              <ClipboardList className="w-10 h-10 text-purple-500" />
+              <ClipboardList className="w-10 h-10 text-[#01411C] bg-emerald-50 p-1.5 rounded-full" />
             </div>
           </div>
         </div>
 
         {/* Filter Buttons */}
-        <div className="flex gap-3">
-          <button
-            onClick={() => setFilter("all")}
-            className={`px-4 py-2 rounded-lg font-medium transition ${
-              filter === "all"
-                ? "bg-green-700 text-white"
-                : "bg-gray-200 text-gray-700 hover:bg-gray-300"
-            }`}
-          >
-            All
-          </button>
-          <button
-            onClick={() => setFilter("upcoming")}
-            className={`px-4 py-2 rounded-lg font-medium transition ${
-              filter === "upcoming"
-                ? "bg-green-700 text-white"
-                : "bg-gray-200 text-gray-700 hover:bg-gray-300"
-            }`}
-          >
-            Upcoming
-          </button>
-          <button
-            onClick={() => setFilter("completed")}
-            className={`px-4 py-2 rounded-lg font-medium transition ${
-              filter === "completed"
-                ? "bg-green-700 text-white"
-                : "bg-gray-200 text-gray-700 hover:bg-gray-300"
-            }`}
-          >
-            Completed
-          </button>
-        </div>
-
-        {/* Hearings List */}
-        <div className="space-y-4">
-          {filteredHearings.map((hearing) => (
-            <div
-              key={hearing.id}
-              className="bg-white border border-gray-200 rounded-lg p-6 hover:shadow-lg transition"
+        <div className="flex gap-2">
+          {[
+            { value: "all", label: "All" },
+            { value: "upcoming", label: "Upcoming" },
+            { value: "completed", label: "Completed" }
+          ].map((item) => (
+            <button
+              key={item.value}
+              onClick={() => setFilter(item.value as any)}
+              className={`px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition border ${
+                filter === item.value
+                  ? "bg-[#01411C] text-white border-[#01411C] shadow-sm"
+                  : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"
+              }`}
             >
-              {/* Case Header */}
-              <div className="mb-6 pb-4 border-b border-gray-200">
-                <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
-                  <div>
-                    <div className="flex flex-wrap items-center gap-2 mb-2">
-                      <h2 className="text-xl font-bold text-gray-900">
-                        {hearing.caseNumber}
-                      </h2>
-                      <span className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-semibold">
-                        Scheduled
-                      </span>
-                      {hearing.status === "upcoming" && (
-                        <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs font-semibold">
-                          First Hearing
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-gray-700 font-medium">{hearing.caseTitle}</p>
-                    <p className="text-gray-600 text-sm mt-1">Client: {hearing.client}</p>
-                  </div>
-                  <div
-                    className={`inline-block px-4 py-2 rounded-lg font-medium text-sm whitespace-nowrap ${
-                      hearing.status === "upcoming"
-                        ? "bg-green-50 text-green-700"
-                        : hearing.status === "completed"
-                        ? "bg-gray-50 text-gray-700"
-                        : "bg-orange-50 text-orange-700"
-                    }`}
-                  >
-                    {hearing.status === "upcoming"
-                      ? "⏱️ Upcoming"
-                      : hearing.status === "completed"
-                      ? "✅ Completed"
-                      : hearing.status === "postponed"
-                      ? "⏸️ Postponed"
-                      : "📋 Adjourned"}
-                  </div>
-                </div>
-              </div>
-
-              {/* Hearing Details Grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
-                {/* Date & Time */}
-                <div>
-                  <div className="flex items-center gap-2 mb-2">
-                    <Calendar className="w-5 h-5 text-blue-600" />
-                    <p className="text-gray-600 text-sm font-medium">Hearing Date & Time</p>
-                  </div>
-                  <p className="text-gray-900 font-semibold ml-7">{hearing.dateTime}</p>
-                </div>
-
-                {/* Location */}
-                <div>
-                  <div className="flex items-center gap-2 mb-2">
-                    <MapPin className="w-5 h-5 text-red-600" />
-                    <p className="text-gray-600 text-sm font-medium">Location</p>
-                  </div>
-                  <p className="text-gray-900 font-semibold ml-7">{hearing.location}</p>
-                </div>
-
-                {/* Judge */}
-                <div>
-                  <div className="flex items-center gap-2 mb-2">
-                    <Gavel className="w-5 h-5 text-orange-600" />
-                    <p className="text-gray-600 text-sm font-medium">Presiding Judge</p>
-                  </div>
-                  <p className="text-gray-900 font-semibold ml-7">
-                    {hearing.judge || "Not Assigned"}
-                  </p>
-                </div>
-
-                {/* Court Name */}
-                <div>
-                  <div className="flex items-center gap-2 mb-2">
-                    <Building2 className="w-5 h-5 text-slate-600" />
-                    <p className="text-gray-600 text-sm font-medium">Court Name</p>
-                  </div>
-                  <p className="text-gray-900 font-semibold ml-7">{hearing.courtName}</p>
-                </div>
-
-                {/* Case Type */}
-                <div>
-                  <div className="flex items-center gap-2 mb-2">
-                    <ClipboardList className="w-5 h-5 text-purple-600" />
-                    <p className="text-gray-600 text-sm font-medium">Case Type</p>
-                  </div>
-                  <p className="text-gray-900 font-semibold ml-7 capitalize">
-                    {hearing.caseType}
-                  </p>
-                </div>
-
-                {/* Next Hearing */}
-                {hearing.nextHearing && (
-                  <div>
-                    <div className="flex items-center gap-2 mb-2">
-                      <RotateCw className="w-5 h-5 text-green-600" />
-                      <p className="text-gray-600 text-sm font-medium">Next Hearing</p>
-                    </div>
-                    <p className="text-gray-900 font-semibold ml-7">{hearing.nextHearing}</p>
-                  </div>
-                )}
-              </div>
-
-              {/* Important Instructions */}
-              {hearing.notes && (
-                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
-                  <div className="flex gap-3">
-                    <AlertTriangle className="w-6 h-6 text-yellow-600 flex-shrink-0 mt-0.5" />
-                    <div>
-                      <p className="text-yellow-800 font-semibold text-sm">Important Instructions</p>
-                      <p className="text-yellow-700 text-sm mt-1">{hearing.notes}</p>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Action Buttons */}
-              <div className="flex flex-wrap gap-3 pt-4 border-t border-gray-200">
-                <button className="px-4 py-2 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 transition-colors text-sm flex items-center gap-2">
-                  <Calendar className="w-4 h-4" />
-                  Add to Calendar
-                </button>
-                <button className="px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition-colors text-sm flex items-center gap-2">
-                  <FileText className="w-4 h-4" />
-                  View Case Details
-                </button>
-                {hearing.status === "upcoming" && (
-                  <button className="px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition-colors text-sm flex items-center gap-2">
-                    <Download className="w-4 h-4" />
-                    Download Notice
-                  </button>
-                )}
-              </div>
-            </div>
+              {item.label}
+            </button>
           ))}
         </div>
 
-        {filteredHearings.length === 0 && (
-          <div className="bg-white border border-gray-200 rounded-lg p-12 text-center">
-            <p className="text-gray-600 text-lg">No {filter !== "all" ? filter : ""} hearings found.</p>
+        {/* Hearings List */}
+        {loading ? (
+          <div className="flex h-64 items-center justify-center">
+            <div className="h-8 w-8 animate-spin rounded-full border-4 border-[#01411C] border-t-transparent"></div>
+          </div>
+        ) : filteredHearings.length === 0 ? (
+          <div className="bg-white border border-gray-200 rounded-lg p-12 text-center text-gray-500 shadow-sm">
+            No hearings found matching selection.
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {filteredHearings.map((hearing) => (
+              <div
+                key={hearing.id}
+                className="bg-white border border-gray-200 rounded-lg p-6 hover:shadow-md transition shadow-sm"
+              >
+                {/* Case Header */}
+                <div className="mb-4 pb-4 border-b border-gray-150">
+                  <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2 mb-1.5">
+                        <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold uppercase tracking-wider ${getStatusBadge(hearing.status)}`}>
+                          {getStatusLabel(hearing.status)}
+                        </span>
+                        <span className="text-xs font-bold text-gray-400">
+                          Hearing #{hearing.hearingNumber}
+                        </span>
+                      </div>
+                      <h3 className="text-lg font-bold text-gray-900 leading-snug">
+                        {hearing.caseTitle}
+                      </h3>
+                    </div>
+                    <span className="bg-gray-100 text-gray-700 px-3 py-1 rounded text-xs font-bold">
+                      Hearing #{hearing.hearingNumber}: {hearing.hearingType}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Hearing Details Grid */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
+                  {/* Date */}
+                  <div className="flex items-start gap-3">
+                    <Calendar className="w-5 h-5 text-emerald-700 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">Hearing Date</p>
+                      <p className="text-sm font-semibold text-gray-800 mt-0.5">{hearing.hearingDate}</p>
+                    </div>
+                  </div>
+
+                  {/* Time */}
+                  <div className="flex items-start gap-3">
+                    <Clock className="w-5 h-5 text-emerald-700 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">Time Slot</p>
+                      <p className="text-sm font-semibold text-gray-800 mt-0.5">
+                        {formatTime(hearing.startTime)} - {formatTime(hearing.endTime)}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Location */}
+                  <div className="flex items-start gap-3">
+                    <MapPin className="w-5 h-5 text-emerald-700 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">Court Room</p>
+                      <p className="text-sm font-semibold text-gray-800 mt-0.5">{hearing.courtroomName}</p>
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+            ))}
           </div>
         )}
       </div>

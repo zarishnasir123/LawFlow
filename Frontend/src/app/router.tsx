@@ -72,6 +72,9 @@ import ReturnCase from "../modules/registrar/pages/ReturnCase";
 import ScheduleHearing from "../modules/registrar/pages/ScheduleHearing";
 import RegistrarProfile from "../modules/registrar/pages/RegistrarProfile";
 import RegistrarProfileEdit from "../modules/registrar/pages/RegistrarProfileEdit";
+import RegistrarHearings from "../modules/registrar/pages/RegistrarHearings";
+import ManageHolidays from "../modules/registrar/pages/ManageHolidays";
+import ManageCourtrooms from "../modules/registrar/pages/ManageCourtrooms";
 
 
 /* =====================================================
@@ -476,6 +479,27 @@ const scheduleHearingRoute = createRoute({
   component: ScheduleHearing,
 });
 
+const registrarHearingsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "registrar-hearings",
+  beforeLoad: registrarBeforeLoad,
+  component: RegistrarHearings,
+});
+
+const registrarHolidaysRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "registrar-holidays",
+  beforeLoad: registrarBeforeLoad,
+  component: ManageHolidays,
+});
+
+const registrarCourtroomsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "registrar-courtrooms",
+  beforeLoad: registrarBeforeLoad,
+  component: ManageCourtrooms,
+});
+
 const registrarProfileRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "registrar-profile",
@@ -554,6 +578,9 @@ const routeTree = rootRoute.addChildren([
   returnedCasesRoute,
   returnCaseRoute,
   scheduleHearingRoute,
+  registrarHearingsRoute,
+  registrarHolidaysRoute,
+  registrarCourtroomsRoute,
   registrarProfileRoute,
   registrarProfileEditRoute,
 ]);

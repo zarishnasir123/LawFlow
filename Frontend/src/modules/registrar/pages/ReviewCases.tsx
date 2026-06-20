@@ -56,7 +56,10 @@ export default function ReviewCases() {
     mutationFn: () => approveCase(caseId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["registrar", "cases"] });
-      navigate({ to: "/view-cases" });
+      navigate({
+        to: "/schedule-hearing/$caseId",
+        params: { caseId },
+      });
     },
     onError: (error) => setErrorMessage(getRegistrarErrorMessage(error)),
   });

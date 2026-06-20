@@ -45,6 +45,7 @@ const STATUS_TABS: { value: StatusFilter; label: string }[] = [
   { value: "submitted", label: "Submitted" },
   { value: "returned", label: "Returned" },
   { value: "accepted", label: "Accepted" },
+  { value: "disposed", label: "Disposed" },
 ];
 
 function getStatusBadge(status: CaseStatus) {
@@ -72,6 +73,18 @@ function getStatusBadge(status: CaseStatus) {
         label: "Accepted",
         icon: <CheckCircle className="w-3.5 h-3.5" />,
         className: "bg-emerald-100 text-emerald-800 ring-1 ring-emerald-200",
+      };
+    case "disposed":
+      return {
+        label: "Disposed",
+        icon: <CheckCircle className="w-3.5 h-3.5" />,
+        className: "bg-gray-100 text-gray-800 ring-1 ring-gray-200",
+      };
+    default:
+      return {
+        label: status,
+        icon: <FileText className="w-3.5 h-3.5" />,
+        className: "bg-gray-100 text-gray-800 ring-1 ring-gray-200",
       };
   }
 }

@@ -24,12 +24,15 @@ function mapType(backendType: string): Notification["type"] {
   return "system";
 }
 
-// Derive a click-through route from the related case id. Accepted/active
-// cases open in the editor; returned cases have their own detail page, but
-// the editor route handles all statuses, so we use it as the single, always-
-// valid destination. Notifications with no caseId get no actionUrl (clicking
-// them just marks read).
-function mapActionUrl(caseId: string | null): string | undefined {
+// Derive a click-through route from the related case id. Hearing and outcome
+// notifications redirect to the dedicated hearings page. Case disposal also
+// redirects to hearings since no further edits are possible. Active/returned
+// cases open in the editor. Notifications with no caseId get no actionUrl.
+function mapActionUrl(backendType: string, caseId: string | null): string | undefined {
+  if (
+    backendType.startsWith("hearing") ||
+    backendType === "case_disposed"
+  ) return "/lawyer-hearings";
   return caseId ? `/lawyer-case-editor/${caseId}` : undefined;
 }
 
@@ -45,7 +48,7 @@ function mapNotification(row: ApiNotification): Notification {
     read: row.isRead,
     createdAt: row.createdAt,
     caseId: row.caseId ?? undefined,
-    actionUrl: mapActionUrl(row.caseId),
+    actionUrl: mapActionUrl(row.type, row.caseId),
   };
 }
 

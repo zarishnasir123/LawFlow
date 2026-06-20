@@ -125,6 +125,162 @@ export async function returnCase(
   return data.case;
 }
 
+export type HearingStatus = "proposed" | "scheduled" | "completed" | "adjourned" | "cancelled";
+export type HearingOutcomeType = "completed" | "adjourned" | "disposed";
+
+export type Courtroom = {
+  id: string;
+  name: string;
+};
+
+export type Holiday = {
+  id: string;
+  date: string;
+  reason: string;
+};
+
+export type Hearing = {
+  id: string;
+  caseId: string;
+  caseTitle: string;
+  caseStatus: string;
+  lawyerUserId: string;
+  lawyerName: string | null;
+  courtroomId: string;
+  courtroomName: string;
+  hearingNumber: number;
+  hearingType: string;
+  hearingDate: string;
+  startTime: string;
+  endTime: string;
+  status: HearingStatus;
+  createdByRegistrarId: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type HearingProposal = {
+  needsManualScheduling: boolean;
+  caseId?: string;
+  caseTitle?: string;
+  lawyerUserId?: string;
+  courtroomId?: string;
+  courtroomName?: string;
+  hearingNumber: number;
+  hearingType: string;
+  hearingDate?: string;
+  startTime?: string;
+  endTime?: string;
+  status?: string;
+};
+
+// Hearing API calls
+export async function proposeHearing(caseId: string): Promise<HearingProposal> {
+  const { data } = await apiClient.get<{ proposal: HearingProposal }>(
+    `/hearings/cases/${caseId}/propose`
+  );
+  return data.proposal;
+}
+
+export async function confirmHearing(
+  caseId: string,
+  payload: {
+    date: string;
+    startTime: string;
+    courtroomId: string;
+    hearingType: string;
+  }
+): Promise<Hearing> {
+  const { data } = await apiClient.post<{ hearing: Hearing }>(
+    `/hearings/cases/${caseId}/confirm`,
+    payload
+  );
+  return data.hearing;
+}
+
+export async function listCaseHearings(caseId: string): Promise<Hearing[]> {
+  const { data } = await apiClient.get<{ hearings: Hearing[] }>(
+    `/hearings/cases/${caseId}`
+  );
+  return data.hearings;
+}
+
+export async function recordOutcome(
+  hearingId: string,
+  payload: {
+    outcome: HearingOutcomeType;
+    remarks?: string;
+    nextHearingType?: string;
+  }
+): Promise<{ hearingId: string; outcome: HearingOutcomeType; status: string }> {
+  const { data } = await apiClient.post<{
+    outcome: { hearingId: string; outcome: HearingOutcomeType; status: string };
+  }>(`/hearings/${hearingId}/outcome`, payload);
+  return data.outcome;
+}
+
+export async function rescheduleHearing(
+  hearingId: string,
+  payload: {
+    newDate: string;
+    newStartTime: string;
+    newCourtroomId: string;
+  }
+): Promise<Hearing> {
+  const { data } = await apiClient.patch<{ hearing: Hearing }>(
+    `/hearings/${hearingId}/reschedule`,
+    payload
+  );
+  return data.hearing;
+}
+
+export async function cancelHearing(hearingId: string): Promise<{ id: string }> {
+  const { data } = await apiClient.patch<{ message: string; id: string }>(
+    `/hearings/${hearingId}/cancel`
+  );
+  return { id: data.id };
+}
+
+export async function listCourtrooms(): Promise<Courtroom[]> {
+  const { data } = await apiClient.get<{ courtrooms: Courtroom[] }>(
+    "/hearings/courtrooms"
+  );
+  return data.courtrooms;
+}
+
+export async function listHolidays(): Promise<Holiday[]> {
+  const { data } = await apiClient.get<{ holidays: Holiday[] }>(
+    "/hearings/holidays"
+  );
+  return data.holidays;
+}
+
+export async function addHoliday(payload: {
+  date: string;
+  reason: string;
+}): Promise<Holiday> {
+  const { data } = await apiClient.post<{ holiday: Holiday }>(
+    "/hearings/holidays",
+    payload
+  );
+  return data.holiday;
+}
+
+export async function deleteHoliday(id: string): Promise<{ id: string }> {
+  const { data } = await apiClient.delete<{ message: string; id: string }>(
+    `/hearings/holidays/${id}`
+  );
+  return { id: data.id };
+}
+
+export async function listRegistrarHearings(status?: string): Promise<Hearing[]> {
+  const { data } = await apiClient.get<{ hearings: Hearing[] }>(
+    "/hearings/registrar",
+    { params: status ? { status } : {} }
+  );
+  return data.hearings;
+}
+
 export function getRegistrarErrorMessage(error: unknown): string {
   if (axios.isAxiosError(error)) {
     return (
