@@ -85,7 +85,11 @@ export default function NotificationModal({
       onClick={onClose}
     >
       <div
-        className="flex h-[85vh] max-h-[640px] w-full max-w-md flex-col overflow-hidden rounded-t-2xl bg-white shadow-2xl sm:h-[640px] sm:rounded-2xl"
+        className={`flex w-full max-w-md flex-col overflow-hidden rounded-t-2xl bg-white shadow-2xl sm:rounded-2xl ${
+          view === "list"
+            ? "h-[85vh] max-h-[640px] sm:h-[640px]"
+            : "max-h-[85vh] sm:max-h-[640px]"
+        }`}
         onClick={(e) => e.stopPropagation()}
       >
         {view === "settings" ? (
@@ -116,7 +120,7 @@ export default function NotificationModal({
                 <X className="h-5 w-5" />
               </button>
             </div>
-            <div className="flex-1 overflow-hidden">
+            <div className="overflow-y-auto">
               <NotificationPreferencesPanel onSaved={() => setView("list")} />
             </div>
           </>

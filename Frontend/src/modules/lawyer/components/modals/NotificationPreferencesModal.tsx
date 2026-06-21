@@ -47,7 +47,7 @@ export default function NotificationPreferencesModal({
           </button>
         </div>
 
-        <div className="flex-1 overflow-hidden">
+        <div className="overflow-y-auto">
           <NotificationPreferencesPanel onSaved={onClose} />
         </div>
       </div>
