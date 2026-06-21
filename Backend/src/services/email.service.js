@@ -1,6 +1,7 @@
 import nodemailer from "nodemailer";
 
 import { preloadEmailTemplates, renderEmail } from "./emailTemplates/index.js";
+import { isEmailEnabled } from "../modules/notifications/notificationPreferences.service.js";
 
 const placeholderValues = new Set([
   "your_email@gmail.com",
@@ -149,6 +150,36 @@ function queueEmailTask(taskName, sendTask) {
           message: error.message
         });
       });
+  });
+
+  return status;
+}
+
+// Like queueEmailTask, but first honours the recipient's notification
+// preferences: if they've muted email overall or this category, the email is
+// skipped silently. Used for NON-essential emails (hearings, payments,
+// documents). Essential/security emails (OTP, password reset, credentials)
+// keep using queueEmailTask and are never gated. A null userId/category means
+// "no gate" (always send). The preference check is best-effort — on any error
+// isEmailEnabled returns true, so a DB blip never swallows a real email.
+function queueGatedEmail(taskName, userId, category, sendTask) {
+  const status = getEmailQueueStatus();
+
+  setImmediate(async () => {
+    try {
+      if (userId && category && !(await isEmailEnabled(userId, category))) {
+        if (shouldLogEmailDebug()) {
+          console.log("[EMAIL SKIPPED]", { task: taskName, reason: "recipient opted out" });
+        }
+        return;
+      }
+      const result = await sendTask();
+      if (result.mode === "smtp" && shouldLogEmailDebug()) {
+        console.log("[EMAIL SENT]", { task: taskName, messageId: result.messageId });
+      }
+    } catch (error) {
+      console.error("[EMAIL QUEUE FAILED]", { task: taskName, message: error.message });
+    }
   });
 
   return status;
@@ -443,8 +474,9 @@ export function queueSignatureRequestEmail({
   pageCount,
   signerRole,
   expiresAt,
+  userId,
 }) {
-  return queueEmailTask("signature-request", () =>
+  return queueGatedEmail("signature-request", userId, "document", () =>
     sendSignatureRequestEmail({
       email,
       firstName,
@@ -493,8 +525,9 @@ export function queueSignatureRequestCancelledEmail({
   requestingLawyerName,
   pageCount,
   signerRole,
+  userId,
 }) {
-  return queueEmailTask("signature-request-cancelled", () =>
+  return queueGatedEmail("signature-request-cancelled", userId, "document", () =>
     sendSignatureRequestCancelledEmail({
       email,
       firstName,
@@ -551,7 +584,7 @@ export function sendSignatureCompletionEmail({
 }
 
 export function queueSignatureCompletionEmail(params) {
-  return queueEmailTask("signature-completion", () =>
+  return queueGatedEmail("signature-completion", params.userId, "document", () =>
     sendSignatureCompletionEmail(params)
   );
 }
@@ -627,7 +660,7 @@ export function sendInstallmentOverdueClientEmail({
 }
 
 export function queueInstallmentOverdueClientEmail(params) {
-  return queueEmailTask("installment-overdue-client", () =>
+  return queueGatedEmail("installment-overdue-client", params.userId, "payment", () =>
     sendInstallmentOverdueClientEmail(params)
   );
 }
@@ -658,7 +691,7 @@ export function sendInstallmentOverdueLawyerEmail({
 }
 
 export function queueInstallmentOverdueLawyerEmail(params) {
-  return queueEmailTask("installment-overdue-lawyer", () =>
+  return queueGatedEmail("installment-overdue-lawyer", params.userId, "payment", () =>
     sendInstallmentOverdueLawyerEmail(params)
   );
 }
@@ -679,7 +712,9 @@ export function sendPayoutPaidEmail({ email, firstName, amount, reference, trans
 }
 
 export function queuePayoutPaidEmail(params) {
-  return queueEmailTask("payout-paid", () => sendPayoutPaidEmail(params));
+  return queueGatedEmail("payout-paid", params.userId, "payment", () =>
+    sendPayoutPaidEmail(params)
+  );
 }
 
 // Sent to the client as a receipt when their payment is recorded. The money is
@@ -705,18 +740,21 @@ export function sendPaymentReceiptClientEmail({
 }
 
 export function queuePaymentReceiptClientEmail(params) {
-  return queueEmailTask("payment-receipt-client", () => sendPaymentReceiptClientEmail(params));
+  return queueGatedEmail("payment-receipt-client", params.userId, "payment", () =>
+    sendPaymentReceiptClientEmail(params)
+  );
 }
 
-// --- Hearing emails ---------------------------------------------------------
+// --- Generic case / hearing notification email ------------------------------
 
-// One reusable hearing email used for every hearing event (scheduled,
-// rescheduled, cancelled, completed, adjourned, disposed) for both the lawyer
-// and the client. The caller supplies the event-specific wording + which blocks
-// to show; the hearing TYPE/STAGE (e.g. "Framing of Issues", "Pre-Trial
-// Reconciliation") rides along in `hearingLine`, so civil and family cases read
-// correctly without separate templates.
-export function sendHearingNotificationEmail({
+// One reusable email for case-status + hearing events, for both the lawyer and
+// the client. The caller supplies the event-specific wording + which blocks to
+// show, plus a `category` ("case" | "hearing" | …) used to honour the
+// recipient's preferences. An optional detail row (`detailLabel`/`detailValue`,
+// or the `hearingLine` alias) shows e.g. the hearing stage ("Framing of
+// Issues") for hearing emails; case emails simply omit it. `showSchedule` adds
+// the date/time/courtroom block (hearings only).
+export function sendNotificationEmail({
   email,
   firstName,
   subject,
@@ -724,6 +762,8 @@ export function sendHearingNotificationEmail({
   intro,
   caseTitle,
   hearingLine,
+  detailLabel,
+  detailValue,
   showSchedule = false,
   date,
   timeLabel,
@@ -734,12 +774,16 @@ export function sendHearingNotificationEmail({
   footerNote,
   dashboardUrl,
 }) {
-  return send(email, subject, "hearingNotification", {
+  const resolvedLabel = detailLabel || (hearingLine ? "Hearing" : "");
+  const resolvedValue = detailValue || hearingLine || "";
+  return send(email, subject, "notificationEmail", {
     recipientName: firstName || "there",
-    heading: heading || "Hearing Update",
+    heading: heading || "Update",
     intro: intro || "",
     caseTitle: caseTitle || "your case",
-    hearingLine: hearingLine || "Hearing",
+    showDetail: Boolean(resolvedValue),
+    detailLabel: resolvedLabel,
+    detailValue: resolvedValue,
     showSchedule: Boolean(showSchedule),
     dateLabel: formatDateLabel(date, "—"),
     timeLabel: timeLabel || "—",
@@ -747,15 +791,16 @@ export function sendHearingNotificationEmail({
     showRemarks: Boolean(showRemarks && remarks),
     remarksLabel: remarksLabel || "Remarks",
     remarks: remarks || "",
-    footerNote:
-      footerNote || "Hearings are held in person at the court. Please attend on time.",
+    footerNote: footerNote || "You can manage this from your LawFlow dashboard.",
     dashboardUrl: dashboardUrl || `${getFrontendUrl()}/login`,
   });
 }
 
-export function queueHearingNotificationEmail(params) {
-  return queueEmailTask("hearing-notification", () =>
-    sendHearingNotificationEmail(params)
+// Gated by the recipient's preferences for the given `category` (e.g. "hearing"
+// or "case"). Used by the hearing flow and the case-status flow.
+export function queueNotificationEmail(params) {
+  return queueGatedEmail("notification", params.userId, params.category, () =>
+    sendNotificationEmail(params)
   );
 }
 

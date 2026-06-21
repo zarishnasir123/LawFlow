@@ -121,6 +121,7 @@ export async function sendOverdueReminders({
         dueDateLabel: dueLabel,
         daysOverdue: late,
         paymentsUrl: `${frontendBaseUrl()}/client-payments/${row.case_id}`,
+        userId: row.client_id,
       });
     }
     if (row.lawyer_email) {
@@ -134,6 +135,7 @@ export async function sendOverdueReminders({
         dueDateLabel: dueLabel,
         daysOverdue: late,
         paymentsUrl: `${frontendBaseUrl()}/lawyer-case-payments/${row.case_id}`,
+        userId: row.lawyer_id,
       });
     }
 

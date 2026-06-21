@@ -12,7 +12,8 @@ function mapType(backendType: string): Notification["type"] {
   if (backendType.startsWith("chat") || backendType.startsWith("message")) return "message";
   if (backendType.startsWith("case")) return "case";
   if (backendType.startsWith("hearing")) return "hearing";
-  if (backendType.startsWith("document")) return "document";
+  if (backendType.startsWith("document") || backendType.startsWith("signature")) return "document";
+  if (backendType.startsWith("payment") || backendType.startsWith("payout")) return "payment";
   return "system";
 }
 
@@ -27,6 +28,7 @@ function mapActionUrl(backendType: string, caseId: string | null): string | unde
   if (backendType.startsWith("chat") || backendType.startsWith("message")) {
     return "/client-messages";
   }
+  if (backendType.startsWith("payment")) return "/client-payments";
   if (caseId) return "/case-tracking";
   return undefined;
 }
@@ -68,4 +70,39 @@ export async function markAllNotificationsAsRead(): Promise<void> {
 // DELETE /api/notifications/:id
 export async function deleteNotification(notificationId: string): Promise<void> {
   await apiClient.delete(`/notifications/${notificationId}`);
+}
+
+// ---------------------------------------------------------------------------
+// Email notification preferences. These control which EMAILS the user gets;
+// the in-app bell always shows everything. `emailEnabled` is the master switch;
+// the per-category flags gate that category's emails. (No SMS / system updates —
+// LawFlow doesn't send those.)
+// ---------------------------------------------------------------------------
+export interface NotificationPreferences {
+  emailEnabled: boolean;
+  case: boolean;
+  hearing: boolean;
+  message: boolean;
+  document: boolean;
+  payment: boolean;
+}
+
+// GET /api/notifications/preferences
+export async function fetchNotificationPreferences(): Promise<NotificationPreferences> {
+  const { data } = await apiClient.get<{ preferences: NotificationPreferences }>(
+    "/notifications/preferences"
+  );
+  return data.preferences;
+}
+
+// PUT /api/notifications/preferences — accepts a partial patch, returns the
+// merged result.
+export async function updateNotificationPreferences(
+  patch: Partial<NotificationPreferences>
+): Promise<NotificationPreferences> {
+  const { data } = await apiClient.put<{ preferences: NotificationPreferences }>(
+    "/notifications/preferences",
+    patch
+  );
+  return data.preferences;
 }

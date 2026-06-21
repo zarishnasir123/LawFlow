@@ -4,6 +4,10 @@ import {
   markAllNotificationsRead,
   markNotificationRead
 } from "./notifications.service.js";
+import {
+  getNotificationPreferences,
+  updateNotificationPreferences
+} from "./notificationPreferences.service.js";
 
 // req.user.sub is the caller's user id (JWT payload — see issueSessionTokens
 // in auth.service.js). Every handler scopes its query to that id, so a user
@@ -45,4 +49,16 @@ export async function deleteMyNotification(req, res) {
   });
 
   return res.status(200).json(result);
+}
+
+// GET /api/notifications/preferences -> { preferences }
+export async function getMyNotificationPreferences(req, res) {
+  const preferences = await getNotificationPreferences(req.user.sub);
+  return res.status(200).json({ preferences });
+}
+
+// PUT /api/notifications/preferences -> { preferences }
+export async function updateMyNotificationPreferences(req, res) {
+  const preferences = await updateNotificationPreferences(req.user.sub, req.body);
+  return res.status(200).json({ message: "Preferences updated", preferences });
 }

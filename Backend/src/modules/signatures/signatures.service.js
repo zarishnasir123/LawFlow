@@ -260,6 +260,7 @@ export async function createSignatureRequestBatch({
       const enrichResult = await pool.query(
         `SELECT
            sr.id,
+           sr.recipient_user_id,
            sr.signer_role,
            sr.expires_at,
            sr.page_indices,
@@ -293,6 +294,7 @@ export async function createSignatureRequestBatch({
           pageCount,
           signerRole: row.signer_role,
           expiresAt: row.expires_at,
+          userId: row.recipient_user_id,
         });
       }
     } catch (emailErr) {
@@ -568,6 +570,7 @@ export async function submitSignature({
       pool
         .query(
           `SELECT
+             lawyer.id             AS lawyer_user_id,
              lawyer.email          AS lawyer_email,
              lawyer.first_name     AS lawyer_first_name,
              signer.first_name     AS signer_first_name,
@@ -597,6 +600,7 @@ export async function submitSignature({
             caseId: updatedRow.case_id,
             caseTitle: r.case_title,
             pageIndices: updatedRow.page_indices,
+            userId: r.lawyer_user_id,
           });
         })
         .catch((err) => {
@@ -718,6 +722,7 @@ export async function cancelSignatureRequest({ requestId, lawyerUserId }) {
           requestingLawyerName: cancellerName,
           pageCount,
           signerRole: row.signer_role,
+          userId: row.recipient_user_id,
         });
       } catch (err) {
         // queueEmailTask already swallows + logs downstream failures,

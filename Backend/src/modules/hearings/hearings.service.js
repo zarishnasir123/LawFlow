@@ -3,7 +3,7 @@ import { ApiError } from "../../utils/apiError.js";
 import { findNextAvailableSlot, getNextHearingStage } from "./hearingScheduler.js";
 import { createNotification } from "../notifications/notifications.service.js";
 import { safeRecordCaseEvent } from "../cases/caseEvents.service.js";
-import { queueHearingNotificationEmail } from "../../services/email.service.js";
+import { queueNotificationEmail } from "../../services/email.service.js";
 
 // Reusable SELECT with joins
 const SELECT_HEARING_DETAILS = `
@@ -83,24 +83,29 @@ async function getUserContact(userId) {
 // event. Fire-and-forget + best-effort: a mail hiccup must never break the
 // registrar's action, so failures are swallowed and logged. Mirrors the in-app
 // notifications that fire alongside it.
-async function emailHearingParties({ lawyerUserId, clientUserId, ...emailParams }) {
+async function emailHearingParties({
+  lawyerUserId,
+  clientUserId,
+  category = "hearing",
+  ...emailParams
+}) {
   try {
-    const recipients = [];
-    const lawyer = await getUserContact(lawyerUserId);
-    if (lawyer?.email) recipients.push(lawyer);
-    if (clientUserId) {
-      const client = await getUserContact(clientUserId);
-      if (client?.email) recipients.push(client);
-    }
-    for (const r of recipients) {
-      queueHearingNotificationEmail({
-        email: r.email,
-        firstName: r.first_name,
+    const recipientIds = [lawyerUserId, clientUserId].filter(Boolean);
+    for (const userId of recipientIds) {
+      const contact = await getUserContact(userId);
+      if (!contact?.email) continue;
+      // userId + category ride along so the email is skipped if this recipient
+      // has muted that category (gate lives in queueNotificationEmail).
+      queueNotificationEmail({
+        email: contact.email,
+        firstName: contact.first_name,
+        userId,
+        category,
         ...emailParams,
       });
     }
   } catch (err) {
-    console.error("Failed to queue hearing notification emails", err);
+    console.error("Failed to queue notification emails", err);
   }
 }
 
@@ -641,11 +646,14 @@ export async function recordOutcome({
     await emailHearingParties({
       lawyerUserId: caseRow.lawyer_user_id,
       clientUserId: caseRow.client_user_id,
+      // Disposal is a CASE event — gated by the "case" preference, not "hearing".
+      category: "case",
       subject: `Case closed — ${caseRow.title}`,
       heading: "Case Closed — Final Decision",
       intro: `Your case "${caseRow.title}" has been disposed (officially closed) by the court. The final decision has been recorded.`,
       caseTitle: caseRow.title,
-      hearingLine: `Final hearing — ${hearing.hearingType}`,
+      detailLabel: "Final stage",
+      detailValue: hearing.hearingType,
       showSchedule: false,
       showRemarks: Boolean(remarks),
       remarksLabel: "Court's final decision / remarks",

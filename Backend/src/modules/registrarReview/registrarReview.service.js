@@ -5,6 +5,7 @@ import {
   getCaseAttachmentSignedUrl
 } from "../../services/storage.service.js";
 import { createNotification } from "../notifications/notifications.service.js";
+import { queueNotificationEmail } from "../../services/email.service.js";
 import { safeRecordCaseEvent } from "../cases/caseEvents.service.js";
 import { proposeFirstHearing } from "../hearings/hearings.service.js";
 
@@ -315,6 +316,51 @@ async function notifyUsersOfTransition({ status, caseId, title, lawyerUserId, cl
       // Log enough to debug, but never the case title / user identity (PII).
       console.error(
         `Failed to create ${status} notification for user ${userId} on case ${caseId}:`,
+        error?.message ?? error
+      );
+    }
+  }
+
+  // Best-effort EMAIL to the CLIENT for case accepted / returned (gated by the
+  // client's "case" preference; the in-app bell above is never gated). The
+  // lawyer's case email is added with the lawyer-role rollout. Never throws.
+  if (clientUserId && (status === "accepted" || status === "returned")) {
+    try {
+      const contact = await pool.query(
+        "SELECT email, first_name FROM users WHERE id = $1",
+        [clientUserId]
+      );
+      const client = contact.rows[0];
+      if (client?.email) {
+        const safeTitle = title ?? "your case";
+        const accepted = status === "accepted";
+        const reason = reviewRemarks?.trim();
+        queueNotificationEmail({
+          email: client.email,
+          firstName: client.first_name,
+          userId: clientUserId,
+          category: "case",
+          subject: accepted
+            ? `Case accepted — ${safeTitle}`
+            : `Case returned — ${safeTitle}`,
+          heading: accepted ? "Case Accepted" : "Case Returned for Corrections",
+          intro: accepted
+            ? `Good news — your case "${safeTitle}" was accepted by the registrar and can now proceed.`
+            : `Your case "${safeTitle}" was returned by the registrar and needs corrections before it can proceed.`,
+          caseTitle: safeTitle,
+          detailLabel: "Status",
+          detailValue: accepted ? "Accepted" : "Returned for corrections",
+          showRemarks: !accepted && Boolean(reason),
+          remarksLabel: "Registrar's remarks",
+          remarks: reason || "",
+          footerNote: accepted
+            ? "Your lawyer will continue preparing your case."
+            : "Your lawyer will make the requested changes and resubmit.",
+        });
+      }
+    } catch (error) {
+      console.error(
+        `Failed to queue case ${status} email for case ${caseId}:`,
         error?.message ?? error
       );
     }
