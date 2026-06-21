@@ -7,7 +7,7 @@
   </head>
   <body style="margin:0;background:#eef8f2;font-family:Arial,Helvetica,sans-serif;color:#172033;">
     <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">
-      {{heading}} — {{caseTitle}}.
+      {{heading}}{{#if showCase}} — {{caseTitle}}{{/if}}.
     </div>
     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#eef8f2;padding:32px 16px;">
       <tr>
@@ -37,11 +37,13 @@
                 <p style="margin:0 0 22px;color:#344054;font-size:15px;line-height:1.7;">{{intro}}</p>
 
                 <div style="margin:24px 0;padding:22px 20px;background:#ecfdf3;border:1px solid #abefc6;border-radius:14px;">
+                  {{#if showCase}}
                   <div style="font-size:13px;color:#067647;margin-bottom:6px;text-transform:uppercase;letter-spacing:1px;">Case</div>
                   <div style="color:#172033;font-size:15px;font-weight:700;line-height:1.4;">{{caseTitle}}</div>
+                  {{/if}}
 
                   {{#if showDetail}}
-                  <div style="margin-top:14px;font-size:13px;color:#067647;text-transform:uppercase;letter-spacing:1px;">{{detailLabel}}</div>
+                  <div style="{{#if showCase}}margin-top:14px;{{/if}}font-size:13px;color:#067647;text-transform:uppercase;letter-spacing:1px;">{{detailLabel}}</div>
                   <div style="color:#172033;font-size:15px;font-weight:700;line-height:1.4;">{{detailValue}}</div>
                   {{/if}}
 

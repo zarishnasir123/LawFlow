@@ -558,15 +558,20 @@ CREATE INDEX idx_notifications_user_unread
 -- are never gated by these. Shared across all roles; each role's settings UI
 -- writes here.
 CREATE TABLE notification_preferences (
-  user_id        UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
-  email_enabled  BOOLEAN NOT NULL DEFAULT TRUE,
-  email_case     BOOLEAN NOT NULL DEFAULT TRUE,
-  email_hearing  BOOLEAN NOT NULL DEFAULT TRUE,
-  email_message  BOOLEAN NOT NULL DEFAULT TRUE,
-  email_document BOOLEAN NOT NULL DEFAULT TRUE,
-  email_payment  BOOLEAN NOT NULL DEFAULT TRUE,
-  created_at     TIMESTAMP NOT NULL DEFAULT NOW(),
-  updated_at     TIMESTAMP NOT NULL DEFAULT NOW()
+  user_id            UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  email_enabled      BOOLEAN NOT NULL DEFAULT TRUE,
+  email_case         BOOLEAN NOT NULL DEFAULT TRUE,
+  email_hearing      BOOLEAN NOT NULL DEFAULT TRUE,
+  email_message      BOOLEAN NOT NULL DEFAULT TRUE,
+  email_document     BOOLEAN NOT NULL DEFAULT TRUE,
+  email_payment      BOOLEAN NOT NULL DEFAULT TRUE,
+  -- Admin-only categories: a new lawyer awaiting verification, and a lawyer's
+  -- payout request. Other roles simply never write/read these (they stay TRUE
+  -- and unused), so the table remains shared across all roles.
+  email_verification BOOLEAN NOT NULL DEFAULT TRUE,
+  email_payout       BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at         TIMESTAMP NOT NULL DEFAULT NOW(),
+  updated_at         TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
 -- =====================================================================

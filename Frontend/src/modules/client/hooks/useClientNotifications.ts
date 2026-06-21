@@ -7,6 +7,7 @@ import {
   markNotificationAsRead,
 } from "../api/notificationApi";
 import type { NotificationResponse } from "../types/notification";
+import { useLiveNotifications } from "../../../shared/hooks/useLiveNotifications";
 
 // Shared query key for the client's live notifications. Both the bell badge
 // (ClientLayout) and the NotificationModal read from this single cache entry,
@@ -27,6 +28,9 @@ export function useClientNotifications() {
     refetchInterval: REFETCH_INTERVAL_MS,
     refetchIntervalInBackground: true,
   });
+
+  // Live updates: refetch the instant the backend pushes a new notification.
+  useLiveNotifications(CLIENT_NOTIFICATIONS_KEY);
 
   const markRead = useMutation({
     mutationFn: (notificationId: string) => markNotificationAsRead(notificationId),

@@ -86,7 +86,7 @@ export default function NotificationCard({
             <span className="mt-1.5 h-2 w-2 flex-shrink-0 rounded-full bg-[#01411C]" />
           )}
         </div>
-        <p className="mt-0.5 line-clamp-1 text-xs text-gray-500">
+        <p className="mt-0.5 line-clamp-2 text-xs text-gray-500">
           {notification.message}
         </p>
         <p className="mt-1.5 text-[11px] text-gray-400">

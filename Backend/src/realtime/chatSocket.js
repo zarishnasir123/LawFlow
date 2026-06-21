@@ -83,6 +83,17 @@ export function pushReadReceipt({ toUserId, conversationId, readAt }) {
   sendToUser(toUserId, { type: "read", conversationId, readAt });
 }
 
+// Push a freshly-created in-app notification to its recipient's open tabs so the
+// bell badge + list update instantly (no 30s poll wait). Best-effort: the row is
+// already persisted over REST, and polling remains the fallback, so a missing /
+// closed socket simply means the user sees it on the next poll or refresh. The
+// frontend treats this as a signal to refetch, so the exact payload shape is not
+// load-bearing.
+export function pushNotification(userId, notification) {
+  if (!userId) return;
+  sendToUser(userId, { type: "notification", notification });
+}
+
 // Push an UPDATED message (e.g. edited) to both participants so they replace
 // the existing one in place.
 export function pushMessageUpdate({

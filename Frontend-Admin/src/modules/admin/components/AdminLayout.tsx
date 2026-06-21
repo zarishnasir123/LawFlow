@@ -29,6 +29,8 @@ import {
 import { useAdminNotificationCount } from "../hooks/useAdminNotificationCount";
 import { usePendingLawyerCount } from "../hooks/usePendingLawyerCount";
 import { useOpenPayoutCount } from "../hooks/useOpenPayoutCount";
+import { useLiveNotifications } from "../../../shared/hooks/useLiveNotifications";
+import { notificationSocket } from "../../../shared/api/notificationSocket";
 import {
   avatarInitial,
   displayFullName,
@@ -112,11 +114,17 @@ export default function AdminLayout() {
   const unreadCount = useAdminNotificationCount();
   const pendingLawyerCount = usePendingLawyerCount();
   const openPayoutCount = useOpenPayoutCount();
+  // Live notifications: refetch the badge + center the instant the backend pushes
+  // a new admin notification (payout request / lawyer awaiting verification).
+  useLiveNotifications();
   const { data: currentUser } = useCurrentUser();
   const profileActive = location.pathname === "/profile";
 
   const handleLogout = () => {
     localStorage.clear();
+    // Close the live socket so it isn't left authed as this admin for whoever
+    // logs in next on the same tab (no full reload happens here).
+    notificationSocket.disconnect();
     setLogoutOpen(false);
     navigate({ to: "/login" });
   };

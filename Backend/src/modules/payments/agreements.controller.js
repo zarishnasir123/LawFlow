@@ -29,6 +29,7 @@ import {
   listLawyerPayouts,
 } from "./payouts.service.js";
 import { notifyAdmins } from "../notifications/notifications.service.js";
+import { getAdminFrontendUrl } from "../../services/email.service.js";
 
 function mapAgreementResponse(snapshot) {
   return {
@@ -347,10 +348,21 @@ export async function requestPayoutHandler(req, res) {
         [req.user.sub]
       );
       const lawyerName = whoResult.rows[0]?.name?.trim() || "A lawyer";
+      const amountLabel = `Rs ${payout.amount.toLocaleString()}`;
       await notifyAdmins({
         type: "payout_requested",
         title: "New payout request",
-        message: `${lawyerName} requested a payout of Rs ${payout.amount.toLocaleString()}.`,
+        message: `${lawyerName} requested a payout of ${amountLabel}.`,
+        email: {
+          category: "payout",
+          subject: `New payout request — ${amountLabel}`,
+          heading: "New Payout Request",
+          intro: `${lawyerName} requested a payout of ${amountLabel}. It's waiting in your payouts queue for review.`,
+          detailLabel: "Amount requested",
+          detailValue: amountLabel,
+          footerNote: "Open the admin panel to review and process this payout.",
+          dashboardUrl: `${getAdminFrontendUrl()}/payouts`
+        }
       });
     } catch (notifyErr) {
       console.error(

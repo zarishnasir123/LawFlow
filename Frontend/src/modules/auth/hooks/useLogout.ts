@@ -1,6 +1,7 @@
 import { useNavigate } from "@tanstack/react-router";
 
 import { apiClient } from "../../../shared/api/axios";
+import { chatSocket } from "../../../shared/api/chatSocket";
 import { clearStoredAuth } from "../utils/authStorage";
 
 // Proper logout: revoke the refresh-token session row server-side AND wipe
@@ -22,6 +23,9 @@ export function useLogout() {
       // round-trip cleanly.
     }
     clearStoredAuth();
+    // Close the live socket so it isn't left authed as this user for whoever
+    // logs in next on the same tab (no full reload happens here).
+    chatSocket.disconnect();
     navigate({ to: "/login" });
   };
 }

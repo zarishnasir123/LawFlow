@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { pool } from "../../config/db.js";
 import {
+  getAdminFrontendUrl,
   queueLawyerPendingReviewEmail,
   queueVerificationOtpEmail,
   queueWelcomeEmail
@@ -473,7 +474,17 @@ export async function completeRegistrationVerification({ email, otp }) {
       notifyAdmins({
         type: "lawyer_pending_verification",
         title: "New lawyer awaiting verification",
-        message: `${lawyerName} registered and is awaiting verification.`
+        message: `${lawyerName} registered and is awaiting verification.`,
+        email: {
+          category: "verification",
+          subject: "New lawyer awaiting verification",
+          heading: "New Lawyer Awaiting Verification",
+          intro: `${lawyerName} registered on LawFlow and is awaiting verification before they can practise on the platform.`,
+          detailLabel: "Lawyer",
+          detailValue: lawyerName,
+          footerNote: "Open the admin panel to review and verify this lawyer.",
+          dashboardUrl: `${getAdminFrontendUrl()}/verifications`
+        }
       }).catch((error) =>
         console.error(
           "Admin lawyer-pending notification failed:",

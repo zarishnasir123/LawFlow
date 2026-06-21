@@ -189,6 +189,12 @@ function getFrontendUrl() {
   return process.env.FRONTEND_URL || "http://localhost:5173";
 }
 
+// The admin panel is a separate app on its own origin (default :5174). Admin
+// notification emails must link there, not at the client/lawyer app.
+export function getAdminFrontendUrl() {
+  return process.env.ADMIN_URL || "http://localhost:5174";
+}
+
 // Render a date value (Date or ISO/YYYY-MM-DD string) as "Mon dd, yyyy", or a
 // fallback when it's missing/unparseable — so a template never shows "Invalid
 // Date". Shared by the money emails below.
@@ -776,10 +782,15 @@ export function sendNotificationEmail({
 }) {
   const resolvedLabel = detailLabel || (hearingLine ? "Hearing" : "");
   const resolvedValue = detailValue || hearingLine || "";
+  // The "Case" box only renders when the caller actually supplies a case title.
+  // Admin emails (verification / payout) have no case, so they omit it and rely
+  // on the detail row (e.g. "Lawyer" / "Amount") instead.
+  const showCase = Boolean(caseTitle);
   return send(email, subject, "notificationEmail", {
     recipientName: firstName || "there",
     heading: heading || "Update",
     intro: intro || "",
+    showCase,
     caseTitle: caseTitle || "your case",
     showDetail: Boolean(resolvedValue),
     detailLabel: resolvedLabel,
