@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
+  deleteNotification,
   fetchNotifications,
   markAllNotificationsAsRead,
   markNotificationAsRead,
@@ -102,6 +103,35 @@ export function useLawyerNotifications() {
     },
   });
 
+  const remove = useMutation({
+    mutationFn: (notificationId: string) => deleteNotification(notificationId),
+    onMutate: async (notificationId: string) => {
+      await queryClient.cancelQueries({ queryKey: LAWYER_NOTIFICATIONS_KEY });
+      const previous = queryClient.getQueryData<NotificationResponse>(
+        LAWYER_NOTIFICATIONS_KEY
+      );
+      if (previous) {
+        const target = previous.notifications.find((n) => n.id === notificationId);
+        const wasUnread = target ? !target.read : false;
+        queryClient.setQueryData<NotificationResponse>(LAWYER_NOTIFICATIONS_KEY, {
+          notifications: previous.notifications.filter((n) => n.id !== notificationId),
+          unreadCount: wasUnread
+            ? Math.max(0, previous.unreadCount - 1)
+            : previous.unreadCount,
+        });
+      }
+      return { previous };
+    },
+    onError: (_err, _id, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(LAWYER_NOTIFICATIONS_KEY, context.previous);
+      }
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: LAWYER_NOTIFICATIONS_KEY });
+    },
+  });
+
   return {
     notifications: query.data?.notifications ?? [],
     unreadCount: query.data?.unreadCount ?? 0,
@@ -110,5 +140,6 @@ export function useLawyerNotifications() {
     refetch: query.refetch,
     markRead: markRead.mutate,
     markAllRead: markAllRead.mutate,
+    remove: remove.mutate,
   };
 }
