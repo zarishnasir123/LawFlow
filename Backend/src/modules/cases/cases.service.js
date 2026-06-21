@@ -6,6 +6,7 @@ import { pool } from "../../config/db.js";
 import { ApiError } from "../../utils/apiError.js";
 import { isSupportedTehsil } from "../../utils/location.js";
 import { safeRecordCaseEvent } from "./caseEvents.service.js";
+import { createNotification } from "../notifications/notifications.service.js";
 import {
   deleteCaseAttachment as deleteCaseAttachmentObject,
   deleteSignedCasePdf,
@@ -656,7 +657,7 @@ export async function getCaseForLawyer({ caseId, lawyerUserId }) {
 // registrar queue can order by oldest-first.
 export async function submitCase({ caseId, lawyerUserId }) {
   const result = await pool.query(
-    `SELECT status, assigned_tehsil, signed_pdf_storage_path
+    `SELECT status, assigned_tehsil, signed_pdf_storage_path, title
      FROM cases
      WHERE id = $1 AND lawyer_user_id = $2`,
     [caseId, lawyerUserId]
@@ -666,7 +667,7 @@ export async function submitCase({ caseId, lawyerUserId }) {
     throw new ApiError(404, "Case not found");
   }
 
-  const { status, assigned_tehsil, signed_pdf_storage_path } = result.rows[0];
+  const { status, assigned_tehsil, signed_pdf_storage_path, title } = result.rows[0];
 
   if (status !== "draft" && status !== "returned") {
     throw new ApiError(409, "Only draft or returned cases can be submitted");
@@ -705,6 +706,45 @@ export async function submitCase({ caseId, lawyerUserId }) {
       assignedTehsil: assigned_tehsil
     }
   });
+
+  // Best-effort: alert the registrar(s) of this tehsil that a case is awaiting
+  // review (in-app bell only — registrars get no emails). Never breaks submit.
+  try {
+    const registrars = await pool.query(
+      `SELECT u.id
+       FROM users u
+       JOIN roles r ON r.id = u.role_id
+       JOIN registrar_profiles rp ON rp.user_id = u.id
+       WHERE r.name = 'registrar'
+         AND LOWER(rp.assigned_tehsil) = LOWER($1)`,
+      [assigned_tehsil]
+    );
+    for (const reg of registrars.rows) {
+      // Per-recipient best-effort: a transient failure for one registrar must
+      // not skip the rest of the tehsil's registrars.
+      try {
+        await createNotification({
+          userId: reg.id,
+          type: "case_submitted",
+          title: isResubmit ? "Case resubmitted for review" : "New case awaiting review",
+          message: `Case "${title}" was ${
+            isResubmit ? "resubmitted" : "submitted"
+          } in your tehsil and is awaiting your review.`,
+          caseId
+        });
+      } catch (notifyErr) {
+        console.error(
+          `Failed to notify registrar ${reg.id} of submission:`,
+          notifyErr?.message ?? notifyErr
+        );
+      }
+    }
+  } catch (err) {
+    console.error(
+      "Failed to notify registrars of submission:",
+      err?.message ?? err
+    );
+  }
 
   return getCaseForLawyer({ caseId, lawyerUserId });
 }

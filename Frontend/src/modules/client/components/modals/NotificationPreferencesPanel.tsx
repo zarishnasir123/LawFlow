@@ -114,8 +114,8 @@ export default function NotificationPreferencesPanel({
   }
 
   return (
-    <div className="flex h-full flex-col">
-      <div className="flex-1 overflow-y-auto px-5 py-4">
+    <div className="flex flex-col">
+      <div className="px-5 py-4">
         {/* Master switch */}
         <div className="mb-5 flex items-center justify-between gap-3 rounded-xl border border-[#01411C]/20 bg-[#01411C]/5 p-4">
           <div className="min-w-0">
@@ -176,7 +176,7 @@ export default function NotificationPreferencesPanel({
           className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-[#01411C] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#025227] disabled:cursor-not-allowed disabled:opacity-50"
         >
           {saveMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-          {dirty ? "Save Preferences" : "Saved"}
+          {dirty ? "Save Preferences" : "No changes"}
         </button>
       </div>
     </div>
