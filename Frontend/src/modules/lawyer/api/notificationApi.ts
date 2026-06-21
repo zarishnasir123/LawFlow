@@ -21,7 +21,10 @@ function mapType(backendType: string): Notification["type"] {
   if (backendType.startsWith("hearing")) return "hearing";
   if (backendType.startsWith("chat") || backendType.startsWith("message"))
     return "message";
-  if (backendType.startsWith("document")) return "document";
+  if (backendType.startsWith("document") || backendType.startsWith("signature"))
+    return "document";
+  if (backendType.startsWith("payment") || backendType.startsWith("payout"))
+    return "payment";
   return "system";
 }
 
@@ -38,6 +41,9 @@ function mapActionUrl(backendType: string, caseId: string | null): string | unde
   }
   if (backendType.startsWith("chat") || backendType.startsWith("message")) {
     return "/lawyer-messages";
+  }
+  if (backendType.startsWith("payment") || backendType.startsWith("payout")) {
+    return caseId ? `/lawyer-case-payments/${caseId}` : undefined;
   }
   return caseId ? `/lawyer-case-editor/${caseId}` : undefined;
 }
@@ -82,4 +88,41 @@ export async function markNotificationAsRead(
 // PATCH /api/notifications/read-all -> mark every unread one read.
 export async function markAllNotificationsAsRead(): Promise<void> {
   await apiClient.patch("/notifications/read-all");
+}
+
+// DELETE /api/notifications/:id -> dismiss one. 404s if not the caller's row.
+export async function deleteNotification(notificationId: string): Promise<void> {
+  await apiClient.delete(`/notifications/${notificationId}`);
+}
+
+// ---------------------------------------------------------------------------
+// Email notification preferences. Control which EMAILS the lawyer receives;
+// the in-app bell always shows everything. (No SMS / system-update emails.)
+// ---------------------------------------------------------------------------
+export interface NotificationPreferences {
+  emailEnabled: boolean;
+  case: boolean;
+  hearing: boolean;
+  message: boolean;
+  document: boolean;
+  payment: boolean;
+}
+
+// GET /api/notifications/preferences
+export async function fetchNotificationPreferences(): Promise<NotificationPreferences> {
+  const { data } = await apiClient.get<{ preferences: NotificationPreferences }>(
+    "/notifications/preferences"
+  );
+  return data.preferences;
+}
+
+// PUT /api/notifications/preferences — partial patch, returns merged result.
+export async function updateNotificationPreferences(
+  patch: Partial<NotificationPreferences>
+): Promise<NotificationPreferences> {
+  const { data } = await apiClient.put<{ preferences: NotificationPreferences }>(
+    "/notifications/preferences",
+    patch
+  );
+  return data.preferences;
 }

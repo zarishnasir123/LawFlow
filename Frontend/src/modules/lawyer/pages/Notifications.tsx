@@ -22,6 +22,7 @@ export default function Notifications() {
     refetch,
     markRead,
     markAllRead,
+    remove,
   } = useLawyerNotifications();
 
   const handleMarkAsRead = (notificationId: string) => {
@@ -32,12 +33,13 @@ export default function Notifications() {
     markAllRead();
   };
 
-  // Clicking a notification card marks it read (the card calls onRead for
-  // unread rows) and, when it references a case, opens that case.
+  // Clicking a card routes to its target (its actionUrl, or the case editor for
+  // a case-bound row). The card itself marks unread rows read.
   const handleNotificationClick = (notification: Notification) => {
-    if (notification.caseId) {
-      navigate({ to: `/lawyer-case-editor/${notification.caseId}` });
-    }
+    const target =
+      notification.actionUrl ??
+      (notification.caseId ? `/lawyer-case-editor/${notification.caseId}` : undefined);
+    if (target) navigate({ to: target });
   };
 
   const filteredNotifications =
@@ -144,12 +146,13 @@ export default function Notifications() {
         )}
 
         {!isLoading && filteredNotifications.length > 0 && (
-          <div className="space-y-0">
+          <div className="space-y-2">
             {filteredNotifications.map((notification) => (
               <NotificationCard
                 key={notification.id}
                 notification={notification}
                 onRead={handleMarkAsRead}
+                onDelete={remove}
                 onClick={handleNotificationClick}
               />
             ))}

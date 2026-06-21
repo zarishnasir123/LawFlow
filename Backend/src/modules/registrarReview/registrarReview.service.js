@@ -321,31 +321,33 @@ async function notifyUsersOfTransition({ status, caseId, title, lawyerUserId, cl
     }
   }
 
-  // Best-effort EMAIL to the CLIENT for case accepted / returned (gated by the
-  // client's "case" preference; the in-app bell above is never gated). The
-  // lawyer's case email is added with the lawyer-role rollout. Never throws.
-  if (clientUserId && (status === "accepted" || status === "returned")) {
-    try {
-      const contact = await pool.query(
-        "SELECT email, first_name FROM users WHERE id = $1",
-        [clientUserId]
-      );
-      const client = contact.rows[0];
-      if (client?.email) {
-        const safeTitle = title ?? "your case";
-        const accepted = status === "accepted";
-        const reason = reviewRemarks?.trim();
+  // Best-effort EMAIL to BOTH the client and the lawyer for case accepted /
+  // returned (each gated by their own "case" preference; the in-app bell above
+  // is never gated). Never throws into the approve/return response.
+  if (status === "accepted" || status === "returned") {
+    const accepted = status === "accepted";
+    const reason = reviewRemarks?.trim();
+    const safeTitle = title ?? "your case";
+
+    for (const recipientId of [clientUserId, lawyerUserId].filter(Boolean)) {
+      try {
+        const contact = await pool.query(
+          "SELECT email, first_name FROM users WHERE id = $1",
+          [recipientId]
+        );
+        const recipient = contact.rows[0];
+        if (!recipient?.email) continue;
         queueNotificationEmail({
-          email: client.email,
-          firstName: client.first_name,
-          userId: clientUserId,
+          email: recipient.email,
+          firstName: recipient.first_name,
+          userId: recipientId,
           category: "case",
           subject: accepted
             ? `Case accepted — ${safeTitle}`
             : `Case returned — ${safeTitle}`,
           heading: accepted ? "Case Accepted" : "Case Returned for Corrections",
           intro: accepted
-            ? `Good news — your case "${safeTitle}" was accepted by the registrar and can now proceed.`
+            ? `Your case "${safeTitle}" was accepted by the registrar and can now proceed.`
             : `Your case "${safeTitle}" was returned by the registrar and needs corrections before it can proceed.`,
           caseTitle: safeTitle,
           detailLabel: "Status",
@@ -354,15 +356,15 @@ async function notifyUsersOfTransition({ status, caseId, title, lawyerUserId, cl
           remarksLabel: "Registrar's remarks",
           remarks: reason || "",
           footerNote: accepted
-            ? "Your lawyer will continue preparing your case."
-            : "Your lawyer will make the requested changes and resubmit.",
+            ? "Open LawFlow to continue with the next steps."
+            : "Open LawFlow to review the remarks and resubmit.",
         });
+      } catch (error) {
+        console.error(
+          `Failed to queue case ${status} email for case ${caseId}:`,
+          error?.message ?? error
+        );
       }
-    } catch (error) {
-      console.error(
-        `Failed to queue case ${status} email for case ${caseId}:`,
-        error?.message ?? error
-      );
     }
   }
 }
