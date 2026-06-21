@@ -1,5 +1,7 @@
 import { pool } from "../../config/db.js";
 import { ApiError } from "../../utils/apiError.js";
+import { queueNotificationEmail } from "../../services/email.service.js";
+import { pushNotification } from "../../realtime/chatSocket.js";
 
 // =====================================================================
 // In-app notifications.
@@ -56,24 +58,56 @@ export async function createNotification({
     [userId, type, title, message, caseId]
   );
 
-  return mapNotification(result.rows[0]);
+  const mapped = mapNotification(result.rows[0]);
+
+  // Best-effort live push to the recipient's open tabs. Never let a socket
+  // hiccup affect the (already-committed) notification — polling is the fallback.
+  try {
+    pushNotification(userId, mapped);
+  } catch (err) {
+    console.error("Live notification push failed:", err?.message ?? err);
+  }
+
+  return mapped;
 }
 
 // Fan a notification out to every admin user (e.g. a payout request, a new
 // lawyer awaiting verification). Looks admins up via the roles reference table.
 // Throwable like createNotification — callers treat it as best-effort and wrap
 // in try/catch (or .catch) so it never breaks their primary flow.
-export async function notifyAdmins({ type, title, message, caseId = null }) {
+//
+// `email` is optional: when supplied, each admin also gets a gated email (honours
+// that admin's own preference for `email.category`). The in-app bell is never
+// gated. The email send is fire-and-forget per admin and never blocks the
+// in-app notifications.
+export async function notifyAdmins({ type, title, message, caseId = null, email = null }) {
   const admins = await pool.query(
-    `SELECT u.id
+    `SELECT u.id, u.email, u.first_name
      FROM users u
      JOIN roles r ON r.id = u.role_id
      WHERE r.name = 'admin'`
   );
   await Promise.all(
-    admins.rows.map((admin) =>
-      createNotification({ userId: admin.id, type, title, message, caseId })
-    )
+    admins.rows.map(async (admin) => {
+      await createNotification({ userId: admin.id, type, title, message, caseId });
+      if (email && admin.email) {
+        // Gated, fire-and-forget. queueNotificationEmail skips silently if this
+        // admin muted email overall or the given category.
+        queueNotificationEmail({
+          email: admin.email,
+          firstName: admin.first_name,
+          userId: admin.id,
+          category: email.category,
+          subject: email.subject,
+          heading: email.heading,
+          intro: email.intro,
+          detailLabel: email.detailLabel,
+          detailValue: email.detailValue,
+          footerNote: email.footerNote,
+          dashboardUrl: email.dashboardUrl,
+        });
+      }
+    })
   );
 }
 

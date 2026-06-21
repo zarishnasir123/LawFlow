@@ -7,6 +7,7 @@ import {
   markNotificationAsRead,
 } from "../api/notificationApi";
 import type { NotificationResponse } from "../types/notification";
+import { useLiveNotifications } from "../../../shared/hooks/useLiveNotifications";
 
 // Shared query key for the registrar's live notifications (bell badge + drawer).
 export const REGISTRAR_NOTIFICATIONS_KEY = ["registrar", "notifications"] as const;
@@ -22,6 +23,11 @@ export function useRegistrarNotifications() {
     refetchInterval: REFETCH_INTERVAL_MS,
     refetchIntervalInBackground: true,
   });
+
+  // Live updates: refetch the instant the backend pushes a new notification.
+  // This also opens the shared socket for the registrar (who has no chat),
+  // bringing the live layer online for them.
+  useLiveNotifications(REGISTRAR_NOTIFICATIONS_KEY);
 
   const markRead = useMutation({
     mutationFn: (notificationId: string) => markNotificationAsRead(notificationId),

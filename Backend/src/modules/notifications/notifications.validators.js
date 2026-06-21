@@ -21,5 +21,8 @@ export const updatePreferencesValidator = [
   body("hearing").optional().isBoolean({ strict: true }).withMessage("hearing must be true or false"),
   body("message").optional().isBoolean({ strict: true }).withMessage("message must be true or false"),
   body("document").optional().isBoolean({ strict: true }).withMessage("document must be true or false"),
-  body("payment").optional().isBoolean({ strict: true }).withMessage("payment must be true or false")
+  body("payment").optional().isBoolean({ strict: true }).withMessage("payment must be true or false"),
+  // Admin-only categories.
+  body("verification").optional().isBoolean({ strict: true }).withMessage("verification must be true or false"),
+  body("payout").optional().isBoolean({ strict: true }).withMessage("payout must be true or false")
 ];

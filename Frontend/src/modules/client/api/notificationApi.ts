@@ -19,7 +19,10 @@ function mapType(backendType: string): Notification["type"] {
 
 // Derive a click-through route. Hearing and outcome notifications (completed,
 // adjourned, case_disposed) all go to the hearings page. Chat alerts open the
-// messages inbox; case-related ones open case tracking; others have no link.
+// messages inbox; signature/document requests open the Pending Signatures page;
+// case-status updates open the dashboard (where the client sees their cases).
+// NOTE: the route "/case-tracking" actually renders the Pending Signatures view,
+// so case-status notifications must NOT be sent there.
 function mapActionUrl(backendType: string, caseId: string | null): string | undefined {
   if (
     backendType.startsWith("hearing") ||
@@ -29,7 +32,11 @@ function mapActionUrl(backendType: string, caseId: string | null): string | unde
     return "/client-messages";
   }
   if (backendType.startsWith("payment")) return "/client-payments";
-  if (caseId) return "/case-tracking";
+  if (backendType.startsWith("signature") || backendType.startsWith("document")) {
+    return "/case-tracking"; // the Pending Signatures page
+  }
+  if (backendType.startsWith("case")) return "/client-dashboard";
+  if (caseId) return "/client-dashboard";
   return undefined;
 }
 

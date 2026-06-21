@@ -7,6 +7,7 @@ import { ApiError } from "../../utils/apiError.js";
 import { isSupportedTehsil } from "../../utils/location.js";
 import { safeRecordCaseEvent } from "./caseEvents.service.js";
 import { createNotification } from "../notifications/notifications.service.js";
+import { queueNotificationEmail } from "../../services/email.service.js";
 import {
   deleteCaseAttachment as deleteCaseAttachmentObject,
   deleteSignedCasePdf,
@@ -708,10 +709,11 @@ export async function submitCase({ caseId, lawyerUserId }) {
   });
 
   // Best-effort: alert the registrar(s) of this tehsil that a case is awaiting
-  // review (in-app bell only — registrars get no emails). Never breaks submit.
+  // review — an in-app bell ping (always) plus a "case" email (gated by each
+  // registrar's own preference). Never breaks submit.
   try {
     const registrars = await pool.query(
-      `SELECT u.id
+      `SELECT u.id, u.email, u.first_name
        FROM users u
        JOIN roles r ON r.id = u.role_id
        JOIN registrar_profiles rp ON rp.user_id = u.id
@@ -719,6 +721,7 @@ export async function submitCase({ caseId, lawyerUserId }) {
          AND LOWER(rp.assigned_tehsil) = LOWER($1)`,
       [assigned_tehsil]
     );
+    const safeTitle = title ?? "the case";
     for (const reg of registrars.rows) {
       // Per-recipient best-effort: a transient failure for one registrar must
       // not skip the rest of the tehsil's registrars.
@@ -727,11 +730,35 @@ export async function submitCase({ caseId, lawyerUserId }) {
           userId: reg.id,
           type: "case_submitted",
           title: isResubmit ? "Case resubmitted for review" : "New case awaiting review",
-          message: `Case "${title}" was ${
+          message: `Case "${safeTitle}" was ${
             isResubmit ? "resubmitted" : "submitted"
           } in your tehsil and is awaiting your review.`,
           caseId
         });
+        // Gated email: only fires if this registrar's "case" preference is on
+        // (master + category). Fire-and-forget; the bell ping above is the
+        // authoritative alert.
+        if (reg.email) {
+          queueNotificationEmail({
+            email: reg.email,
+            firstName: reg.first_name,
+            userId: reg.id,
+            category: "case",
+            subject: isResubmit
+              ? `Case resubmitted for review — ${safeTitle}`
+              : `New case awaiting review — ${safeTitle}`,
+            heading: isResubmit
+              ? "Case Resubmitted for Review"
+              : "New Case Awaiting Review",
+            intro: `The case "${safeTitle}" was ${
+              isResubmit ? "resubmitted" : "submitted"
+            } in your tehsil and is awaiting your review.`,
+            caseTitle: safeTitle,
+            detailLabel: "Status",
+            detailValue: isResubmit ? "Resubmitted for review" : "Awaiting review",
+            footerNote: "Open LawFlow to review the case."
+          });
+        }
       } catch (notifyErr) {
         console.error(
           `Failed to notify registrar ${reg.id} of submission:`,

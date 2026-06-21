@@ -10,6 +10,9 @@ export const EMAIL_CATEGORIES = [
   "message",
   "document",
   "payment",
+  // Admin-only categories (other roles never receive these emails).
+  "verification",
+  "payout",
 ];
 
 // Opted-in by default: a user with no saved row receives every email.
@@ -20,6 +23,8 @@ const DEFAULTS = {
   message: true,
   document: true,
   payment: true,
+  verification: true,
+  payout: true,
 };
 
 function mapRow(row) {
@@ -31,6 +36,8 @@ function mapRow(row) {
     message: row.email_message,
     document: row.email_document,
     payment: row.email_payment,
+    verification: row.email_verification,
+    payout: row.email_payout,
   };
 }
 
@@ -60,16 +67,18 @@ export async function updateNotificationPreferences(userId, patch) {
 
   await pool.query(
     `INSERT INTO notification_preferences
-       (user_id, email_enabled, email_case, email_hearing, email_message, email_document, email_payment, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+       (user_id, email_enabled, email_case, email_hearing, email_message, email_document, email_payment, email_verification, email_payout, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
      ON CONFLICT (user_id) DO UPDATE SET
-       email_enabled  = EXCLUDED.email_enabled,
-       email_case     = EXCLUDED.email_case,
-       email_hearing  = EXCLUDED.email_hearing,
-       email_message  = EXCLUDED.email_message,
-       email_document = EXCLUDED.email_document,
-       email_payment  = EXCLUDED.email_payment,
-       updated_at     = NOW()`,
+       email_enabled      = EXCLUDED.email_enabled,
+       email_case         = EXCLUDED.email_case,
+       email_hearing      = EXCLUDED.email_hearing,
+       email_message      = EXCLUDED.email_message,
+       email_document     = EXCLUDED.email_document,
+       email_payment      = EXCLUDED.email_payment,
+       email_verification = EXCLUDED.email_verification,
+       email_payout       = EXCLUDED.email_payout,
+       updated_at         = NOW()`,
     [
       userId,
       next.emailEnabled,
@@ -78,6 +87,8 @@ export async function updateNotificationPreferences(userId, patch) {
       next.message,
       next.document,
       next.payment,
+      next.verification,
+      next.payout,
     ]
   );
 

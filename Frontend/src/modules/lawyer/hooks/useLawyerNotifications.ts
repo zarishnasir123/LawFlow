@@ -7,6 +7,7 @@ import {
   markNotificationAsRead,
 } from "../api/notificationApi";
 import type { NotificationResponse } from "../types/notification";
+import { useLiveNotifications } from "../../../shared/hooks/useLiveNotifications";
 
 // Shared query key for the lawyer's live notifications. Both the bell badge
 // (LawyerLayout) and the dropdown/page read from this single cache entry, so
@@ -32,6 +33,9 @@ export function useLawyerNotifications() {
     // the moment the lawyer returns.
     refetchIntervalInBackground: true,
   });
+
+  // Live updates: refetch the instant the backend pushes a new notification.
+  useLiveNotifications(LAWYER_NOTIFICATIONS_KEY);
 
   const markRead = useMutation({
     mutationFn: (notificationId: string) =>

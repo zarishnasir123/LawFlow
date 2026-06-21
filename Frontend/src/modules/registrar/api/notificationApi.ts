@@ -72,3 +72,39 @@ export async function markAllNotificationsAsRead(): Promise<void> {
 export async function deleteNotification(notificationId: string): Promise<void> {
   await apiClient.delete(`/notifications/${notificationId}`);
 }
+
+// ---------------------------------------------------------------------------
+// Email notification preferences. The in-app bell always shows everything; this
+// only controls which EMAILS the registrar receives. The registrar's sole
+// optional email is the "new case awaiting review" alert (the `case` category),
+// so the settings view exposes just that toggle + the master switch — but the
+// backend object carries every category, so we keep the full type.
+// ---------------------------------------------------------------------------
+export interface NotificationPreferences {
+  emailEnabled: boolean;
+  case: boolean;
+  hearing: boolean;
+  message: boolean;
+  document: boolean;
+  payment: boolean;
+}
+
+// GET /api/notifications/preferences
+export async function fetchNotificationPreferences(): Promise<NotificationPreferences> {
+  const { data } = await apiClient.get<{ preferences: NotificationPreferences }>(
+    "/notifications/preferences"
+  );
+  return data.preferences;
+}
+
+// PUT /api/notifications/preferences — accepts a partial patch, returns the
+// merged result.
+export async function updateNotificationPreferences(
+  patch: Partial<NotificationPreferences>
+): Promise<NotificationPreferences> {
+  const { data } = await apiClient.put<{ preferences: NotificationPreferences }>(
+    "/notifications/preferences",
+    patch
+  );
+  return data.preferences;
+}

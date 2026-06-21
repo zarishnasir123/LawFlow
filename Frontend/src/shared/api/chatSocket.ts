@@ -24,7 +24,11 @@ export type ChatSocketEvent =
   | { type: "message_update"; conversationId: string; message: ChatMessage }
   | { type: "typing"; conversationId: string; from: string; isTyping: boolean }
   | { type: "presence"; userId: string; online: boolean }
-  | { type: "read"; conversationId: string; readAt: string };
+  | { type: "read"; conversationId: string; readAt: string }
+  // A new in-app notification was created for this user. The payload is just a
+  // signal — listeners refetch their notifications query rather than trusting
+  // the shape — so the bell/list update instantly without polling.
+  | { type: "notification"; notification: unknown };
 
 type Listener = (event: ChatSocketEvent) => void;
 
@@ -46,12 +50,22 @@ class ChatSocketManager {
       return;
     }
     const token = getInMemoryAccessToken();
-    if (!token) return; // not logged in yet — a later subscribe()/on() retries
+    if (!token) {
+      // Token not ready yet (e.g. right after a page reload, before the silent
+      // refresh restores it). Retry on a backoff so an always-on listener (the
+      // notification bell) connects automatically once the token lands — instead
+      // of staying dead until the next manual subscribe()/on().
+      this.scheduleReconnect();
+      return;
+    }
 
     const ws = new WebSocket(WS_URL);
     this.ws = ws;
 
     ws.onopen = () => {
+      // The socket is actually up — clear any backoff accrued while waiting for
+      // the token / retrying, so a later genuine drop reconnects promptly.
+      this.reconnectAttempts = 0;
       const t = getInMemoryAccessToken();
       if (t) ws.send(JSON.stringify({ type: "auth", token: t }));
     };
@@ -83,7 +97,8 @@ class ChatSocketManager {
         msg.type === "message_update" ||
         msg.type === "typing" ||
         msg.type === "presence" ||
-        msg.type === "read"
+        msg.type === "read" ||
+        msg.type === "notification"
       ) {
         this.emit(data as ChatSocketEvent);
       }
@@ -145,6 +160,37 @@ class ChatSocketManager {
     return () => {
       this.listeners.delete(listener);
     };
+  }
+
+  /**
+   * Tear the connection down on logout. Without this the singleton's open,
+   * server-authenticated socket survives a same-tab logout (SPA route change,
+   * no reload) and stays bound to the PREVIOUS user — so the next user's live
+   * layer silently breaks and the previous user's pushes land in their tab.
+   * Closing it here means the next login opens a fresh socket authed as the new
+   * user. Detaches handlers first so the intentional close doesn't auto-reconnect.
+   */
+  disconnect() {
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    this.subscriptions.clear();
+    this.authed = false;
+    this.reconnectAttempts = 0;
+    const ws = this.ws;
+    this.ws = null;
+    if (ws) {
+      ws.onopen = null;
+      ws.onmessage = null;
+      ws.onerror = null;
+      ws.onclose = null;
+      try {
+        ws.close(1000, "logout");
+      } catch {
+        /* already closing */
+      }
+    }
   }
 
   private emit(event: ChatSocketEvent) {
