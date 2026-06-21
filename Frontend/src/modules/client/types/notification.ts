@@ -2,7 +2,7 @@ export interface Notification {
   id: string;
   title: string;
   message: string;
-  type: "case" | "hearing" | "message" | "document" | "system";
+  type: "case" | "hearing" | "message" | "document" | "payment" | "system";
   read: boolean;
   createdAt: string;
   actionUrl?: string;
@@ -15,7 +15,7 @@ export interface NotificationResponse {
   unreadCount: number;
 }
 
-export type NotificationType = "case" | "hearing" | "message" | "document" | "system";
+export type NotificationType = "case" | "hearing" | "message" | "document" | "payment" | "system";
 
 // Raw notification row as returned by GET /api/notifications (camelCase from
 // the notifications service). `type` is a free-form backend identifier

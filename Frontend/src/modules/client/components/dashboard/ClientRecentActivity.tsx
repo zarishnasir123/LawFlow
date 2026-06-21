@@ -2,6 +2,7 @@ import { useNavigate } from "@tanstack/react-router";
 import {
   Bell,
   Calendar,
+  CreditCard,
   FileText,
   MessageCircle,
   type LucideIcon,
@@ -22,6 +23,7 @@ const ACTIVITY_STYLE: Record<
   hearing: { icon: Calendar, iconClassName: "text-purple-600", bgClassName: "bg-purple-100" },
   case: { icon: FileText, iconClassName: "text-blue-600", bgClassName: "bg-blue-100" },
   document: { icon: FileText, iconClassName: "text-amber-600", bgClassName: "bg-amber-100" },
+  payment: { icon: CreditCard, iconClassName: "text-emerald-600", bgClassName: "bg-emerald-100" },
   system: { icon: Bell, iconClassName: "text-gray-600", bgClassName: "bg-gray-100" },
 };
 

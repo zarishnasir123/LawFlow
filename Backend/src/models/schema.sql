@@ -20,6 +20,7 @@ DROP TABLE IF EXISTS holidays                       CASCADE;
 DROP TABLE IF EXISTS courtrooms                     CASCADE;
 DROP TABLE IF EXISTS ai_chat_messages               CASCADE;
 DROP TABLE IF EXISTS ai_chat_sessions               CASCADE;
+DROP TABLE IF EXISTS notification_preferences       CASCADE;
 DROP TABLE IF EXISTS notifications                  CASCADE;
 DROP TABLE IF EXISTS platform_settings              CASCADE;
 DROP TABLE IF EXISTS payouts                         CASCADE;
@@ -548,6 +549,25 @@ CREATE TABLE notifications (
 -- (user_id), the unread filter (is_read), and the ordering (created_at DESC).
 CREATE INDEX idx_notifications_user_unread
   ON notifications (user_id, is_read, created_at DESC);
+
+-- Per-user notification preferences. The in-app bell ALWAYS shows every
+-- notification; these flags only control which EMAILS a user receives. One row
+-- per user (absent row = all defaults TRUE, i.e. opted-in). `email_enabled` is
+-- the master switch; the per-category flags gate that category's emails. Auth /
+-- security emails (OTP, password reset, account credentials) are essential and
+-- are never gated by these. Shared across all roles; each role's settings UI
+-- writes here.
+CREATE TABLE notification_preferences (
+  user_id        UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  email_enabled  BOOLEAN NOT NULL DEFAULT TRUE,
+  email_case     BOOLEAN NOT NULL DEFAULT TRUE,
+  email_hearing  BOOLEAN NOT NULL DEFAULT TRUE,
+  email_message  BOOLEAN NOT NULL DEFAULT TRUE,
+  email_document BOOLEAN NOT NULL DEFAULT TRUE,
+  email_payment  BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at     TIMESTAMP NOT NULL DEFAULT NOW(),
+  updated_at     TIMESTAMP NOT NULL DEFAULT NOW()
+);
 
 -- =====================================================================
 -- AI Legal Assistant chat history. Each lawyer's conversations with the
@@ -1207,6 +1227,7 @@ ALTER TABLE payment_receipts               ENABLE ROW LEVEL SECURITY;
 ALTER TABLE platform_settings              ENABLE ROW LEVEL SECURITY;
 ALTER TABLE payouts                        ENABLE ROW LEVEL SECURITY;
 ALTER TABLE notifications                  ENABLE ROW LEVEL SECURITY;
+ALTER TABLE notification_preferences       ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ai_chat_sessions               ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ai_chat_messages               ENABLE ROW LEVEL SECURITY;
 

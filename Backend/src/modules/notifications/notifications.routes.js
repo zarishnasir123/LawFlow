@@ -8,9 +8,14 @@ import {
   deleteMyNotification,
   listMyNotifications,
   markAllMyNotificationsRead,
-  markMyNotificationRead
+  markMyNotificationRead,
+  getMyNotificationPreferences,
+  updateMyNotificationPreferences
 } from "./notifications.controller.js";
-import { notificationIdParamValidator } from "./notifications.validators.js";
+import {
+  notificationIdParamValidator,
+  updatePreferencesValidator
+} from "./notifications.validators.js";
 
 const router = Router();
 
@@ -22,6 +27,16 @@ router.use(authenticate);
 
 // GET /api/notifications -> { notifications, unreadCount }
 router.get("/", asyncHandler(listMyNotifications));
+
+// Email preferences (literal path — declared before the "/:id" routes so it's
+// never captured as an id). GET returns current prefs; PUT upserts a patch.
+router.get("/preferences", asyncHandler(getMyNotificationPreferences));
+router.put(
+  "/preferences",
+  updatePreferencesValidator,
+  validateRequest,
+  asyncHandler(updateMyNotificationPreferences)
+);
 
 // PATCH /api/notifications/read-all -> { updated }
 // Declared before "/:id/read" so the literal "read-all" segment can never be

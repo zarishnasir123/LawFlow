@@ -329,6 +329,7 @@ export async function recordPaymentByToken({ checkoutToken, gatewayReference }) 
           lawyerName: contact.lawyer_name,
           receiptNumber,
           paymentsUrl: `${frontendBaseUrl()}/client-payments/${row.case_id}`,
+          userId: row.client_user_id,
         });
       }
     } catch (mailErr) {

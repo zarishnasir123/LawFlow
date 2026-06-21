@@ -157,6 +157,7 @@ async function emailLawyerPayoutPaid(payout) {
         reference: payout.reference,
         transferDate: payout.transferDate,
         bankName: payout.bankName,
+        userId: payout.lawyerUserId,
       });
     }
   } catch (mailErr) {
