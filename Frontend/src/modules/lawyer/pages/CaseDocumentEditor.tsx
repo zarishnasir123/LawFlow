@@ -6,6 +6,8 @@ import { Document, Page, pdfjs } from "react-pdf";
 import LawyerLayout from "../components/LawyerLayout";
 import DocumentSidebar from "../components/documentEditor/DocumentSidebar";
 import DocxPreviewSurface from "../components/documentEditor/DocxPreviewSurface";
+import AiDraftPanel from "../components/documentEditor/AiDraftPanel";
+import InlineAiEditPopover from "../components/documentEditor/InlineAiEditPopover";
 import PageContextMenu, {
   type PageContextMenuState,
 } from "../components/documentEditor/PageContextMenu";
@@ -40,6 +42,19 @@ pdfjs.GlobalWorkerOptions.workerSrc = new URL(
 // Telling them apart at the call-site keeps the loader honest about which
 // transport to use.
 const isApiPath = (url: string) => url.startsWith("/cases/") || url.startsWith("/api/");
+
+// Convert the model's edited-selection text into a SAFE INLINE HTML subset for
+// in-place replacement — escape everything, then **bold**→<strong>, blank lines
+// →<br><br>, single newlines→<br>. No <p>/<ul>, so the surrounding block (e.g. a
+// numbered plaint paragraph) keeps its structure.
+function inlineHtmlFromAiText(text: string): string {
+  const esc = (s: string) =>
+    s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return esc(text.trim())
+    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+    .replace(/\n{2,}/g, "<br><br>")
+    .replace(/\n/g, "<br>");
+}
 
 // Persisted preference for the Word-style AutoSave toggle. Default on.
 const AUTOSAVE_PREF_KEY = "lawflow_editor_autosave";
@@ -95,6 +110,7 @@ export default function CaseDocumentEditor() {
   const [renderedPages, setRenderedPages] = useState<HTMLElement[]>([]);
   const [isDownloadModalOpen, setIsDownloadModalOpen] = useState(false);
   const [isSignaturePanelOpen, setIsSignaturePanelOpen] = useState(false);
+  const [isDraftPanelOpen, setIsDraftPanelOpen] = useState(false);
   // Right-click context menu state — populated when the lawyer right-
   // clicks a page row in the sidebar OR a rendered section on the
   // canvas. Routes through one handler so both surfaces use the same
@@ -300,6 +316,11 @@ export default function CaseDocumentEditor() {
     enabled: Boolean(caseId) && caseId !== "default-case",
     staleTime: 1000 * 60,
   });
+
+  // The document is only draftable/editable while the case is draft/returned.
+  // Declared here (before the inline-edit effects that read it) so it's in scope.
+  const isCaseEditable =
+    caseRecord?.status === "draft" || caseRecord?.status === "returned";
 
   // Load draft on mount.
   useEffect(() => {
@@ -529,6 +550,177 @@ export default function CaseDocumentEditor() {
   useEffect(() => {
     persistEditedHtmlRef.current = persistEditedHtml;
   }, [persistEditedHtml]);
+
+  // --- AI drafting panel: insert generated text into the document ----------
+  // Remember the lawyer's last caret position INSIDE a rendered page, so the AI
+  // panel can insert at that spot even after focus moves to the panel.
+  const savedRangeRef = useRef<Range | null>(null);
+  useEffect(() => {
+    const onSelChange = () => {
+      const sel = window.getSelection();
+      if (!sel || sel.rangeCount === 0) return;
+      const range = sel.getRangeAt(0);
+      const inPage = renderedPages.some((p) =>
+        p.contains(range.commonAncestorContainer)
+      );
+      if (inPage) savedRangeRef.current = range.cloneRange();
+    };
+    document.addEventListener("selectionchange", onSelChange);
+    return () => document.removeEventListener("selectionchange", onSelChange);
+  }, [renderedPages]);
+
+  // Insert AI-generated HTML (a safe <p>/<ul> subset) into the document at the
+  // saved caret, or append to the active/last page as a fallback. Triggers the
+  // existing save path so it persists. Returns false only if no pages exist yet.
+  const insertAiHtml = useCallback(
+    (html: string): boolean => {
+      if (renderedPages.length === 0) return false;
+
+      const frag = document.createRange().createContextualFragment(html);
+      const lastNode = frag.lastChild; // keep a handle before frag empties on insert
+      const range = savedRangeRef.current;
+      const caretPage =
+        range &&
+        renderedPages.find((p) => p.contains(range.commonAncestorContainer));
+
+      try {
+        if (range && caretPage) {
+          // Insert AFTER the caret's TOP-LEVEL block (a direct child of the
+          // page section) so AI paragraphs land as new sibling blocks rather
+          // than nested inside the current <p>.
+          let block: Node | null = range.startContainer;
+          if (block === caretPage) {
+            caretPage.appendChild(frag);
+          } else {
+            while (block && block.parentNode && block.parentNode !== caretPage) {
+              block = block.parentNode;
+            }
+            if (block && block.parentNode === caretPage && block instanceof Element) {
+              block.after(frag);
+            } else {
+              caretPage.appendChild(frag);
+            }
+          }
+        } else {
+          // No saved caret: append to the focused page, else the last page.
+          const activePage = renderedPages.find(
+            (p) => p === document.activeElement?.closest?.("section.docx")
+          );
+          (activePage ?? renderedPages[renderedPages.length - 1]).appendChild(frag);
+        }
+      } catch {
+        // Saved range went stale (e.g. its block was deleted) — append safely.
+        renderedPages[renderedPages.length - 1].appendChild(frag);
+      }
+
+      // Move the caret just after the inserted content for continued typing.
+      if (lastNode && lastNode.isConnected) {
+        const sel = window.getSelection();
+        const after = document.createRange();
+        after.setStartAfter(lastNode);
+        after.collapse(true);
+        sel?.removeAllRanges();
+        sel?.addRange(after);
+        savedRangeRef.current = after.cloneRange();
+      }
+
+      // Persist via the existing save path: fire a bubbling input event (so the
+      // autosave loop reacts when on) AND call the saver directly (so it
+      // persists even with AutoSave off). buildEditorSnapshot reads the same
+      // live DOM we just mutated, so the insert is captured automatically.
+      renderedPages[0].dispatchEvent(new Event("input", { bubbles: true }));
+      void persistEditedHtmlRef.current();
+      return true;
+    },
+    [renderedPages]
+  );
+
+  // --- Inline "select → Ask AI → rewrite in place" -------------------------
+  // The current non-collapsed selection inside a page drives a floating "Edit
+  // with AI" box anchored above it.
+  const [inlineEdit, setInlineEdit] = useState<{ rect: DOMRect; text: string } | null>(null);
+  const inlineEditRangeRef = useRef<Range | null>(null);
+
+  useEffect(() => {
+    const onSelectEnd = () => {
+      const sel = window.getSelection();
+      if (!sel || sel.rangeCount === 0) return;
+      const range = sel.getRangeAt(0);
+      const inPage = renderedPages.some((p) =>
+        p.contains(range.commonAncestorContainer)
+      );
+      // Selection outside any page (e.g. the lawyer clicked into the popover
+      // input or the toolbar) — leave the current box as-is.
+      if (!inPage) return;
+      // Collapsed caret inside the document — no selection, hide the box.
+      if (sel.isCollapsed) {
+        setInlineEdit(null);
+        return;
+      }
+      if (!isCaseEditable) return;
+      const text = sel.toString().trim();
+      if (!text) {
+        setInlineEdit(null);
+        return;
+      }
+      inlineEditRangeRef.current = range.cloneRange();
+      setInlineEdit({ rect: range.getBoundingClientRect(), text });
+    };
+    document.addEventListener("mouseup", onSelectEnd);
+    document.addEventListener("keyup", onSelectEnd);
+    return () => {
+      document.removeEventListener("mouseup", onSelectEnd);
+      document.removeEventListener("keyup", onSelectEnd);
+    };
+  }, [renderedPages, isCaseEditable]);
+
+  // Replace the saved selection with the AI's edited text, wrapped in a transient
+  // `.ai-edited-flash` span (the after-effect highlight that fades, then unwraps).
+  const replaceSelectionWithAiText = useCallback(
+    (text: string): boolean => {
+      const range = inlineEditRangeRef.current;
+      if (!range) return false;
+      const page = renderedPages.find((p) =>
+        p.contains(range.commonAncestorContainer)
+      );
+      if (!page) return false;
+
+      try {
+        range.deleteContents();
+        const flash = document.createElement("span");
+        flash.className = "ai-edited-flash";
+        flash.appendChild(
+          document.createRange().createContextualFragment(inlineHtmlFromAiText(text))
+        );
+        range.insertNode(flash);
+
+        // Caret just after the edited region.
+        const sel = window.getSelection();
+        const after = document.createRange();
+        after.setStartAfter(flash);
+        after.collapse(true);
+        sel?.removeAllRanges();
+        sel?.addRange(after);
+
+        // After the fade animation, unwrap the flash span so the DOM is clean.
+        // (Saves are already clean — buildEditorSnapshot strips it defensively.)
+        window.setTimeout(() => {
+          if (flash.parentNode) {
+            while (flash.firstChild) flash.parentNode.insertBefore(flash.firstChild, flash);
+            flash.remove();
+          }
+        }, 1800);
+      } catch {
+        return false;
+      }
+
+      inlineEditRangeRef.current = null;
+      page.dispatchEvent(new Event("input", { bubbles: true }));
+      void persistEditedHtmlRef.current();
+      return true;
+    },
+    [renderedPages]
+  );
 
   // Last-chance save before the page unloads. fetch({ keepalive: true })
   // lets the browser finish the request even after the tab is gone,
@@ -941,6 +1133,8 @@ export default function CaseDocumentEditor() {
                 onAddAttachment={handleAddAttachment}
                 autoSave={autoSave}
                 onToggleAutoSave={() => setAutoSave((v) => !v)}
+                onToggleAiDraft={() => setIsDraftPanelOpen((v) => !v)}
+                aiDraftOpen={isDraftPanelOpen}
               />
               <div className="flex-1 overflow-hidden">
                 <DocxPreviewSurface
@@ -958,6 +1152,22 @@ export default function CaseDocumentEditor() {
               </div>
             </div>
           )}
+
+          {/* AI drafting panel — right column. Kept mounted (visibility toggled)
+              so the conversation survives open/close. flex-shrink-0 when open;
+              `hidden` when closed, so the canvas keeps its full width. */}
+          <AiDraftPanel
+            open={isDraftPanelOpen}
+            caseId={effectiveCaseId}
+            disabled={!isCaseEditable}
+            disabledReason={
+              !isCaseEditable
+                ? "This case is locked and can no longer be edited."
+                : undefined
+            }
+            onInsert={insertAiHtml}
+            onClose={() => setIsDraftPanelOpen(false)}
+          />
         </div>
 
         <DownloadModal
@@ -994,6 +1204,18 @@ export default function CaseDocumentEditor() {
             onSend={(pageIndex, signer) => {
               void sendPageForSignature(pageIndex, signer);
             }}
+          />
+        )}
+
+        {/* Inline "select text → Ask AI → rewrite in place" box. Shows above the
+            current selection on an editable case; replaces the selection on apply. */}
+        {inlineEdit && isCaseEditable && (
+          <InlineAiEditPopover
+            caseId={effectiveCaseId}
+            anchor={inlineEdit.rect}
+            selectedText={inlineEdit.text}
+            onApply={replaceSelectionWithAiText}
+            onClose={() => setInlineEdit(null)}
           />
         )}
 

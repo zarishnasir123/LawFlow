@@ -22,6 +22,7 @@ import {
   Loader2,
   Download,
   Paperclip,
+  Sparkles,
 } from "lucide-react";
 import clsx from "clsx";
 import { alignSelectedImage, type ImageAlignMode } from "../../utils/floatingImage";
@@ -38,6 +39,10 @@ interface ContentEditableToolbarProps {
   // persists. Rendered only when onToggleAutoSave is provided.
   autoSave?: boolean;
   onToggleAutoSave?: () => void;
+  // Opens/closes the AI drafting panel (wired in CaseDocumentEditor). Rendered
+  // only when provided. `aiDraftOpen` lights the button while the panel is open.
+  onToggleAiDraft?: () => void;
+  aiDraftOpen?: boolean;
 }
 
 interface ToolbarButtonProps {
@@ -197,6 +202,8 @@ export default function ContentEditableToolbar({
   onAddAttachment,
   autoSave,
   onToggleAutoSave,
+  onToggleAiDraft,
+  aiDraftOpen,
 }: ContentEditableToolbarProps = {}) {
   const [activeStates, setActiveStates] = useState<Record<string, boolean>>({});
 
@@ -381,9 +388,32 @@ export default function ContentEditableToolbar({
       {/* Utility cluster, right-aligned. The flex-1 spacer pushes the
           remaining buttons to the right edge — Google Docs pattern of
           formatting tools on the left, file actions on the right. */}
-      {(onToggleAutoSave || onAddAttachment || onDownload || onSaveDraft) && (
+      {(onToggleAiDraft || onToggleAutoSave || onAddAttachment || onDownload || onSaveDraft) && (
         <>
           <div className="flex-1" />
+
+          {onToggleAiDraft && (
+            <>
+              <button
+                type="button"
+                // Keep the caret inside the contenteditable surface across the
+                // click so the saved selection survives for "Insert at cursor".
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={onToggleAiDraft}
+                title="Draft with AI — turn your case points into court-ready text"
+                className={clsx(
+                  "inline-flex items-center gap-1.5 rounded-md px-2 py-1.5 text-[13px] font-medium transition-colors cursor-pointer",
+                  aiDraftOpen
+                    ? "bg-[var(--primary)] text-white shadow-sm"
+                    : "text-[#01411C] hover:bg-green-50"
+                )}
+              >
+                <Sparkles className="w-4 h-4" />
+                <span className="hidden sm:inline">Draft with AI</span>
+              </button>
+              <Divider />
+            </>
+          )}
 
           {onToggleAutoSave && (
             <AutoSaveToggle

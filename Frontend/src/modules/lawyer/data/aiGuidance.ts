@@ -35,6 +35,10 @@ export type AiChatSessionDetail = AiChatSession & {
   messages: AiStoredMessage[];
 };
 
+// One turn passed to the case-drafting endpoint for multi-turn refinement.
+// Ephemeral (client-side only) — the drafting assistant is not persisted.
+export type AiDraftTurn = { role: AiChatRole; text: string };
+
 // The assistant's opening greeting. The real conversation starts empty — the
 // lawyer's first message is the first user turn.
 export function getInitialAiGuidanceMessages(): AiChatMessage[] {
