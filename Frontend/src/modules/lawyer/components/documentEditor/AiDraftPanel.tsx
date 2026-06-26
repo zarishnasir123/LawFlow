@@ -24,9 +24,11 @@ interface AiDraftPanelProps {
   caseId: string;
   disabled: boolean;
   disabledReason?: string;
-  // Inserts the (safe) HTML into the document at the caret. Returns false if
-  // there's nowhere to insert yet (no rendered pages).
-  onInsert: (html: string) => boolean;
+  // Insert the AI reply at the lawyer's cursor (non-destructive). Returns false
+  // if the caret isn't in the document yet (panel asks them to click in first).
+  onInsertAtCursor: (text: string) => boolean;
+  // Replace the document with the AI reply (destructive — confirmed in the panel).
+  onReplaceDocument: (text: string) => boolean;
   onClose: () => void;
 }
 
@@ -65,46 +67,6 @@ function renderRichText(text: string): ReactNode {
   );
 }
 
-function escapeHtml(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
-
-// Escape, then apply the one inline marker we allow (**bold**).
-function inline(s: string): string {
-  return escapeHtml(s).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
-}
-
-// Convert the model's plain/light-Markdown draft into a SAFE HTML subset for
-// insertion into the document: each line → its own <p> (so numbered plaint
-// paragraphs stay separate), consecutive "- "/"* " lines → a <ul>. Only <p>,
-// <strong>, <ul>, <li>, <br> ever reach the DOM.
-function draftToHtml(text: string): string {
-  const lines = text.replace(/\r\n/g, "\n").split("\n");
-  const out: string[] = [];
-  let bullets: string[] = [];
-  const flush = () => {
-    if (bullets.length) {
-      out.push(`<ul>${bullets.map((b) => `<li>${b}</li>`).join("")}</ul>`);
-      bullets = [];
-    }
-  };
-  for (const raw of lines) {
-    const line = raw.trim();
-    if (!line) {
-      flush();
-      continue;
-    }
-    if (/^[-*]\s+/.test(line)) {
-      bullets.push(inline(line.replace(/^[-*]\s+/, "")));
-      continue;
-    }
-    flush();
-    out.push(`<p>${inline(line)}</p>`);
-  }
-  flush();
-  return out.join("") || `<p>${inline(text.trim())}</p>`;
-}
-
 function extractErrorMessage(err: unknown): string {
   const data = axios.isAxiosError(err)
     ? (err.response?.data as { message?: string; errors?: { msg?: string }[] } | undefined)
@@ -124,12 +86,16 @@ export default function AiDraftPanel({
   caseId,
   disabled,
   disabledReason,
-  onInsert,
+  onInsertAtCursor,
+  onReplaceDocument,
   onClose,
 }: AiDraftPanelProps) {
   const [messages, setMessages] = useState<AiChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  // Which AI reply is mid "Replace document?" confirmation.
+  const [replaceConfirmId, setReplaceConfirmId] = useState<string | null>(null);
+  // Which AI reply showed the "click in the document first" insert hint.
   const [insertNoticeId, setInsertNoticeId] = useState<string | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
 
@@ -195,12 +161,12 @@ export default function AiDraftPanel({
     sendMutation.mutate({ instruction, history });
   };
 
-  // One-click: draft the COMPLETE plaint. Uses whatever points the lawyer has
-  // typed (or the case details on file if the box is empty).
+  // One-click: draft the COMPLETE plaint from the lawyer's typed facts. Requires
+  // facts (the button is disabled until the box has text) so it never echoes the
+  // blank template.
   const sendFullCase = () => {
-    if (sending || disabled) return;
     const story = input.trim();
-    const instruction = story || "Draft the complete case using the case details on file.";
+    if (!story || sending || disabled) return;
     const history: AiDraftTurn[] = messages
       .filter((m) => m.kind !== "error")
       .slice(-HISTORY_LIMIT)
@@ -211,13 +177,13 @@ export default function AiDraftPanel({
       {
         id: `u-${Date.now()}`,
         role: "user",
-        text: story ? `Draft the entire case from these points:\n${story}` : "Draft the entire case",
+        text: `Draft the entire case from these points:\n${story}`,
         time: formatDate(new Date(), "time"),
         kind: "message",
       },
     ]);
     setInput("");
-    sendMutation.mutate({ instruction, history, mode: "full_case" });
+    sendMutation.mutate({ instruction: story, history, mode: "full_case" });
   };
 
   const copy = async (m: AiChatMessage) => {
@@ -230,12 +196,20 @@ export default function AiDraftPanel({
     }
   };
 
-  const insert = (m: AiChatMessage) => {
-    const ok = onInsert(draftToHtml(m.text));
+  // Insert this AI reply at the lawyer's cursor (non-destructive). If the caret
+  // isn't in the document, show the "click in the document first" hint.
+  const insertAtCursor = (m: AiChatMessage) => {
+    const ok = onInsertAtCursor(m.text);
     if (!ok) {
       setInsertNoticeId(m.id);
-      setTimeout(() => setInsertNoticeId((cur) => (cur === m.id ? null : cur)), 3000);
+      setTimeout(() => setInsertNoticeId((cur) => (cur === m.id ? null : cur)), 3500);
     }
+  };
+
+  // Replace the document with this AI reply (confirmed via `replaceConfirmId`).
+  const replaceDocument = (m: AiChatMessage) => {
+    onReplaceDocument(m.text);
+    setReplaceConfirmId(null);
   };
 
   const canSend = !!input.trim() && !sending && !disabled;
@@ -278,18 +252,23 @@ export default function AiDraftPanel({
               Draft your case from a few points
             </h3>
             <p className="mt-1 text-xs text-gray-500">
-              Paste the client's story in points and I'll turn it into court-ready text —
-              draft, paraphrase, expand, or summarize. Review, then Copy or Insert.
+              Type the client's story in points below, then I'll turn it into court-ready
+              text. Review it, then Copy it, insert it at your cursor, or replace the document.
             </p>
 
             <button
               type="button"
-              disabled={disabled || sending}
+              disabled={disabled || sending || !input.trim()}
               onClick={sendFullCase}
               className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-[#01411C] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#013317] disabled:cursor-not-allowed disabled:opacity-50"
             >
               <FileText className="h-4 w-4" /> Draft the entire case
             </button>
+            {!input.trim() && (
+              <p className="mt-1.5 text-[11px] text-gray-400">
+                Type the case facts below first, then draft the whole case.
+              </p>
+            )}
             <p className="mt-3 text-[11px] font-medium uppercase tracking-wide text-gray-400">
               or draft part by part
             </p>
@@ -357,17 +336,52 @@ export default function AiDraftPanel({
                             </>
                           )}
                         </button>
+                        {/* Insert at cursor — non-destructive, the safe default */}
                         <button
                           type="button"
-                          onClick={() => insert(m)}
+                          onClick={() => insertAtCursor(m)}
                           disabled={disabled}
+                          title="Insert at your cursor in the document (keeps everything else)"
                           className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[11px] font-medium text-[#01411C] transition hover:bg-green-50 disabled:cursor-not-allowed disabled:opacity-50"
                         >
                           <ClipboardCopy className="h-3.5 w-3.5" /> Insert at cursor
                         </button>
+
+                        {/* Replace document — destructive, two-step confirm */}
+                        {replaceConfirmId === m.id ? (
+                          <span className="inline-flex items-center gap-1 text-[11px]">
+                            <span className="font-medium text-rose-600">Replace whole document?</span>
+                            <button
+                              type="button"
+                              onClick={() => replaceDocument(m)}
+                              disabled={disabled}
+                              className="rounded-md bg-rose-600 px-2 py-1 font-semibold text-white transition hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              Replace
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setReplaceConfirmId(null)}
+                              className="rounded-md px-2 py-1 font-medium text-gray-500 transition hover:bg-gray-100"
+                            >
+                              Cancel
+                            </button>
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setReplaceConfirmId(m.id)}
+                            disabled={disabled}
+                            title="Replace the entire document with this draft (destructive)"
+                            className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[11px] font-medium text-gray-500 transition hover:bg-gray-100 hover:text-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            <FileText className="h-3.5 w-3.5" /> Replace document
+                          </button>
+                        )}
+
                         {insertNoticeId === m.id && (
-                          <span className="text-[11px] text-amber-600">
-                            Click in the document first, then Insert.
+                          <span className="w-full text-[11px] text-amber-600">
+                            Click where you want it in the document, then Insert.
                           </span>
                         )}
                       </div>
@@ -404,8 +418,9 @@ export default function AiDraftPanel({
         {!showHero && (
           <button
             type="button"
-            disabled={disabled || sending}
+            disabled={disabled || sending || !input.trim()}
             onClick={sendFullCase}
+            title={!input.trim() ? "Type the case facts first" : "Draft the whole case"}
             className="mb-2 inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-[#01411C]/30 bg-green-50/60 px-3 py-2 text-xs font-semibold text-[#01411C] transition hover:bg-green-50 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <FileText className="h-3.5 w-3.5" /> Draft the entire case

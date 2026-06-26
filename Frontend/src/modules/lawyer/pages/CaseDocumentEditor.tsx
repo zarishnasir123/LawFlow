@@ -47,13 +47,55 @@ const isApiPath = (url: string) => url.startsWith("/cases/") || url.startsWith("
 // in-place replacement — escape everything, then **bold**→<strong>, blank lines
 // →<br><br>, single newlines→<br>. No <p>/<ul>, so the surrounding block (e.g. a
 // numbered plaint paragraph) keeps its structure.
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
 function inlineHtmlFromAiText(text: string): string {
-  const esc = (s: string) =>
-    s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  return esc(text.trim())
+  return escapeHtml(text.trim())
     .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
     .replace(/\n{2,}/g, "<br><br>")
     .replace(/\n/g, "<br>");
+}
+
+// Convert the model's text into a SAFE BLOCK HTML subset for replacing a whole
+// section / the whole document — each non-empty line → its own <p> (so numbered
+// plaint paragraphs stay separate), consecutive "- "/"* " lines → a <ul>,
+// **bold**→<strong>. Only <p>/<strong>/<ul>/<li> ever reach the DOM.
+// The top-level block (a direct child of the page section) that holds a node.
+function topBlockIn(node: Node, page: HTMLElement): Node | null {
+  let b: Node | null = node;
+  while (b && b.parentNode && b.parentNode !== page) b = b.parentNode;
+  return b && b.parentNode === page ? b : null;
+}
+
+function blockHtmlFromAiText(text: string): string {
+  const inline = (s: string) =>
+    escapeHtml(s).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+  const lines = text.replace(/\r\n/g, "\n").split("\n");
+  const out: string[] = [];
+  let bullets: string[] = [];
+  const flush = () => {
+    if (bullets.length) {
+      out.push(`<ul>${bullets.map((b) => `<li>${b}</li>`).join("")}</ul>`);
+      bullets = [];
+    }
+  };
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line) {
+      flush();
+      continue;
+    }
+    if (/^[-*]\s+/.test(line)) {
+      bullets.push(inline(line.replace(/^[-*]\s+/, "")));
+      continue;
+    }
+    flush();
+    out.push(`<p>${inline(line)}</p>`);
+  }
+  flush();
+  return out.join("") || `<p>${inline(text.trim())}</p>`;
 }
 
 // Persisted preference for the Word-style AutoSave toggle. Default on.
@@ -77,7 +119,6 @@ export default function CaseDocumentEditor() {
     activeEditorRef,
     documentsById,
     saveDocumentJSON,
-    getDocumentJSON,
     setLoading,
     isLoading,
     saveDraft,
@@ -430,7 +471,7 @@ export default function CaseDocumentEditor() {
         setLoading(false);
       }
     },
-    [getDocumentJSON, documentsById, setCurrentDocId, setLoading]
+    [documentsById, setCurrentDocId, setLoading]
   );
 
   // Auto-open the case template by default. With uploaded DOCs sitting
@@ -551,88 +592,96 @@ export default function CaseDocumentEditor() {
     persistEditedHtmlRef.current = persistEditedHtml;
   }, [persistEditedHtml]);
 
-  // --- AI drafting panel: insert generated text into the document ----------
-  // Remember the lawyer's last caret position INSIDE a rendered page, so the AI
-  // panel can insert at that spot even after focus moves to the panel.
-  const savedRangeRef = useRef<Range | null>(null);
-  useEffect(() => {
-    const onSelChange = () => {
-      const sel = window.getSelection();
-      if (!sel || sel.rangeCount === 0) return;
-      const range = sel.getRangeAt(0);
-      const inPage = renderedPages.some((p) =>
-        p.contains(range.commonAncestorContainer)
-      );
-      if (inPage) savedRangeRef.current = range.cloneRange();
-    };
-    document.addEventListener("selectionchange", onSelChange);
-    return () => document.removeEventListener("selectionchange", onSelChange);
-  }, [renderedPages]);
+  // --- AI document editing (apply whole-doc + inline selection edits) -------
+  // The page a range touches — robust to whole-page / multi-paragraph selections
+  // (where the common ancestor is the wrapper, not a page).
+  const pageOf = useCallback(
+    (range: Range): HTMLElement | undefined =>
+      renderedPages.find(
+        (p) =>
+          p.contains(range.startContainer) ||
+          p.contains(range.endContainer) ||
+          range.intersectsNode(p)
+      ),
+    [renderedPages]
+  );
 
-  // Insert AI-generated HTML (a safe <p>/<ul> subset) into the document at the
-  // saved caret, or append to the active/last page as a fallback. Triggers the
-  // existing save path so it persists. Returns false only if no pages exist yet.
-  const insertAiHtml = useCallback(
-    (html: string): boolean => {
-      if (renderedPages.length === 0) return false;
-
-      const frag = document.createRange().createContextualFragment(html);
-      const lastNode = frag.lastChild; // keep a handle before frag empties on insert
-      const range = savedRangeRef.current;
-      const caretPage =
-        range &&
-        renderedPages.find((p) => p.contains(range.commonAncestorContainer));
-
+  // Apply an AI change UNDOABLY: focus the page, set the selection to `range`,
+  // then insert via document.execCommand("insertHTML") so the edit lands on the
+  // browser's native undo stack (Ctrl+Z works), exactly like the toolbar's Bold.
+  // The HTML carries an `.ai-edited-flash` wrapper for the green after-effect; we
+  // deliberately DON'T unwrap it afterward (that post-edit mutation would corrupt
+  // the undo stack) — it's transparent once the animation ends, stripped from
+  // every save, and gone on reload. execCommand replaces whatever `range` selects
+  // (a caret → insert; a selection / whole page → replace).
+  const applyAiHtmlUndoable = useCallback(
+    (page: HTMLElement, range: Range, html: string): boolean => {
       try {
-        if (range && caretPage) {
-          // Insert AFTER the caret's TOP-LEVEL block (a direct child of the
-          // page section) so AI paragraphs land as new sibling blocks rather
-          // than nested inside the current <p>.
-          let block: Node | null = range.startContainer;
-          if (block === caretPage) {
-            caretPage.appendChild(frag);
-          } else {
-            while (block && block.parentNode && block.parentNode !== caretPage) {
-              block = block.parentNode;
-            }
-            if (block && block.parentNode === caretPage && block instanceof Element) {
-              block.after(frag);
-            } else {
-              caretPage.appendChild(frag);
-            }
-          }
-        } else {
-          // No saved caret: append to the focused page, else the last page.
-          const activePage = renderedPages.find(
-            (p) => p === document.activeElement?.closest?.("section.docx")
-          );
-          (activePage ?? renderedPages[renderedPages.length - 1]).appendChild(frag);
+        page.focus({ preventScroll: true });
+        const sel = window.getSelection();
+        if (!sel) return false;
+        sel.removeAllRanges();
+        sel.addRange(range);
+        const ok = document.execCommand("insertHTML", false, html);
+        if (!ok) {
+          // Rare fallback (not undoable): manual replace.
+          range.deleteContents();
+          range.insertNode(document.createRange().createContextualFragment(html));
         }
       } catch {
-        // Saved range went stale (e.g. its block was deleted) — append safely.
-        renderedPages[renderedPages.length - 1].appendChild(frag);
+        return false;
       }
-
-      // Move the caret just after the inserted content for continued typing.
-      if (lastNode && lastNode.isConnected) {
-        const sel = window.getSelection();
-        const after = document.createRange();
-        after.setStartAfter(lastNode);
-        after.collapse(true);
-        sel?.removeAllRanges();
-        sel?.addRange(after);
-        savedRangeRef.current = after.cloneRange();
-      }
-
-      // Persist via the existing save path: fire a bubbling input event (so the
-      // autosave loop reacts when on) AND call the saver directly (so it
-      // persists even with AutoSave off). buildEditorSnapshot reads the same
-      // live DOM we just mutated, so the insert is captured automatically.
-      renderedPages[0].dispatchEvent(new Event("input", { bubbles: true }));
       void persistEditedHtmlRef.current();
       return true;
     },
-    [renderedPages]
+    []
+  );
+
+  const flashBlock = (text: string) =>
+    `<div class="ai-edited-flash">${blockHtmlFromAiText(text)}</div>`;
+
+  // Track the lawyer's last caret/selection INSIDE a page, so "Insert at cursor"
+  // knows where to drop the AI text even after focus moves to the panel.
+  const savedCaretRef = useRef<Range | null>(null);
+  useEffect(() => {
+    const onSel = () => {
+      const sel = window.getSelection();
+      if (!sel || sel.rangeCount === 0) return;
+      const range = sel.getRangeAt(0);
+      if (pageOf(range)) savedCaretRef.current = range.cloneRange();
+    };
+    document.addEventListener("selectionchange", onSel);
+    return () => document.removeEventListener("selectionchange", onSel);
+  }, [pageOf]);
+
+  // "Insert at cursor" — NON-destructive: drop the AI draft in at the caret,
+  // preserving the heading, the rest of the page, the other pages, and the
+  // sidebar. Returns false if the caret isn't in the document (the panel then
+  // asks the lawyer to click into it first).
+  const insertAiAtCursor = useCallback(
+    (text: string): boolean => {
+      const saved = savedCaretRef.current;
+      const page = saved ? pageOf(saved) : undefined;
+      if (!saved || !page) return false;
+      const range = saved.cloneRange();
+      range.collapse(false); // insert at the caret (end of any selection)
+      return applyAiHtmlUndoable(page, range, flashBlock(text));
+    },
+    [pageOf, applyAiHtmlUndoable]
+  );
+
+  // "Replace document" — DESTRUCTIVE: replace the first page's whole content with
+  // the AI draft (wipes that page's structure + its sidebar title), so it's
+  // confirmed in the panel and meant for generating from scratch. Still undoable.
+  const replaceDocumentWithAi = useCallback(
+    (text: string): boolean => {
+      const page = renderedPages[0];
+      if (!page) return false;
+      const range = document.createRange();
+      range.selectNodeContents(page);
+      return applyAiHtmlUndoable(page, range, flashBlock(text));
+    },
+    [renderedPages, applyAiHtmlUndoable]
   );
 
   // --- Inline "select → Ask AI → rewrite in place" -------------------------
@@ -646,9 +695,9 @@ export default function CaseDocumentEditor() {
       const sel = window.getSelection();
       if (!sel || sel.rangeCount === 0) return;
       const range = sel.getRangeAt(0);
-      const inPage = renderedPages.some((p) =>
-        p.contains(range.commonAncestorContainer)
-      );
+      // Robust: a page that the selection touches (works for whole-page /
+      // multi-paragraph selections, where the common ancestor is the wrapper).
+      const inPage = Boolean(pageOf(range));
       // Selection outside any page (e.g. the lawyer clicked into the popover
       // input or the toolbar) — leave the current box as-is.
       if (!inPage) return;
@@ -672,54 +721,31 @@ export default function CaseDocumentEditor() {
       document.removeEventListener("mouseup", onSelectEnd);
       document.removeEventListener("keyup", onSelectEnd);
     };
-  }, [renderedPages, isCaseEditable]);
+  }, [pageOf, isCaseEditable]);
 
-  // Replace the saved selection with the AI's edited text, wrapped in a transient
-  // `.ai-edited-flash` span (the after-effect highlight that fades, then unwraps).
+  // Replace the saved selection with the AI's edited text (undoable). INLINE
+  // replacement when the selection sits in one block (a sentence stays in its
+  // paragraph), BLOCK replacement when it spans blocks / a whole page. The
+  // `.ai-edited-flash` wrapper gives the green after-effect.
   const replaceSelectionWithAiText = useCallback(
     (text: string): boolean => {
       const range = inlineEditRangeRef.current;
       if (!range) return false;
-      const page = renderedPages.find((p) =>
-        p.contains(range.commonAncestorContainer)
-      );
+      const page = pageOf(range);
       if (!page) return false;
 
-      try {
-        range.deleteContents();
-        const flash = document.createElement("span");
-        flash.className = "ai-edited-flash";
-        flash.appendChild(
-          document.createRange().createContextualFragment(inlineHtmlFromAiText(text))
-        );
-        range.insertNode(flash);
+      const startBlock = topBlockIn(range.startContainer, page);
+      const endBlock = topBlockIn(range.endContainer, page);
+      const sameBlock = startBlock && startBlock === endBlock;
+      const html = sameBlock
+        ? `<span class="ai-edited-flash">${inlineHtmlFromAiText(text)}</span>`
+        : flashBlock(text);
 
-        // Caret just after the edited region.
-        const sel = window.getSelection();
-        const after = document.createRange();
-        after.setStartAfter(flash);
-        after.collapse(true);
-        sel?.removeAllRanges();
-        sel?.addRange(after);
-
-        // After the fade animation, unwrap the flash span so the DOM is clean.
-        // (Saves are already clean — buildEditorSnapshot strips it defensively.)
-        window.setTimeout(() => {
-          if (flash.parentNode) {
-            while (flash.firstChild) flash.parentNode.insertBefore(flash.firstChild, flash);
-            flash.remove();
-          }
-        }, 1800);
-      } catch {
-        return false;
-      }
-
+      const ok = applyAiHtmlUndoable(page, range.cloneRange(), html);
       inlineEditRangeRef.current = null;
-      page.dispatchEvent(new Event("input", { bubbles: true }));
-      void persistEditedHtmlRef.current();
-      return true;
+      return ok;
     },
-    [renderedPages]
+    [pageOf, applyAiHtmlUndoable]
   );
 
   // Last-chance save before the page unloads. fetch({ keepalive: true })
@@ -1165,7 +1191,8 @@ export default function CaseDocumentEditor() {
                 ? "This case is locked and can no longer be edited."
                 : undefined
             }
-            onInsert={insertAiHtml}
+            onInsertAtCursor={insertAiAtCursor}
+            onReplaceDocument={replaceDocumentWithAi}
             onClose={() => setIsDraftPanelOpen(false)}
           />
         </div>

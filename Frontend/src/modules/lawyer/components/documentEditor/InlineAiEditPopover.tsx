@@ -59,14 +59,15 @@ export default function InlineAiEditPopover({
   const pending = editMutation.isPending;
 
   // Position computed from the selection rect during render (no measuring, so no
-  // setState-in-effect): clamp horizontally, and place ABOVE the selection via a
-  // translateY(-100%) — flipping BELOW only when the selection is too near the top.
-  const EST_HEIGHT = 180;
+  // setState-in-effect). Prefer just above the selection; if there isn't room
+  // above, go below — and ALWAYS clamp into the viewport so a tall (whole-page)
+  // selection never pushes the box off-screen.
+  const EST_HEIGHT = 200;
   const left = Math.max(8, Math.min(anchor.left, window.innerWidth - WIDTH - 8));
-  const placeBelow = anchor.top < EST_HEIGHT + 16;
-  const positionStyle = placeBelow
-    ? { top: anchor.bottom + 8, left, width: WIDTH }
-    : { top: anchor.top - 8, left, width: WIDTH, transform: "translateY(-100%)" };
+  const preferredTop =
+    anchor.top >= EST_HEIGHT + 16 ? anchor.top - 8 - EST_HEIGHT : anchor.bottom + 8;
+  const top = Math.max(8, Math.min(preferredTop, window.innerHeight - EST_HEIGHT - 8));
+  const positionStyle = { top, left, width: WIDTH };
 
   // Focus the input on open.
   useEffect(() => {
