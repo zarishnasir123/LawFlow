@@ -155,8 +155,22 @@ OUTPUT RULES (important):
 - ALWAYS produce grammatically correct, correctly spelled, and well-formatted text — fix any errors in the input, never introduce new ones.
 - Use numbered paragraphs for plaint-body sections, as the convention requires.
 - Plain prose with light Markdown only: **bold** for headings/emphasis and "- " for bullets. No tables, no HTML.
-- Write in clear, formal legal English for a Pakistani lower court. Keep the lawyer's facts; do NOT fabricate names, dates, or amounts the lawyer did not provide — where a specific detail is missing, leave a clear placeholder like [insert date].
-- This is drafting help for a qualified lawyer to review and verify, not a final legal opinion.`;
+- Write in clear, formal legal English for a Pakistani lower court. Keep the lawyer's facts; do NOT fabricate names, dates, or amounts the lawyer did not provide.
+- Be SUBSTANTIVE and SPECIFIC: each numbered paragraph makes ONE clear factual or legal point grounded in the lawyer's actual facts. Avoid vague filler ("made her life miserable", "mental torture", "treated her very bad") with no concrete detail — state what happened, when, and its legal consequence.
+- COMMIT to the facts the lawyer gives. Only use a [placeholder] when a genuinely needed detail is missing (e.g. an exact date the lawyer didn't state) — do NOT pepper the draft with placeholders for details already provided.
+- Open plaint-body paragraphs in the conventional Pakistani style ("That the plaintiff…", "That on account of…").
+- This is drafting help for a qualified lawyer to review and verify, not a final legal opinion.
+
+WORKED EXAMPLE — match this quality, specificity and style:
+Lawyer's points: "wife Ayesha married Bilal March 2019 Lahore, haq mehar 500000 mostly unpaid, husband cruel beats her no maintenance, she left June 2023, reconciliation failed, wants khula"
+Good FACTS output:
+1. That the plaintiff, Mst. Ayesha Bibi, was lawfully married to the defendant, Bilal Ahmed, in March 2019 at Lahore in accordance with Islamic rites, and the marriage was duly consummated.
+2. That at the time of Nikah the dower (Haq Mehar) was fixed at Rs. 500,000/-, the major portion whereof remains unpaid by the defendant to date despite repeated demands.
+3. That soon after the marriage the defendant began subjecting the plaintiff to physical and mental cruelty, including beating her, and wilfully failed to provide her maintenance.
+4. That on account of the defendant's continued cruelty and neglect, the plaintiff was constrained to leave the matrimonial home in June 2023 and has since resided separately.
+5. That all efforts at reconciliation have failed and the plaintiff has developed a fixed aversion towards the defendant, making it impossible for the parties to live together within the limits prescribed by Almighty Allah.
+Good PRAYER output:
+It is, therefore, most respectfully prayed that this Hon'ble Court may be pleased to dissolve the marriage between the plaintiff and the defendant by way of Khula, along with any other relief this Hon'ble Court deems just and proper.`;
 
 // Directive for the inline "edit this selection" action: the lawyer highlighted
 // some text in the document and gave an instruction (e.g. "fix grammar", "make
@@ -217,14 +231,16 @@ function buildFullCaseDirective(caseCtx) {
   }
   return [
     "=== TASK: DRAFT THE COMPLETE CASE ===",
-    "Draft the ENTIRE plaint for this case in one go, using the facts the lawyer provides below. Produce ALL of the following sections, in order, each under a clear **bold heading**, using numbered paragraphs where appropriate:",
+    "Write a COMPLETE, fresh plaint for this case from the facts the lawyer provides below. Do NOT copy or echo any template/placeholder wording — generate the real document. Produce ALL of the following sections, in order, each under a clear **bold heading**, using numbered paragraphs where appropriate:",
     sections.join("\n"),
-    "Where a specific detail is missing, leave a clear [placeholder]. Do not omit any section."
+    "Where a specific detail is genuinely missing, leave a clear [placeholder]. Do not omit any section."
   ].join("\n");
 }
 
-// Labeled context block so the model drafts for THIS specific case.
-function buildCaseContextBlock(caseCtx) {
+// Labeled context block so the model drafts for THIS specific case. `includeDoc`
+// is false for full-case generation — feeding the blank template back as
+// "current document" made the model parrot the skeleton instead of writing fresh.
+function buildCaseContextBlock(caseCtx, includeDoc = true) {
   const lines = [
     "=== CURRENT CASE CONTEXT ===",
     `Case type: ${caseCtx.caseTypeName || "—"}${caseCtx.caseCategory ? ` (${caseCtx.caseCategory})` : ""}`,
@@ -236,11 +252,13 @@ function buildCaseContextBlock(caseCtx) {
   if (caseCtx.description && caseCtx.description.trim()) {
     lines.push(`Case overview: ${caseCtx.description.trim()}`);
   }
-  const docText = htmlToPlainText(caseCtx.editedHtml);
-  if (docText) {
-    lines.push(
-      `Current document (excerpt, for reference):\n${docText.slice(0, DRAFT_MAX_DOC_CONTEXT_CHARS)}`
-    );
+  if (includeDoc) {
+    const docText = htmlToPlainText(caseCtx.editedHtml);
+    if (docText) {
+      lines.push(
+        `Current document (excerpt, for reference):\n${docText.slice(0, DRAFT_MAX_DOC_CONTEXT_CHARS)}`
+      );
+    }
   }
   return lines.join("\n");
 }
@@ -263,7 +281,9 @@ export async function draftCaseContent({
 
   const fullCase = mode === "full_case";
   const editSelection = mode === "edit_selection";
-  const contextBlock = buildCaseContextBlock(caseCtx);
+  // For full-case generation, drop the current-document excerpt so the model
+  // writes a fresh plaint instead of echoing the blank template skeleton.
+  const contextBlock = buildCaseContextBlock(caseCtx, !fullCase);
   const userText = [
     contextBlock,
     fullCase ? buildFullCaseDirective(caseCtx) : "",
@@ -284,13 +304,27 @@ export async function draftCaseContent({
   const raw = await generate({
     systemInstruction: DRAFTING_SYSTEM_INSTRUCTION,
     messages,
-    temperature: editSelection ? 0.3 : 0.5, // tighter for in-place edits
+    temperature: editSelection ? 0.3 : 0.35, // lower = more consistent, less rambling
     maxOutputTokens: fullCase ? 4096 : 2048
   });
 
-  // Defensive: strip any stray "[[FOLLOWUPS]]" trailer the model may add by habit.
-  const draft = raw.split("[[FOLLOWUPS]]")[0].trim();
-  return { draft };
+  return { draft: cleanDraftOutput(raw) };
+}
+
+// Tidy the model's raw output so it drops straight into the document: strip a
+// stray "[[FOLLOWUPS]]" trailer, a leading "Here is…:"/"Revised:"/"Sure…:" label,
+// and a single pair of wrapping quotes/backticks the model sometimes adds.
+function cleanDraftOutput(raw) {
+  let draft = String(raw || "").split("[[FOLLOWUPS]]")[0].trim();
+  draft = draft
+    .replace(/^(here(?:'s| is)\b[^\n:]{0,60}:|revised\b[^\n:]{0,30}:|sure\b[^\n:]{0,30}:)\s*/i, "")
+    .trim();
+  const first = draft[0];
+  const last = draft[draft.length - 1];
+  if (draft.length > 1 && ((first === '"' && last === '"') || (first === "'" && last === "'") || (first === "`" && last === "`"))) {
+    draft = draft.slice(1, -1).trim();
+  }
+  return draft;
 }
 
 // Short, clean sidebar title generated from the lawyer's first message — far
