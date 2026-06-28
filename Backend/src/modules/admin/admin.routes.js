@@ -7,6 +7,7 @@ import {
   getMoneyOverviewHandler,
   getPayoutReceiptHandler,
   getRecentActivityHandler,
+  getStatisticsHandler,
   listAdminCasesHandler,
   listPayoutsHandler,
   markPayoutPaidHandler,
@@ -29,7 +30,8 @@ import {
   updateCommissionRateValidator,
   updatePayoutValidator,
   caseTypeIdParamValidator,
-  createCaseTypeValidator
+  createCaseTypeValidator,
+  statisticsValidator
 } from "./admin.validators.js";
 import { asyncHandler } from "../../middleware/asyncHandler.js";
 import { authenticate } from "../../middleware/authenticate.js";
@@ -46,6 +48,12 @@ router.use(authenticate, authorizeRoles("admin"));
 
 router.get("/dashboard-stats", asyncHandler(getDashboardStatsHandler));
 router.get("/recent-activity", asyncHandler(getRecentActivityHandler));
+router.get(
+  "/statistics",
+  statisticsValidator,
+  validateRequest,
+  asyncHandler(getStatisticsHandler)
+);
 
 // Case traceability (admin-only, gated by the router.use above).
 router.get(

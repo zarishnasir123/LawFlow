@@ -1,7 +1,8 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import * as XLSX from "xlsx";
 import {
   Activity,
-  BarChart3,
   Download,
   FileText,
   TrendingUp,
@@ -27,8 +28,12 @@ import {
 } from "recharts";
 
 import StatusToast from "../components/modals/StatusToast";
-import { systemStatisticsByRange } from "../data/systemStatistics.mock";
-import type { StatisticsMetricTone, StatisticsRange } from "../types";
+import { getStatistics } from "../api/statistics";
+import type {
+  AdminStatisticsSnapshot,
+  StatisticsMetricTone,
+  StatisticsRange,
+} from "../types";
 
 const metricToneStyles: Record<
   StatisticsMetricTone,
@@ -73,38 +78,135 @@ const rangeOptions: Array<{ value: StatisticsRange; label: string }> = [
 
 const formatCurrency = (value: number) => `Rs${(value / 1000).toFixed(0)}k`;
 
+// Rendered while the real snapshot loads: dash placeholders on the cards (same
+// "—" convention as the admin Dashboard) and empty charts.
+const EMPTY_SNAPSHOT: AdminStatisticsSnapshot = {
+  rangeLabel: "—",
+  metrics: [
+    { id: "users", title: "Total Users", value: "—", change: "—", tone: "blue" },
+    { id: "cases", title: "Total Cases", value: "—", change: "—", tone: "violet" },
+    { id: "revenue", title: "Revenue", value: "—", change: "—", tone: "emerald" },
+    { id: "active", title: "Active Today", value: "—", change: "—", tone: "orange" },
+  ],
+  userRegistrationTrend: [],
+  caseTypeDistribution: [],
+  userTypeDistribution: [],
+  monthlyRevenue: [],
+  verificationStatus: [],
+  caseStatusDistribution: [],
+  dailyActiveUsers: [],
+  registrarPerformance: [],
+  summaryStats: [],
+};
+
+// --- Excel (.xlsx) export -----------------------------------------------------
+// Builds a real multi-sheet workbook from the snapshot. aoa_to_sheet lets each
+// sheet hold heterogeneous sections (title rows + tables).
+type XlsxRow = Array<string | number>;
+function buildStatisticsWorkbook(snap: AdminStatisticsSnapshot): XLSX.WorkBook {
+  const wb = XLSX.utils.book_new();
+  const addSheet = (name: string, rows: XlsxRow[]) =>
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), name);
+
+  addSheet("Overview", [
+    ["LawFlow — System Statistics"],
+    ["Range", snap.rangeLabel],
+    ["Exported", new Date().toISOString()],
+    [],
+    ["Key Metrics"],
+    ["Metric", "Value", "Change"],
+    ...snap.metrics.map((m): XlsxRow => [m.title, m.value, m.change]),
+    [],
+    ["Summary"],
+    ["Statistic", "Value"],
+    ...snap.summaryStats.map((s): XlsxRow => [s.label, s.value]),
+  ]);
+
+  addSheet("Registrations", [
+    ["Period", "Clients", "Lawyers", "Total"],
+    ...snap.userRegistrationTrend.map((p): XlsxRow => [p.label, p.clients, p.lawyers, p.total]),
+  ]);
+
+  addSheet("Revenue", [
+    ["Period", "Revenue (Rs)"],
+    ...snap.monthlyRevenue.map((p): XlsxRow => [p.label, p.revenue]),
+  ]);
+
+  addSheet("Distributions", [
+    ["User Type", "Count"],
+    ...snap.userTypeDistribution.map((d): XlsxRow => [d.name, d.value]),
+    [],
+    ["Case Type", "Count"],
+    ...snap.caseTypeDistribution.map((d): XlsxRow => [d.name, d.value]),
+    [],
+    ["Case Status", "Count"],
+    ...snap.caseStatusDistribution.map((d): XlsxRow => [d.name, d.value]),
+    [],
+    ["Lawyer Verification", "Lawyers"],
+    ...snap.verificationStatus.map((v): XlsxRow => [v.status, v.lawyers]),
+  ]);
+
+  addSheet("Active Users", [
+    ["Day", "Active Users"],
+    ...snap.dailyActiveUsers.map((d): XlsxRow => [d.day, d.users]),
+  ]);
+
+  addSheet("Registrars", [
+    ["Registrar", "Tehsil", "Processed", "Approved", "Returned"],
+    ...snap.registrarPerformance.map((r): XlsxRow => [r.name, r.tehsil, r.processed, r.approved, r.returned]),
+  ]);
+
+  return wb;
+}
+
+// Two-line X-axis tick for Registrar Performance: registrar name on top, their
+// assigned tehsil beneath (muted). Avoids the truncation that long angled
+// "Name — Tehsil" single-line labels caused.
+type AxisTickProps = {
+  x?: number;
+  y?: number;
+  payload?: { value?: string };
+};
+function RegistrarTick({ x = 0, y = 0, payload }: AxisTickProps) {
+  const [name, tehsil] = String(payload?.value ?? "").split("\n");
+  return (
+    <g transform={`translate(${x},${y})`}>
+      <text x={0} dy={14} textAnchor="middle" fontSize={11} fontWeight={600} fill="#374151">
+        {name}
+      </text>
+      {tehsil ? (
+        <text x={0} dy={29} textAnchor="middle" fontSize={10} fill="#6b7280">
+          {tehsil}
+        </text>
+      ) : null}
+    </g>
+  );
+}
+
 export default function AdminStatisticPage() {
   const [toastOpen, setToastOpen] = useState(false);
   const [selectedRange, setSelectedRange] = useState<StatisticsRange>("month");
 
-  const snapshot = useMemo(
-    () => systemStatisticsByRange[selectedRange],
-    [selectedRange],
-  );
+  const { data } = useQuery({
+    queryKey: ["admin", "statistics", selectedRange],
+    queryFn: () => getStatistics(selectedRange),
+    staleTime: 1000 * 30,
+  });
+  const snapshot = data ?? EMPTY_SNAPSHOT;
 
-  const handlePublishStatisticsUpdate = () => {
-    setToastOpen(true);
-  };
+  // Registrars are assigned per tehsil (court jurisdiction) — surface it on the
+  // performance chart's axis so each bar group reads as "who, for which tehsil".
+  const registrarChartData = snapshot.registrarPerformance.map((r) => ({
+    ...r,
+    // "\n" splits the registrar name (line 1) from the tehsil (line 2) in the
+    // custom two-line axis tick below.
+    label: r.tehsil ? `${r.name}\n${r.tehsil}` : r.name,
+  }));
 
   const handleExportReport = () => {
-    const report = {
-      range: snapshot.rangeLabel,
-      exportedAt: new Date().toISOString(),
-      metrics: snapshot.metrics,
-      summary: snapshot.summaryStats,
-    };
-    const blob = new Blob([JSON.stringify(report, null, 2)], {
-      type: "application/json",
-    });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `admin-system-statistics-${selectedRange}.json`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-
+    if (!data) return;
+    const wb = buildStatisticsWorkbook(data);
+    XLSX.writeFile(wb, `lawflow-statistics-${selectedRange}.xlsx`);
     setToastOpen(true);
   };
 
@@ -113,8 +215,8 @@ export default function AdminStatisticPage() {
       <StatusToast
         open={toastOpen}
         type="success"
-        title="Statistics action completed"
-        message="Notifications have been updated and report action was completed."
+        title="Report exported"
+        message="The statistics report has been downloaded as an Excel file (.xlsx)."
         onClose={() => setToastOpen(false)}
       />
 
@@ -130,16 +232,9 @@ export default function AdminStatisticPage() {
               <div className="flex flex-wrap gap-3">
                 <button
                   type="button"
-                  onClick={handlePublishStatisticsUpdate}
-                  className="inline-flex items-center gap-2 rounded-lg border border-[#01411C] px-4 py-2.5 text-sm font-semibold text-[#01411C] hover:bg-green-50"
-                >
-                  <BarChart3 className="h-4 w-4" />
-                  Publish Update
-                </button>
-                <button
-                  type="button"
                   onClick={handleExportReport}
-                  className="inline-flex items-center gap-2 rounded-lg bg-[#01411C] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#025227]"
+                  disabled={!data}
+                  className="inline-flex items-center gap-2 rounded-lg bg-[#01411C] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#025227] disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <Download className="h-4 w-4" />
                   Export Report
@@ -433,9 +528,9 @@ export default function AdminStatisticPage() {
             </div>
             <div className="h-[320px]">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={snapshot.registrarPerformance}>
+                <BarChart data={registrarChartData} margin={{ bottom: 8 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                  <XAxis dataKey="name" angle={-35} textAnchor="end" height={76} />
+                  <XAxis dataKey="label" tick={<RegistrarTick />} interval={0} height={52} />
                   <YAxis />
                   <Tooltip />
                   <Legend />
