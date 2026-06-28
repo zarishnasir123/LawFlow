@@ -10,12 +10,10 @@ import {
   getSession,
   getSessions,
   patchSession,
-  postDraft,
   postLegalGuidance,
   removeSession
 } from "./ai.controller.js";
 import {
-  aiDraftValidator,
   aiGuidanceValidator,
   sessionIdParamValidator,
   sessionUpdateValidator
@@ -59,16 +57,6 @@ router.post(
   aiGuidanceValidator,
   validateRequest,
   asyncHandler(postLegalGuidance)
-);
-
-// Case-drafting helper for the document-editor AI panel. Same rate limit (every
-// call proxies to the LLM). Verifies case ownership + editability in the handler.
-router.post(
-  "/draft",
-  aiGuidanceLimiter,
-  aiDraftValidator,
-  validateRequest,
-  asyncHandler(postDraft)
 );
 
 export default router;

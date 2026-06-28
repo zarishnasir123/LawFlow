@@ -16,22 +16,6 @@
 // along with the .docx-wrapper element so the snapshot carries
 // everything the renderer set up. Viewer-side framing CSS is added
 // so the pages sit centered on a soft gray background in any iframe.
-// Serialize the live .docx-wrapper, stripping any transient `.ai-edited-flash`
-// highlight wrappers (the inline AI-edit after-effect) so they never leak into
-// the saved edited_html. We only pay the clone cost when a flash is actually
-// present — the common (no-flash) path returns the live outerHTML directly.
-function serializeWrapper(wrapper: HTMLElement): string {
-  if (!wrapper.querySelector(".ai-edited-flash")) return wrapper.outerHTML;
-  const clone = wrapper.cloneNode(true) as HTMLElement;
-  clone.querySelectorAll(".ai-edited-flash").forEach((el) => {
-    const parent = el.parentNode;
-    if (!parent) return;
-    while (el.firstChild) parent.insertBefore(el.firstChild, el);
-    parent.removeChild(el);
-  });
-  return clone.outerHTML;
-}
-
 export function buildEditorSnapshot(pages: HTMLElement[]): string {
   if (pages.length === 0) return "";
   const host =
@@ -47,7 +31,7 @@ export function buildEditorSnapshot(pages: HTMLElement[]): string {
 
   const wrapper = pages[0].closest(".docx-wrapper");
   const bodyHtml = wrapper
-    ? serializeWrapper(wrapper as HTMLElement)
+    ? wrapper.outerHTML
     : `<div class="docx-wrapper">${pages
         .map((p) => p.outerHTML)
         .join("")}</div>`;

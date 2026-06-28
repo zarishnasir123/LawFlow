@@ -2,18 +2,12 @@ import {
   askLegalGuidance,
   appendTurn,
   deleteSession,
-  draftCaseContent,
   generateSessionTitle,
   getRecentMessagesForContext,
   getSessionWithMessages,
   listSessions,
   updateSession
 } from "./ai.service.js";
-import { getCaseForLawyer } from "../cases/cases.service.js";
-import { ApiError } from "../../utils/apiError.js";
-
-// Statuses where the case document is still editable (and so draftable).
-const EDITABLE_STATUSES = new Set(["draft", "returned"]);
 
 // GET /api/ai/sessions — the lawyer's conversations for the sidebar,
 // most-recently-used first. Scoped to req.user.sub.
@@ -86,21 +80,4 @@ export async function postLegalGuidance(req, res) {
     sessionId: resolvedSessionId,
     title
   });
-}
-
-// POST /api/ai/draft — case-drafting helper used by the AI panel in the document
-// editor. Verifies the caller OWNS the case (404 otherwise) and that it's still
-// editable (409 if locked), then drafts/rewrites from the lawyer's instruction.
-// Ephemeral: nothing is persisted; `history` (recent turns) drives refinement.
-export async function postDraft(req, res) {
-  const { caseId, instruction, history, mode, selection } = req.body;
-
-  // Ownership + existence: getCaseForLawyer 404s on another lawyer's case.
-  const caseCtx = await getCaseForLawyer({ caseId, lawyerUserId: req.user.sub });
-  if (!EDITABLE_STATUSES.has(caseCtx.status)) {
-    throw new ApiError(409, "This case is locked and can no longer be drafted.");
-  }
-
-  const { draft } = await draftCaseContent({ caseCtx, instruction, history, mode, selection });
-  return res.status(200).json({ draft });
 }

@@ -365,18 +365,6 @@ export default function DocxPreviewSurface({
         .docx-preview-host .docx-wrapper > section.docx:focus-within {
           box-shadow: 0 0 0 2px var(--primary), 0 1px 3px rgba(0, 0, 0, 0.08) !important;
         }
-        /* After-effect: the region the AI just edited inline glows brand-green
-           then fades. The wrapper span is transient (removed after the animation
-           and stripped from saves), so this never persists in the document. */
-        .ai-edited-flash {
-          border-radius: 2px;
-          animation: aiEditedFlash 1.8s ease-out forwards;
-        }
-        @keyframes aiEditedFlash {
-          0%   { background-color: rgba(1, 65, 28, 0.22); box-shadow: 0 0 0 2px rgba(1, 65, 28, 0.18); }
-          60%  { background-color: rgba(1, 65, 28, 0.12); box-shadow: 0 0 0 2px rgba(1, 65, 28, 0.08); }
-          100% { background-color: transparent; box-shadow: 0 0 0 2px transparent; }
-        }
         /* Floating image — Word's "In Front of Text" positioning.
            Hovering shows a thin primary-color outline + the four
            corner resize handles. Selected (last clicked) image stays

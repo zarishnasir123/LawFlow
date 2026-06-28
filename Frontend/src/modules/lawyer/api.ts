@@ -14,7 +14,6 @@ import type {
   AiChatMessage,
   AiChatSession,
   AiChatSessionDetail,
-  AiDraftTurn,
 } from "./data/aiGuidance";
 import { formatDate } from "../../shared/utils/formatDate";
 
@@ -152,44 +151,6 @@ export async function askAiLegalGuidance(
     sessionId: data.sessionId,
     title: data.title,
   };
-}
-
-// AI case-drafting assistant (the panel inside the document editor). Distinct
-// from askAiLegalGuidance: this drafts/rewrites case content for a SPECIFIC case
-// (the backend pulls that case's context + verifies ownership). Ephemeral — pass
-// recent turns as `history` for multi-turn refinement; nothing is persisted.
-export async function draftCaseContent(
-  caseId: string,
-  instruction: string,
-  history: AiDraftTurn[] = [],
-  // "full_case" = the one-click "draft the complete case" action; omit/"section"
-  // for the normal free-prompt chat.
-  mode?: "section" | "full_case"
-): Promise<{ draft: string }> {
-  const { data } = await apiClient.post<{ draft: string }>("/ai/draft", {
-    caseId,
-    instruction,
-    history,
-    mode,
-  });
-  return { draft: data.draft };
-}
-
-// Inline "edit this selection" — the lawyer highlighted text in the document and
-// gave an instruction (e.g. "fix grammar", or one supplying a CNIC/date). Returns
-// ONLY the revised text to drop back in place of the selection.
-export async function editCaseSelection(
-  caseId: string,
-  instruction: string,
-  selection: string
-): Promise<{ draft: string }> {
-  const { data } = await apiClient.post<{ draft: string }>("/ai/draft", {
-    caseId,
-    instruction,
-    selection,
-    mode: "edit_selection",
-  });
-  return { draft: data.draft };
 }
 
 // AI conversation history (sidebar). Server state — consumed via TanStack Query.
