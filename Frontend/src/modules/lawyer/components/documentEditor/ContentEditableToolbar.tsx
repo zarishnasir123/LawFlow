@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Bold,
   Italic,
@@ -22,9 +22,14 @@ import {
   Loader2,
   Download,
   Paperclip,
+  Sparkles,
+  ChevronDown,
+  SpellCheck,
+  Scale,
 } from "lucide-react";
 import clsx from "clsx";
 import { alignSelectedImage, type ImageAlignMode } from "../../utils/floatingImage";
+import type { PolishMode } from "../../api";
 
 interface ContentEditableToolbarProps {
   // Utility actions live on the right side of the toolbar (Google Docs
@@ -38,6 +43,12 @@ interface ContentEditableToolbarProps {
   // persists. Rendered only when onToggleAutoSave is provided.
   autoSave?: boolean;
   onToggleAutoSave?: () => void;
+  // AI Language Polish. Fires with the chosen mode when the lawyer picks one
+  // from the Sparkles menu; the parent reads the current selection and runs
+  // the request. Rendered only when onPolish is provided. polishDisabled greys
+  // the menu out (case locked, or a request already in flight).
+  onPolish?: (mode: PolishMode) => void;
+  polishDisabled?: boolean;
 }
 
 interface ToolbarButtonProps {
@@ -185,6 +196,96 @@ function SaveDraftButton({ onSave }: { onSave: () => void | Promise<void> }) {
   );
 }
 
+// AI Language Polish menu: a Sparkles trigger that opens a tiny two-item
+// dropdown (fix grammar / formalize). The trigger and both items preventDefault
+// their mousedown so the lawyer's text selection survives every click in the
+// flow — the parent (CaseDocumentEditor) reads window.getSelection() the moment
+// a mode is picked. Closes on outside-click / Escape.
+function PolishMenu({
+  onPolish,
+  disabled,
+}: {
+  onPolish: (mode: PolishMode) => void;
+  disabled?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDocMouseDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", onDocMouseDown, true);
+    document.addEventListener("keydown", onKey, true);
+    return () => {
+      document.removeEventListener("mousedown", onDocMouseDown, true);
+      document.removeEventListener("keydown", onKey, true);
+    };
+  }, [open]);
+
+  const pick = (mode: PolishMode) => {
+    setOpen(false);
+    onPolish(mode);
+  };
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        type="button"
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={() => setOpen((v) => !v)}
+        disabled={disabled}
+        title="AI Refine — fix grammar or formalize the selected text"
+        className={clsx(
+          "inline-flex items-center gap-1 rounded-md px-2 py-1.5 text-[13px] font-medium transition-colors",
+          disabled
+            ? "cursor-not-allowed text-gray-400 opacity-40"
+            : "cursor-pointer text-[var(--primary)] hover:bg-[var(--primary)]/10"
+        )}
+      >
+        <Sparkles className="h-4 w-4" />
+        <span className="hidden sm:inline">AI Refine</span>
+        <ChevronDown className="h-3 w-3" />
+      </button>
+
+      {open && !disabled && (
+        <div
+          className="absolute left-0 top-full z-[60] mt-1 min-w-[232px] overflow-hidden rounded-md border border-gray-200 bg-white shadow-lg"
+          role="menu"
+        >
+          <div className="border-b border-gray-100 bg-gray-50 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-gray-400">
+            Refine selected text
+          </div>
+          <button
+            type="button"
+            role="menuitem"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => pick("grammar")}
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] text-gray-800 hover:bg-emerald-50 hover:text-emerald-800"
+          >
+            <SpellCheck className="h-4 w-4 text-emerald-600" />
+            Fix grammar &amp; spelling
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => pick("formal")}
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] text-gray-800 hover:bg-emerald-50 hover:text-emerald-800"
+          >
+            <Scale className="h-4 w-4 text-emerald-600" />
+            Formal legal English
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // Lightweight contenteditable toolbar. Uses document.execCommand which is
 // formally deprecated in the standard but is still the only one-liner that
 // applies inline formatting (bold/italic/heading/list/align) to whatever
@@ -197,6 +298,8 @@ export default function ContentEditableToolbar({
   onAddAttachment,
   autoSave,
   onToggleAutoSave,
+  onPolish,
+  polishDisabled,
 }: ContentEditableToolbarProps = {}) {
   const [activeStates, setActiveStates] = useState<Record<string, boolean>>({});
 
@@ -380,10 +483,18 @@ export default function ContentEditableToolbar({
 
       {/* Utility cluster, right-aligned. The flex-1 spacer pushes the
           remaining buttons to the right edge — Google Docs pattern of
-          formatting tools on the left, file actions on the right. */}
-      {(onToggleAutoSave || onAddAttachment || onDownload || onSaveDraft) && (
+          formatting tools on the left, file actions on the right. AI Refine
+          sits at the head of this right cluster, just before AutoSave. */}
+      {(onPolish || onToggleAutoSave || onAddAttachment || onDownload || onSaveDraft) && (
         <>
           <div className="flex-1" />
+
+          {onPolish && (
+            <PolishMenu onPolish={onPolish} disabled={polishDisabled} />
+          )}
+          {onPolish && (onToggleAutoSave || onAddAttachment || onDownload || onSaveDraft) && (
+            <Divider />
+          )}
 
           {onToggleAutoSave && (
             <AutoSaveToggle

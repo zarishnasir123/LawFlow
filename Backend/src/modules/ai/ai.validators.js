@@ -23,6 +23,30 @@ export const aiGuidanceValidator = [
     .withMessage("sessionId must be a valid UUID")
 ];
 
+// Validates the AI Language Polish request. `mode` selects the prompt;
+// `text` is the lawyer's selected prose. We deliberately do NOT .trim() `text`
+// (the service re-attaches the selection's edge whitespace), but reject a
+// whitespace-only selection, and cap the length to keep each call fast/cheap.
+export const aiPolishValidator = [
+  body("mode")
+    .isString()
+    .withMessage("mode must be text")
+    .bail()
+    .trim()
+    .isIn(["grammar", "formal"])
+    .withMessage("mode must be 'grammar' or 'formal'"),
+
+  body("text")
+    .isString()
+    .withMessage("text must be text")
+    .bail()
+    .custom((value) => value.trim().length > 0)
+    .withMessage("text is required")
+    .bail()
+    .isLength({ max: 4000 })
+    .withMessage("text must be 4000 characters or less")
+];
+
 // Session routes carry the conversation id in the URL.
 export const sessionIdParamValidator = [
   param("sessionId").isUUID().withMessage("sessionId must be a valid UUID")

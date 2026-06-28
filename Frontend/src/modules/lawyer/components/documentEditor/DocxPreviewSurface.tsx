@@ -317,6 +317,9 @@ export default function DocxPreviewSurface({
     // desk; matches Google Docs' editing canvas tone.
     <div
       className="relative h-full overflow-auto bg-[#f8f9fa] py-10"
+      // Reserve the vertical scrollbar's space at all times so the centered
+      // page doesn't jump sideways when the scrollbar appears/disappears.
+      style={{ scrollbarGutter: "stable" }}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
@@ -347,6 +350,13 @@ export default function DocxPreviewSurface({
         .docx-preview-host .docx-wrapper {
           background: transparent !important;
           padding: 0 !important;
+          /* Pin the A4 pages reliably centered. Without an explicit rule, an
+             edit that reflows the canvas can leave the centered page nudged to
+             the left. "safe center" keeps it centered when it fits and never
+             clips it off-screen if a page ever overflows the canvas width. */
+          display: flex !important;
+          flex-direction: column !important;
+          align-items: safe center !important;
         }
         .docx-preview-host .docx-wrapper > section.docx {
           /* Google Docs-style paper shadow — soft, slightly lifted */
@@ -356,6 +366,14 @@ export default function DocxPreviewSurface({
           border: none !important;
           outline: none !important;
           border-radius: 0;
+          /* Base font for the page. Text the lawyer TYPES has no run-level font
+             of its own, so without this it falls back to the app's sans-serif.
+             Pinning the page default to the templates' Times New Roman means
+             newly typed — and therefore AI-polished — text matches the document.
+             NOT !important on purpose: docx-preview's per-run inline fonts are
+             more specific and still win, so the original words keep their own
+             fonts (headings, etc.). */
+          font-family: 'Times New Roman', Times, serif;
         }
         .docx-preview-host .docx-wrapper > section.docx::before,
         .docx-preview-host .docx-wrapper > section.docx::after {

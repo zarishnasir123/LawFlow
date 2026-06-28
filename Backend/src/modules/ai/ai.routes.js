@@ -11,10 +11,12 @@ import {
   getSessions,
   patchSession,
   postLegalGuidance,
+  postPolishText,
   removeSession
 } from "./ai.controller.js";
 import {
   aiGuidanceValidator,
+  aiPolishValidator,
   sessionIdParamValidator,
   sessionUpdateValidator
 } from "./ai.validators.js";
@@ -57,6 +59,17 @@ router.post(
   aiGuidanceValidator,
   validateRequest,
   asyncHandler(postLegalGuidance)
+);
+
+// Polish a selected chunk of the lawyer's own document prose (grammar fix or
+// formal rewrite). Stateless and rate limited (same per-IP limiter as guidance,
+// since each call proxies to the LLM).
+router.post(
+  "/polish",
+  aiGuidanceLimiter,
+  aiPolishValidator,
+  validateRequest,
+  asyncHandler(postPolishText)
 );
 
 export default router;

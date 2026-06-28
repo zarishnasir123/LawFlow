@@ -6,6 +6,7 @@ import {
   getRecentMessagesForContext,
   getSessionWithMessages,
   listSessions,
+  polishText,
   updateSession
 } from "./ai.service.js";
 
@@ -80,4 +81,14 @@ export async function postLegalGuidance(req, res) {
     sessionId: resolvedSessionId,
     title
   });
+}
+
+// POST /api/ai/polish — fix the grammar/spelling of, or formally rewrite, a
+// chunk of the lawyer's own document text. Stateless: nothing is read from or
+// written to the database; `req.user` is unused beyond the route-level
+// lawyer-only gate. Returns the corrected text and whether anything changed.
+export async function postPolishText(req, res) {
+  const { mode, text } = req.body;
+  const { corrected, changed } = await polishText({ mode, text });
+  return res.status(200).json({ corrected, changed });
 }
