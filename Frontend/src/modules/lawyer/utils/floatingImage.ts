@@ -61,6 +61,23 @@ function ensurePagePositioning(page: HTMLElement) {
   }
 }
 
+// Keep a floating image fully inside its page. An image whose left/top spills
+// past the page edge widens the page's scroll area, which — combined with the
+// canvas's flex centering — yanks the whole centered page sideways. Clamping
+// also matches reality: an attachment past the page edge would be cut off in
+// the printed / compiled PDF anyway. Position-only clamp (size is bounded by
+// the resize handler), so it never fights the aspect-locked resize.
+function clampToPage(wrapper: HTMLElement) {
+  const page = wrapper.parentElement as HTMLElement | null;
+  if (!page) return;
+  const maxLeft = Math.max(0, page.clientWidth - wrapper.offsetWidth);
+  const maxTop = Math.max(0, page.clientHeight - wrapper.offsetHeight);
+  const left = Math.min(Math.max(0, parseFloat(wrapper.style.left) || 0), maxLeft);
+  const top = Math.min(Math.max(0, parseFloat(wrapper.style.top) || 0), maxTop);
+  wrapper.style.left = `${left}px`;
+  wrapper.style.top = `${top}px`;
+}
+
 // Construct the floating-image DOM atom. Layout:
 //
 //   <span class="lawflow-floating-image" contenteditable="false"
@@ -175,6 +192,7 @@ function attachInteractions(
     if (mode === "drag") {
       wrapper.style.left = `${startLeft + dx}px`;
       wrapper.style.top = `${startTop + dy}px`;
+      clampToPage(wrapper);
       return;
     }
 
@@ -191,6 +209,12 @@ function attachInteractions(
 
     const widthDelta = isEast ? dx : -dx;
     newWidth = Math.max(40, startWidth + widthDelta);
+    // Never let an attachment grow wider than the page — an overflowing image
+    // widens the canvas and shifts the centered page.
+    const resizePage = wrapper.parentElement as HTMLElement | null;
+    if (resizePage && resizePage.clientWidth > 0) {
+      newWidth = Math.min(newWidth, resizePage.clientWidth);
+    }
     const newHeight = newWidth / aspect;
 
     if (!isEast) {
@@ -211,6 +235,7 @@ function attachInteractions(
     mode = null;
     document.removeEventListener("mousemove", onMouseMove);
     document.removeEventListener("mouseup", onMouseUp);
+    clampToPage(wrapper);
     onChange?.();
   };
 
@@ -373,43 +398,22 @@ export function alignSelectedImage(mode: ImageAlignMode): boolean {
 // page, wires interactions, and returns the wrapper element so callers
 // can hold a ref if they need to.
 //
-// If an attachmentId is supplied AND a floating image with the same
-// id already exists anywhere in the docx host, we move that existing
-// wrapper to the new page + position instead of creating a duplicate.
-// This is the "drag the same attachment twice" case: lawyer expects
-// the image to relocate, not multiply.
+// Each drop of an attachment creates its OWN floating image instance — the
+// same source image can appear on multiple pages, and re-dropping one NEVER
+// removes or relocates an existing instance. (An earlier "dedup = move" rule
+// silently made an attachment disappear from one page when the lawyer dropped
+// the same attachment onto another page; the editor then diverged from the
+// compiled/printed file, which still had both.)
 export function mountFloatingImage(opts: MountOptions): HTMLSpanElement {
   ensurePagePositioning(opts.page);
 
   const host = opts.page.closest(".docx-preview-host") as HTMLElement | null;
 
-  // Dedup path — same attachment already placed somewhere? Move it.
-  if (opts.attachmentId && host) {
-    const existing = host.querySelector<HTMLSpanElement>(
-      `.${FLOATING_CLASS}[${ATTACHMENT_ID_ATTR}="${CSS.escape(opts.attachmentId)}"]`
-    );
-    if (existing) {
-      // Re-parent to the new page (handles cross-page drags) and
-      // reset position. Width/height are preserved — the user already
-      // chose them; a relocate shouldn't reset their sizing.
-      if (existing.parentElement !== opts.page) {
-        opts.page.appendChild(existing);
-      }
-      existing.style.left = `${opts.left}px`;
-      existing.style.top = `${opts.top}px`;
-      // Interactions are already wired (idempotent guard makes a
-      // re-call safe anyway), but the onChange callback may have
-      // changed across renders. Re-attach defensively — the guard
-      // will short-circuit if the same closure was already bound.
-      attachInteractions(existing, opts.onChange);
-      if (host) installSelectionClearer(host);
-      opts.onChange?.();
-      return existing;
-    }
-  }
-
   const wrapper = buildFloatingImage(opts);
   opts.page.appendChild(wrapper);
+  // Keep the freshly-dropped image inside the page (prevents the canvas from
+  // shifting the centered page when an image lands near/over an edge).
+  clampToPage(wrapper);
   attachInteractions(wrapper, opts.onChange);
 
   // Click-outside-to-deselect needs to live on the docx-preview host so

@@ -28,6 +28,7 @@ import { mountFloatingImage } from "../../lawyer/utils/floatingImage";
 import {
   applyPriorCapturesToHost,
   captureSignedPages,
+  lockDocumentForSigning,
 } from "../../lawyer/utils/capturePages";
 
 // =====================================================================
@@ -195,6 +196,11 @@ export default function ClientSignatureViewer() {
       .replace(/(^|[^.#:\w-])body\s*\{[^}]*\}/g, "$1");
     const bodyHtml = parsed.body.innerHTML;
     host.innerHTML = `${styleHtml}${bodyHtml}`;
+
+    // Read-only: the client may ONLY drop their signature — never edit the
+    // lawyer's document. Disable contenteditable on every page and neutralize
+    // the lawyer's attachment-image chrome (handles/outline).
+    lockDocumentForSigning(host);
 
     // Multi-signer co-page support: if another signer already captured
     // one of these pages, render their capture as the page background
@@ -475,14 +481,18 @@ export default function ClientSignatureViewer() {
                 ALWAYS visible (not just on hover) so first-time
                 signers can see the resize affordance immediately. */}
             <style>{`
-              .lawflow-floating-image {
+              /* Outline + always-visible resize handles apply ONLY to the
+                 signature the client places (a fresh floating image), never to
+                 the lawyer's locked attachment images (which are static here). */
+              .lawflow-floating-image:not(.lawflow-locked-image) {
                 outline: 1.5px solid rgba(1, 65, 28, 0.5);
                 transition: outline-color 0.15s ease;
               }
-              .lawflow-floating-image:hover,
-              .lawflow-floating-image.lawflow-floating-image-selected {
+              .lawflow-floating-image:not(.lawflow-locked-image):hover,
+              .lawflow-floating-image:not(.lawflow-locked-image).lawflow-floating-image-selected {
                 outline: 2px solid #01411C;
               }
+              .lawflow-floating-image.lawflow-locked-image { outline: none; }
               .lawflow-resize-handle {
                 position: absolute;
                 width: 12px;
@@ -705,10 +715,10 @@ export default function ClientSignatureViewer() {
               </button>
               <button
                 type="button"
-                onClick={() => navigate({ to: "/case-tracking" })}
+                onClick={() => navigate({ to: "/client-my-cases" })}
                 className="flex-1 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-700"
               >
-                View case tracking
+                View my cases
               </button>
             </div>
           </div>
