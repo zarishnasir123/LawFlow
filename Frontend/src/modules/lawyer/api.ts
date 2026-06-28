@@ -182,6 +182,24 @@ export async function updateAiSession(
   return data.session;
 }
 
+// AI Language Polish — sends a chunk of the lawyer's selected document text to
+// the backend, which asks the LLM to fix its grammar/spelling ("grammar") or
+// rewrite it into formal legal English ("formal"). Stateless: text in,
+// corrected text out. `changed` is false when the text was already clean, so
+// the editor can show "No changes needed" instead of an empty diff.
+export type PolishMode = "grammar" | "formal";
+
+export async function polishSelectedText(
+  mode: PolishMode,
+  text: string
+): Promise<{ corrected: string; changed: boolean }> {
+  const { data } = await apiClient.post<{ corrected: string; changed: boolean }>(
+    "/ai/polish",
+    { mode, text }
+  );
+  return { corrected: data.corrected, changed: Boolean(data.changed) };
+}
+
 import type {
   ChatClient,
   ChatMessage,

@@ -151,6 +151,166 @@ export async function generateSessionTitle(userText) {
 }
 
 // =====================================================================
+// AI Language Polish (stateless)
+//
+// Helps a lawyer clean up the prose THEY wrote in a case document: either fix
+// grammar/spelling, or rewrite it into formal legal English. Deliberately
+// stateless — no conversation history, no DB, no case templates — so it stays
+// fast and can never drift into inventing legal content. The hard guarantee
+// (names, numbers, dates, citations and [insert …] placeholders are preserved
+// verbatim) lives in the system prompts below.
+// =====================================================================
+
+// The non-negotiable preservation rules, embedded verbatim in BOTH polish
+// prompts. This block is what makes the feature safe to put in front of a
+// lawyer: it can fix wording but must never touch legal substance.
+const POLISH_PRESERVATION_RULES = `ABSOLUTE PRESERVATION RULES — these override every other instruction:
+- Do NOT add, remove, or change any legal facts, claims, or meaning.
+- Preserve EXACTLY, character-for-character (never translate, localize, or "correct"):
+  * all proper names and party names (plaintiff, defendant, petitioner, respondent, advocate),
+  * all numbers, dates, monetary amounts, and currency symbols or words,
+  * all legal citations, statute names, and section/article/order/rule numbers (e.g. "Order VII Rule 1", "Section 9 CPC", "PLD 1967 SC 97").
+- The text may contain placeholder tokens that look like ⟦PH0⟧, ⟦PH1⟧, ⟦PH2⟧ (and so on). These are fill-in-the-blank markers. Copy every such token EXACTLY as it appears and keep it in its original position. NEVER change, translate, renumber, remove, merge, or add these tokens. Likewise, leave any text in square brackets [like this] completely unchanged.
+- Do NOT add any new content, headings, explanations, comments, or notes.
+OUTPUT FORMAT — STRICT:
+- Return ONLY the corrected text. No preamble, no surrounding quotation marks, no markdown, no code fences, no "Here is..." sentence. Nothing but the corrected text itself.`;
+
+const POLISH_GRAMMAR_INSTRUCTION = `You are a meticulous copy-editor for Pakistani legal documents. Fix ONLY objective language errors in the text the lawyer gives you: spelling, typos, grammar, subject-verb agreement, articles, prepositions, verb tense, punctuation, and capitalization. Do NOT reword, rephrase, restructure, shorten, or upgrade the tone or style. If a sentence is already correct, return it unchanged. Make the smallest possible set of edits.
+
+${POLISH_PRESERVATION_RULES}`;
+
+const POLISH_FORMAL_INSTRUCTION = `You are a senior Pakistani litigation lawyer editing draft text into formal, precise courtroom English suitable for a plaint or pleading filed in the district or family courts. Rewrite the lawyer's text so it reads in a formal, professional legal register: clear, concise, unambiguous, third-person, and free of colloquialisms — while keeping the SAME meaning and the SAME facts. Improve grammar and flow as part of this. Do not make it longer than necessary, and do not invent any new facts, parties, dates, amounts, or legal grounds.
+
+${POLISH_PRESERVATION_RULES}`;
+
+// Each mode pairs its system prompt with a temperature: grammar is near
+// deterministic (smallest, repeatable edits); formal is a touch warmer for
+// natural phrasing but still low enough that the preservation rules dominate.
+const POLISH_MODES = {
+  grammar: { instruction: POLISH_GRAMMAR_INSTRUCTION, temperature: 0.1 },
+  formal: { instruction: POLISH_FORMAL_INSTRUCTION, temperature: 0.35 }
+};
+
+// Models occasionally wrap their answer in quotes, a code fence, or a "Here is
+// the corrected text:" preamble despite being told not to. Strip those
+// defensively — and conservatively, so we never swallow real document content.
+function stripModelWrapping(raw) {
+  let out = String(raw).trim();
+
+  // Drop a leading ``` / ```lang fence and a matching trailing ``` fence.
+  out = out.replace(/^```[a-zA-Z]*\s*\n?/, "").replace(/\n?```$/, "").trim();
+
+  // Drop one conservative leading preamble like "Here is the corrected text:".
+  out = out.replace(
+    /^here(?:'s| is)?(?: the)?\s+(?:corrected|revised|polished|fixed|edited)[^:\n]*:\s*/i,
+    ""
+  );
+
+  // Strip a single matched pair of wrapping quotes, but only when the WHOLE
+  // string is wrapped and the quote char doesn't recur inside — otherwise a
+  // quotation that legitimately belongs to the text would be damaged.
+  const pairs = [
+    ['"', '"'],
+    ["'", "'"],
+    ["`", "`"],
+    ["“", "”"], // “ ”
+    ["«", "»"]  // « »
+  ];
+  for (const [open, close] of pairs) {
+    if (out.length >= 2 && out.startsWith(open) && out.endsWith(close)) {
+      const inner = out.slice(open.length, out.length - close.length);
+      if (!inner.includes(open) && !inner.includes(close)) {
+        out = inner.trim();
+      }
+      break;
+    }
+  }
+
+  return out.trim();
+}
+
+// Placeholder masking. Before sending text to the model we swap each bracketed
+// blank — [insert …], [daughter/son], etc. — for an opaque sentinel like ⟦PH0⟧,
+// then restore the exact original blanks in the model's output. This makes the
+// "blanks are never touched" guarantee physical rather than prompt-dependent:
+// the model literally never sees a blank's contents, so it cannot reword,
+// re-case, or strip the brackets off one (as an aggressive formal rewrite
+// otherwise might). The ⟦ ⟧ delimiters are rare enough the model won't emit
+// them on its own, so a leaked/dropped sentinel is easy to detect afterward.
+const PH_OPEN = "⟦"; // ⟦
+const PH_CLOSE = "⟧"; // ⟧
+
+function maskPlaceholders(text) {
+  const tokens = [];
+  const masked = text.replace(/\[[^[\]\n]*\]/g, (match) => {
+    const id = tokens.length;
+    tokens.push(match);
+    return `${PH_OPEN}PH${id}${PH_CLOSE}`;
+  });
+  return { masked, tokens };
+}
+
+function restorePlaceholders(text, tokens) {
+  return text.replace(/⟦PH(\d+)⟧/g, (whole, n) => {
+    const i = Number(n);
+    return i >= 0 && i < tokens.length ? tokens[i] : whole;
+  });
+}
+
+// Polish a chunk of the lawyer's own document prose. `mode` is "grammar" (fix
+// only objective errors) or "formal" (rewrite into formal legal English).
+// Stateless: text in → { corrected, changed } out. The selection's original
+// leading/trailing whitespace is re-attached so the caller can replace the
+// exact highlighted span without gluing words to their neighbours.
+export async function polishText({ mode, text }) {
+  const config = POLISH_MODES[mode];
+  if (!config) {
+    throw new ApiError(400, "mode must be 'grammar' or 'formal'");
+  }
+  if (typeof text !== "string" || !text.trim()) {
+    throw new ApiError(400, "text is required");
+  }
+
+  const lead = text.match(/^\s*/)[0];
+  const trail = text.match(/\s*$/)[0];
+
+  // Hide every [ … ] blank behind an opaque sentinel the model can't alter,
+  // then restore the originals in its reply.
+  const { masked, tokens } = maskPlaceholders(text);
+
+  const generate = resolveGenerator();
+  const raw = await generate({
+    systemInstruction: config.instruction,
+    messages: [{ role: "user", text: masked }],
+    temperature: config.temperature,
+    maxOutputTokens: Math.min(2048, Math.ceil(text.length / 2) + 256)
+  });
+
+  const cleanedMasked = stripModelWrapping(raw);
+  if (!cleanedMasked) {
+    throw new ApiError(502, "The assistant returned an empty response. Please try again.");
+  }
+
+  const cleaned = restorePlaceholders(cleanedMasked, tokens).trim();
+
+  // Hard guarantee: every blank must come back verbatim, and no sentinel may
+  // leak through. If the model dropped or mangled one (possible when a formal
+  // rewrite hits text that is mostly blanks), refuse rather than silently lose
+  // or expose a placeholder.
+  const lostToken = tokens.some((t) => !cleaned.includes(t));
+  const leakedSentinel = new RegExp(`${PH_OPEN}PH\\d+${PH_CLOSE}`).test(cleaned);
+  if (!cleaned || lostToken || leakedSentinel) {
+    throw new ApiError(
+      422,
+      "This selection is mostly fill-in blanks, so it can't be safely polished. Try selecting the sentences you wrote instead."
+    );
+  }
+
+  const changed = cleaned !== text.trim();
+  return { corrected: lead + cleaned + trail, changed };
+}
+
+// =====================================================================
 // Conversation history (ai_chat_sessions + ai_chat_messages)
 //
 // Every query is scoped to the owning userId so a lawyer only ever reads or

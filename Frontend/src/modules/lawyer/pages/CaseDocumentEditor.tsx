@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { type JSONContent } from "@tiptap/react";
 import { useParams, useNavigate } from "@tanstack/react-router";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Document, Page, pdfjs } from "react-pdf";
 import LawyerLayout from "../components/LawyerLayout";
 import DocumentSidebar from "../components/documentEditor/DocumentSidebar";
@@ -16,6 +16,11 @@ import {
 import { buildEditorSnapshot } from "../utils/editorSnapshot";
 import { getInMemoryAccessToken } from "../../auth/utils/authStorage";
 import ContentEditableToolbar from "../components/documentEditor/ContentEditableToolbar";
+import AiPolishPopover, {
+  type AiPolishStatus,
+} from "../components/documentEditor/AiPolishPopover";
+import { polishSelectedText, type PolishMode } from "../api";
+import { getApiErrorMessage } from "../../../shared/utils/getApiErrorMessage";
 import TopActionBar from "../components/documentEditor/TopActionBar";
 import DownloadModal from "../components/documentEditor/DownloadModal";
 import SignatureRequestPanel from "../signatures/components/SignatureRequestPanel";
@@ -41,6 +46,21 @@ pdfjs.GlobalWorkerOptions.workerSrc = new URL(
 // transport to use.
 const isApiPath = (url: string) => url.startsWith("/cases/") || url.startsWith("/api/");
 
+// AI Language Polish: cap how much selected text we send per call (matches the
+// backend's 4000-char limit) so each request stays fast and cheap.
+const MAX_POLISH_CHARS = 4000;
+
+// Resolve the editable page (<section class="docx">) a DOM node belongs to, if
+// any — used to confirm a selection sits inside a single editable page.
+function pageOf(node: Node | null): HTMLElement | null {
+  if (!node) return null;
+  const el =
+    node.nodeType === Node.ELEMENT_NODE
+      ? (node as HTMLElement)
+      : node.parentElement;
+  return (el?.closest("section.docx") as HTMLElement | null) ?? null;
+}
+
 // Persisted preference for the Word-style AutoSave toggle. Default on.
 const AUTOSAVE_PREF_KEY = "lawflow_editor_autosave";
 function readPersistedAutoSave(): boolean {
@@ -62,7 +82,6 @@ export default function CaseDocumentEditor() {
     activeEditorRef,
     documentsById,
     saveDocumentJSON,
-    getDocumentJSON,
     setLoading,
     isLoading,
     saveDraft,
@@ -110,6 +129,18 @@ export default function CaseDocumentEditor() {
     tone: "success" | "error";
     message: string;
   } | null>(null);
+  // AI Language Polish: the open before/after preview (null when closed) and a
+  // ref holding the exact text Range captured when the lawyer picked a mode —
+  // so Accept can restore + replace that span even after the popover took
+  // focus. polishHint is a brief toast for guard messages (no selection, etc.).
+  const [polishState, setPolishState] = useState<{
+    anchorRect: { top: number; bottom: number; left: number };
+    mode: PolishMode;
+    original: string;
+  } | null>(null);
+  const savedRangeRef = useRef<Range | null>(null);
+  const applyingPolishRef = useRef(false);
+  const [polishHint, setPolishHint] = useState<string | null>(null);
   const [selectedAttachmentId, setSelectedAttachmentId] = useState<string | null>(null);
   const [pdfNumPages, setPdfNumPages] = useState(0);
   const [pdfContainerWidth, setPdfContainerWidth] = useState(0);
@@ -235,6 +266,59 @@ export default function CaseDocumentEditor() {
       host.removeEventListener("focusout", onBlur as EventListener);
       if (saveTimer !== null) window.clearTimeout(saveTimer);
     };
+  }, [renderedPages, autoSave]);
+
+  // Keyboard undo / redo for the document canvas, tied to AutoSave:
+  //
+  //   • AutoSave OFF (manual "draft" mode) → Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y
+  //     work. The pages are separate contenteditable sections, so after a
+  //     programmatic edit (e.g. accepting an AI Polish suggestion) or a
+  //     toolbar/popover click, keyboard focus can land on <body> instead of a
+  //     page and a bare Ctrl+Z would have nothing to act on — so we focus a
+  //     real page first, then run the command (mirrors the toolbar buttons).
+  //   • AutoSave ON (the document is continuously committed) → in-canvas undo
+  //     is intentionally disabled, so a stale Ctrl+Z can't fight the autosave.
+  //
+  // Real form fields (the chat box, inputs) are never touched either way.
+  useEffect(() => {
+    if (renderedPages.length === 0) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      const mod = e.ctrlKey || e.metaKey;
+      if (!mod) return;
+      const key = e.key.toLowerCase();
+      if (key !== "z" && key !== "y") return;
+
+      const active = document.activeElement as HTMLElement | null;
+      // Only govern undo for the document canvas. If focus sits in a real
+      // widget (chat box, input, menu) that isn't a page, leave it alone;
+      // <body> means focus drifted off the canvas, which we DO handle.
+      if (
+        active &&
+        active !== document.body &&
+        !active.closest?.("section.docx")
+      ) {
+        return;
+      }
+      const page =
+        (active?.closest?.("section.docx") as HTMLElement | null) ??
+        renderedPages.find((p) => document.contains(p)) ??
+        null;
+      if (!page) return;
+
+      // AutoSave on → disable canvas undo (the document is already being
+      // committed continuously).
+      if (autoSave) {
+        e.preventDefault();
+        return;
+      }
+
+      const redo = key === "y" || (key === "z" && e.shiftKey);
+      page.focus();
+      document.execCommand(redo ? "redo" : "undo");
+      e.preventDefault();
+    };
+    document.addEventListener("keydown", onKeyDown, true);
+    return () => document.removeEventListener("keydown", onKeyDown, true);
   }, [renderedPages, autoSave]);
 
   // Pending requests — used both to surface the toolbar badge count
@@ -409,7 +493,7 @@ export default function CaseDocumentEditor() {
         setLoading(false);
       }
     },
-    [getDocumentJSON, documentsById, setCurrentDocId, setLoading]
+    [documentsById, setCurrentDocId, setLoading]
   );
 
   // Auto-open the case template by default. With uploaded DOCs sitting
@@ -813,6 +897,138 @@ export default function CaseDocumentEditor() {
     navigate({ to: `/lawyer-submit-case/${effectiveCaseId}` });
   };
 
+  // ---- AI Language Polish ---------------------------------------------------
+  // Selection-based grammar/formal-English help. Stateless call; the corrected
+  // text is previewed in AiPolishPopover and applied undoably on Accept. Reuses
+  // canSubmitFromEditor (draft/returned + real case) as the "editable" gate.
+  const polishMutation = useMutation({
+    mutationFn: ({ mode, text }: { mode: PolishMode; text: string }) =>
+      polishSelectedText(mode, text),
+  });
+
+  const showPolishHint = useCallback((message: string) => {
+    setPolishHint(message);
+    window.setTimeout(() => setPolishHint(null), 2600);
+  }, []);
+
+  // Step 1 — capture, synchronously on the menu pick. The toolbar buttons
+  // preventDefault their mousedown, so the live selection is still the lawyer's
+  // highlight here. Validate it, stash a clone of the Range, open the popover,
+  // and fire the request.
+  const handlePolish = useCallback(
+    (mode: PolishMode) => {
+      if (!canSubmitFromEditor) return;
+      const sel = window.getSelection();
+      if (!sel || sel.rangeCount === 0 || sel.isCollapsed) {
+        showPolishHint("Select some text in the document first.");
+        return;
+      }
+      const range = sel.getRangeAt(0);
+      const text = range.toString();
+      if (!text.trim()) {
+        showPolishHint("Select some text in the document first.");
+        return;
+      }
+      const startPage = pageOf(range.startContainer);
+      const endPage = pageOf(range.endContainer);
+      if (!startPage || startPage !== endPage) {
+        showPolishHint("Select text within a single page.");
+        return;
+      }
+      if (text.length > MAX_POLISH_CHARS) {
+        showPolishHint(`Selection is too long (max ${MAX_POLISH_CHARS} characters).`);
+        return;
+      }
+
+      const anchor = range.getBoundingClientRect();
+      savedRangeRef.current = range.cloneRange();
+      polishMutation.reset();
+      setPolishState({
+        anchorRect: { top: anchor.top, bottom: anchor.bottom, left: anchor.left },
+        mode,
+        original: text,
+      });
+      polishMutation.mutate({ mode, text });
+    },
+    [canSubmitFromEditor, polishMutation, showPolishHint]
+  );
+
+  const handlePolishDiscard = useCallback(() => {
+    setPolishState(null);
+    savedRangeRef.current = null;
+    polishMutation.reset();
+  }, [polishMutation]);
+
+  const handlePolishRetry = useCallback(() => {
+    if (!polishState) return;
+    polishMutation.reset();
+    polishMutation.mutate({ mode: polishState.mode, text: polishState.original });
+  }, [polishState, polishMutation]);
+
+  // Step 2 — Accept. Restore the captured Range, then replace it with
+  // execCommand("insertText"): one native undo step (Ctrl+Z) and the inserted
+  // text inherits the run's font, so formatting is preserved. Then persist.
+  const handlePolishAccept = useCallback(() => {
+    const data = polishMutation.data;
+    const range = savedRangeRef.current;
+    if (!data || !range) {
+      handlePolishDiscard();
+      return;
+    }
+    const page = pageOf(range.startContainer);
+    if (!page || !document.contains(page)) {
+      handlePolishDiscard();
+      return;
+    }
+    page.focus();
+    const sel = window.getSelection();
+    if (!sel) {
+      handlePolishDiscard();
+      return;
+    }
+    sel.removeAllRanges();
+    sel.addRange(range);
+    applyingPolishRef.current = true;
+    document.execCommand("insertText", false, data.corrected);
+    applyingPolishRef.current = false;
+
+    setPolishState(null);
+    savedRangeRef.current = null;
+    polishMutation.reset();
+    void persistEditedHtmlRef.current();
+  }, [polishMutation, handlePolishDiscard]);
+
+  // Stale-range guard: if the lawyer edits the document while the preview is
+  // open, the captured Range may no longer point at the right span — so abandon
+  // the suggestion. Our own insertText (flagged) is ignored.
+  useEffect(() => {
+    if (!polishState) return;
+    const host =
+      (renderedPages[0]?.closest(".docx-preview-host") as HTMLElement | null) ||
+      (renderedPages[0]?.closest(".docx-wrapper")?.parentElement as
+        | HTMLElement
+        | null);
+    if (!host) return;
+    const onInput = () => {
+      if (applyingPolishRef.current) return;
+      setPolishState(null);
+      savedRangeRef.current = null;
+      polishMutation.reset();
+    };
+    host.addEventListener("input", onInput, true);
+    return () => host.removeEventListener("input", onInput, true);
+  }, [polishState, renderedPages, polishMutation]);
+
+  const polishStatus: AiPolishStatus = polishMutation.isPending
+    ? "loading"
+    : polishMutation.isError
+      ? "error"
+      : polishMutation.data
+        ? polishMutation.data.changed
+          ? "ready"
+          : "nochange"
+        : "loading";
+
   return (
     <LawyerLayout
       brandTitle="LawFlow"
@@ -941,6 +1157,8 @@ export default function CaseDocumentEditor() {
                 onAddAttachment={handleAddAttachment}
                 autoSave={autoSave}
                 onToggleAutoSave={() => setAutoSave((v) => !v)}
+                onPolish={handlePolish}
+                polishDisabled={!canSubmitFromEditor || polishMutation.isPending}
               />
               <div className="flex-1 overflow-hidden">
                 <DocxPreviewSurface
@@ -995,6 +1213,37 @@ export default function CaseDocumentEditor() {
               void sendPageForSignature(pageIndex, signer);
             }}
           />
+        )}
+
+        {/* AI Language Polish — before/after preview anchored to the lawyer's
+            text selection. Accept replaces the text undoably; Discard/Escape/
+            outside-click close it. */}
+        {polishState && (
+          <AiPolishPopover
+            anchorRect={polishState.anchorRect}
+            mode={polishState.mode}
+            original={polishState.original}
+            status={polishStatus}
+            corrected={polishMutation.data?.corrected ?? ""}
+            errorMessage={
+              polishMutation.isError
+                ? getApiErrorMessage(
+                    polishMutation.error,
+                    "Couldn't reach the assistant. Please try again."
+                  )
+                : undefined
+            }
+            onAccept={handlePolishAccept}
+            onDiscard={handlePolishDiscard}
+            onRetry={handlePolishRetry}
+          />
+        )}
+
+        {/* Brief hint when Polish can't run on the current selection. */}
+        {polishHint && (
+          <div className="fixed bottom-6 left-1/2 z-[120] -translate-x-1/2 rounded-lg bg-slate-800 px-4 py-2.5 text-sm font-medium text-white shadow-lg">
+            {polishHint}
+          </div>
         )}
 
         {/* Bottom-center toast for the right-click send result.
