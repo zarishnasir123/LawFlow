@@ -40,7 +40,7 @@ export type MonthlyRevenuePoint = {
 };
 
 export type VerificationStatusPoint = {
-  status: "Approved" | "Pending" | "Rejected";
+  status: "Approved" | "Pending" | "Rejected" | "Suspended";
   lawyers: number;
   clients: number;
 };
@@ -52,6 +52,7 @@ export type DailyActivePoint = {
 
 export type RegistrarPerformancePoint = {
   name: string;
+  tehsil: string;
   processed: number;
   approved: number;
   returned: number;

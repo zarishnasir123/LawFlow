@@ -9,6 +9,7 @@ import {
   getCaseTypeTemplateForPreview,
 } from "./adminCaseTypes.service.js";
 import { getMoneyOverview } from "./adminMoney.service.js";
+import { getAdminStatistics } from "./adminStatistics.service.js";
 import {
   getCommissionRateSetting,
   updateCommissionRate,
@@ -35,6 +36,14 @@ import { ApiError } from "../../utils/apiError.js";
 export async function getDashboardStatsHandler(req, res) {
   const stats = await getDashboardStats();
   return res.status(200).json(stats);
+}
+
+// GET /api/admin/statistics?range=week|month|year
+// Returns the full AdminStatisticsSnapshot (cards + charts) computed from real
+// data. `range` is validated to the enum upstream; defaults to "month".
+export async function getStatisticsHandler(req, res) {
+  const snapshot = await getAdminStatistics(req.query.range || "month");
+  return res.status(200).json(snapshot);
 }
 
 // GET /api/admin/recent-activity

@@ -20,6 +20,7 @@ DROP TABLE IF EXISTS holidays                       CASCADE;
 DROP TABLE IF EXISTS courtrooms                     CASCADE;
 DROP TABLE IF EXISTS ai_chat_messages               CASCADE;
 DROP TABLE IF EXISTS ai_chat_sessions               CASCADE;
+DROP TABLE IF EXISTS user_activity                  CASCADE;
 DROP TABLE IF EXISTS notification_preferences       CASCADE;
 DROP TABLE IF EXISTS notifications                  CASCADE;
 DROP TABLE IF EXISTS platform_settings              CASCADE;
@@ -574,6 +575,22 @@ CREATE TABLE notification_preferences (
   updated_at         TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
+-- Daily active-user ledger. One row per user per day they were active (any
+-- authenticated request stamps it, throttled to once/user/day by the backend).
+-- Powers the admin Statistics "Active Today" metric and the Daily Active Users
+-- trend (registrations history comes from users.created_at; this is the missing
+-- "who was active each day" record). The composite PK makes the per-day write
+-- idempotent (ON CONFLICT DO NOTHING).
+CREATE TABLE user_activity (
+  user_id       UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  activity_date DATE NOT NULL DEFAULT CURRENT_DATE,
+  PRIMARY KEY (user_id, activity_date)
+);
+
+-- The aggregates are date-first ("active today", GROUP BY activity_date), which
+-- the PK's leading user_id column can't serve — so index activity_date.
+CREATE INDEX idx_user_activity_date ON user_activity(activity_date);
+
 -- =====================================================================
 -- AI Legal Assistant chat history. Each lawyer's conversations with the
 -- grounded AI assistant: one row per conversation in ai_chat_sessions
@@ -1088,6 +1105,16 @@ CREATE TABLE hearing_outcomes (
 -- =====================================================================
 CREATE INDEX idx_users_role_id ON users(role_id);
 
+-- Admin Statistics page: time-bucketed aggregates over registrations, cases,
+-- revenue, and registrar review activity.
+CREATE INDEX idx_users_created_at ON users(created_at);
+CREATE INDEX idx_cases_created_at ON cases(created_at);
+CREATE INDEX idx_cases_reviewed_by
+  ON cases(reviewed_by_registrar_id)
+  WHERE reviewed_by_registrar_id IS NOT NULL;
+CREATE INDEX idx_payment_transactions_status_created
+  ON payment_transactions(status, created_at);
+
 CREATE INDEX idx_pending_registrations_expires_at  ON pending_registrations(expires_at);
 CREATE INDEX idx_pending_registrations_role_id     ON pending_registrations(role_id);
 CREATE INDEX idx_pending_registrations_bar_license_number
@@ -1233,6 +1260,7 @@ ALTER TABLE platform_settings              ENABLE ROW LEVEL SECURITY;
 ALTER TABLE payouts                        ENABLE ROW LEVEL SECURITY;
 ALTER TABLE notifications                  ENABLE ROW LEVEL SECURITY;
 ALTER TABLE notification_preferences       ENABLE ROW LEVEL SECURITY;
+ALTER TABLE user_activity                  ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ai_chat_sessions               ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ai_chat_messages               ENABLE ROW LEVEL SECURITY;
 

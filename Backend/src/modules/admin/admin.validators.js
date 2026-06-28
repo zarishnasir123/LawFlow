@@ -3,6 +3,16 @@ import { body, param, query } from "express-validator";
 import { ADMIN_CASE_STATUSES } from "./adminCases.service.js";
 import { CASE_TYPE_CATEGORIES } from "./adminCaseTypes.service.js";
 import { PAYOUT_STATUSES } from "../payments/payouts.service.js";
+import { STATISTICS_RANGES } from "./adminStatistics.service.js";
+
+// GET /api/admin/statistics — optional time range; defaults to "month" in the
+// service when absent. A present value must be one of the three buckets.
+export const statisticsValidator = [
+  query("range")
+    .optional()
+    .isIn(STATISTICS_RANGES)
+    .withMessage(`range must be one of: ${STATISTICS_RANGES.join(", ")}`),
+];
 
 // Validators for the admin case-traceability endpoints. Mirrors the
 // registrarReview.validators.js conventions: a malformed value surfaces as
