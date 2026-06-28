@@ -5,19 +5,11 @@ import {
   AlertCircle,
   CheckCircle2,
   ClipboardCheck,
-  Download,
   FileText,
   Paperclip,
+  Printer,
   UploadCloud,
 } from "lucide-react";
-import * as mammoth from "mammoth";
-import { generateHTML } from "@tiptap/core";
-import StarterKit from "@tiptap/starter-kit";
-import TextAlign from "@tiptap/extension-text-align";
-import { Table, TableCell, TableHeader, TableRow } from "@tiptap/extension-table";
-import type { JSONContent } from "@tiptap/react";
-import { AttachmentBlock } from "../extensions/AttachmentBlock";
-import { ImageAttachment } from "../extensions/ImageAttachment";
 import { pdfjs } from "react-pdf";
 import { casesApi, getCasesErrorMessage, SUPPORTED_TEHSILS } from "../api/cases.api";
 import { signaturesApi, getSignaturesErrorMessage } from "../signatures/api/signatures.api";
@@ -36,40 +28,6 @@ pdfjs.GlobalWorkerOptions.workerSrc = new URL(
   import.meta.url
 ).toString();
 
-const exportExtensions = [
-  StarterKit,
-  TextAlign.configure({
-    types: ["heading", "paragraph"],
-    alignments: ["left", "center", "right", "justify"],
-  }),
-  Table.configure({
-    resizable: true,
-    HTMLAttributes: {
-      class: "border-collapse table-auto w-full",
-    },
-  }),
-  TableRow,
-  TableHeader.configure({
-    HTMLAttributes: {
-      class: "border border-gray-300 px-4 py-2 bg-gray-100 font-bold",
-    },
-  }),
-  TableCell.configure({
-    HTMLAttributes: {
-      class: "border border-gray-300 px-4 py-2",
-    },
-  }),
-  AttachmentBlock,
-  ImageAttachment,
-];
-
-function resolveTemplateUrl(path: string) {
-  if (path.startsWith("http://") || path.startsWith("https://")) return path;
-  const base = import.meta.env.BASE_URL || "/";
-  const normalizedBase = base.endsWith("/") ? base : `${base}/`;
-  const normalizedPath = path.startsWith("/") ? path.slice(1) : path;
-  return `${normalizedBase}${normalizedPath}`;
-}
 
 // Rasterize every page of a PDF (given a URL) to a PNG data URL. Shared by the
 // complete-case-file preview (to pull the signed pages back out of the
@@ -102,7 +60,6 @@ export default function LawyerCaseFilingSubmissionPage() {
     getCaseById,
     getBundleByCaseId,
     refreshBundleFromWorkspace,
-    mockDownloadBundle,
   } = useCaseFilingStore();
 
   const selectedCaseId = params.caseId || "default-case";
@@ -365,221 +322,91 @@ export default function LawyerCaseFilingSubmissionPage() {
     syncWorkspaceBundle();
   }, [selectedCaseId, syncWorkspaceBundle]);
 
-  const handleDownloadBundle = async () => {
-    const latestCase = getCaseById(selectedCaseId);
-    if (!latestCase) return;
-
-    const result = mockDownloadBundle(selectedCaseId);
-    if (!result.ok) {
+  // Print the COMPLETE case file exactly as shown in the preview above — the
+  // full rendered document (all sections) with the signed-page captures already
+  // overlaid. We clone the live preview host into a print window, so what prints
+  // is precisely what the lawyer reviewed. (The old "download" path ran on the
+  // dead mock editor store and produced nothing.)
+  const handlePrintBundle = () => {
+    const host = renderedPages[0]?.closest(
+      ".docx-preview-host"
+    ) as HTMLElement | null;
+    if (!host) {
       setFeedback({
         tone: "error",
-        message: result.error || "Unable to download case bundle.",
+        message:
+          "The case file isn't ready to print yet — wait for the preview to load.",
       });
       return;
     }
-
-    useDocumentEditorStore.getState().loadDraft(selectedCaseId);
-    const editorState = useDocumentEditorStore.getState();
-
-    const {
-      bundleItems,
-      documentsById,
-      attachmentsById,
-      attachments,
-      documentContents,
-      currentDocId,
-      activeEditorRef,
-    } = editorState;
-
     const printWindow = window.open("", "_blank");
     if (!printWindow) {
       setFeedback({
         tone: "error",
-        message: "Popup blocked. Please allow popups to download the case file.",
+        message: "Popup blocked. Please allow popups to print the case file.",
       });
       return;
     }
 
-    const getAttachment = (attachmentId: string) =>
-      attachmentsById[attachmentId] ||
-      attachments.find((attachment) => attachment.id === attachmentId);
+    // docx-preview keeps its per-document page styles in <style> tags inside the
+    // host; carry them over so the print matches the on-screen pages.
+    const styleHtml = Array.from(host.querySelectorAll("style"))
+      .map((s) => s.outerHTML)
+      .join("\n");
+    const wrapper = host.querySelector(".docx-wrapper");
+    const bodyHtml = wrapper ? wrapper.outerHTML : host.innerHTML;
 
-    const collectImageAttachmentIds = (
-      content: JSONContent | null | undefined,
-      bucket: Set<string>
-    ) => {
-      if (!content) return;
-      const walk = (node: JSONContent) => {
-        const isImageAttachment =
-          node.type === "imageAttachment" ||
-          (node.type === "attachmentBlock" &&
-            typeof node.attrs?.mimeType === "string" &&
-            node.attrs.mimeType.includes("image"));
-        if (isImageAttachment && node.attrs?.attachmentId) {
-          bucket.add(String(node.attrs.attachmentId));
-        }
-        if (node.content) node.content.forEach((child) => walk(child));
-      };
-      walk(content);
-    };
-
-    const collectImageAttachmentIdsFromHtml = (
-      html: string,
-      bucket: Set<string>
-    ) => {
-      if (typeof DOMParser === "undefined") return;
-      const parsed = new DOMParser().parseFromString(html, "text/html");
-      parsed
-        .querySelectorAll("[data-image-attachment][data-attachment-id]")
-        .forEach((node) => {
-          const id = node.getAttribute("data-attachment-id");
-          if (id) bucket.add(id);
-        });
-
-      parsed
-        .querySelectorAll("[data-attachment-block][data-attachment-id][data-mime-type]")
-        .forEach((node) => {
-          const mime = node.getAttribute("data-mime-type") || "";
-          if (!mime.includes("image")) return;
-          const id = node.getAttribute("data-attachment-id");
-          if (id) bucket.add(id);
-        });
-    };
-
-    const resolveDocHtmlAsync = async (docId: string) => {
-      if (docId === currentDocId && activeEditorRef) {
-        return activeEditorRef.getHTML();
-      }
-      const doc = documentsById[docId];
-      if (doc?.contentJSON) {
-        return generateHTML(doc.contentJSON as JSONContent, exportExtensions);
-      }
-      if (doc?.legacyHtml) return doc.legacyHtml;
-      if (documentContents[docId]) return documentContents[docId];
-      if (!doc?.url) return "<p></p>";
-
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 15000);
-        const response = await fetch(resolveTemplateUrl(doc.url), {
-          signal: controller.signal,
-        });
-        clearTimeout(timeoutId);
-        if (!response.ok) throw new Error(`Failed to fetch: ${response.status}`);
-        const arrayBuffer = await response.arrayBuffer();
-        const converted = await mammoth.convertToHtml({ arrayBuffer });
-        return converted.value || "<p></p>";
-      } catch {
-        return "<p></p>";
-      }
-    };
-
-    const embeddedImageIds = new Set<string>();
-    if (currentDocId && activeEditorRef) {
-      collectImageAttachmentIds(activeEditorRef.getJSON() as JSONContent, embeddedImageIds);
-    }
-    bundleItems.forEach((item) => {
-      if (item.type !== "DOC") return;
-      const doc = documentsById[item.refId];
-      if (doc?.contentJSON) {
-        collectImageAttachmentIds(doc.contentJSON, embeddedImageIds);
-        return;
-      }
-      if (doc?.legacyHtml) {
-        collectImageAttachmentIdsFromHtml(doc.legacyHtml, embeddedImageIds);
-        return;
-      }
-      if (documentContents[item.refId]) {
-        collectImageAttachmentIdsFromHtml(documentContents[item.refId], embeddedImageIds);
-      }
-    });
-
-    const docHtmlById = new Map<string, string>();
-    for (const item of bundleItems) {
-      if (item.type !== "DOC") continue;
-      const html = await resolveDocHtmlAsync(item.refId);
-      docHtmlById.set(item.refId, html);
-    }
-
-    const sections: string[] = [];
-    for (const item of bundleItems) {
-      if (item.type === "DOC") {
-        const html = docHtmlById.get(item.refId) || "<p></p>";
-        sections.push(`
-          <div style="page-break-after: always;">
-            ${html}
-          </div>
-        `);
-        continue;
-      }
-
-      const attachment = getAttachment(item.refId);
-      if (!attachment) continue;
-      const isImage = attachment.type.startsWith("image/");
-      const isPdf = attachment.type.includes("pdf");
-      if (isImage && embeddedImageIds.has(attachment.id)) continue;
-
-      if (isImage) {
-        sections.push(`
-          <div style="page-break-after: always;">
-            <img src="${attachment.url}" alt="${attachment.name}" style="max-width: 100%; height: auto;" />
-          </div>
-        `);
-        continue;
-      }
-
-      if (isPdf) {
-        const pages = await renderPdfPagesToDataUrls(attachment.url);
-        pages.forEach((pageDataUrl, pageIndex) => {
-          sections.push(`
-            <div style="page-break-after: always;">
-              <img src="${pageDataUrl}" alt="${attachment.name} page ${pageIndex + 1}" style="max-width: 100%; height: auto;" />
-            </div>
-          `);
-        });
-        continue;
-      }
-
-      sections.push(`
-        <div style="page-break-after: always;">
-          <p>${attachment.name}</p>
-        </div>
-      `);
-    }
-
-    const html = `
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <meta charset="UTF-8" />
-          <title>Complete Case File - ${latestCase.title}</title>
-          <style>
-            body {
-              font-family: 'Times New Roman', serif;
-              line-height: 1.6;
-              max-width: 8.5in;
-              margin: 0 auto;
-              padding: 1in;
-              color: #000;
-            }
-            table { border-collapse: collapse; width: 100%; margin: 12pt 0; }
-            th, td { border: 1px solid #000; padding: 6pt; text-align: left; }
-            figure.image-attachment-wrapper { margin: 16pt 0; }
-            figure.image-attachment-wrapper img { max-width: 100%; height: auto; display: block; }
-            @media print { body { margin: 0; padding: 1in; } }
-          </style>
-        </head>
-        <body>${sections.join("")}</body>
-      </html>
-    `;
-
-    printWindow.document.write(html);
+    printWindow.document.write(
+      `<!doctype html><html><head><meta charset="utf-8" />` +
+        `<title>Complete Case File</title><style>` +
+        `body{margin:0;background:#fff;}` +
+        `.docx-wrapper{background:transparent!important;padding:0!important;}` +
+        `.docx-wrapper>section.docx{box-shadow:none!important;outline:none!important;border:none!important;margin:0 auto!important;overflow:hidden!important;page-break-after:always;page-break-inside:avoid;break-inside:avoid;}` +
+        // Keep each A4 page on ONE sheet — without this each page's sub-pixel
+        // overflow spilled onto a second, blank sheet. The last page mustn't
+        // force a trailing break (which would add a final blank sheet).
+        `.docx-wrapper>section.docx:last-child{page-break-after:auto!important;break-after:auto!important;}` +
+        // Force the whole case file to the templates' Times New Roman so typed
+        // text (party names, etc.) prints in the document font, not the
+        // sans-serif fallback it picked up while being typed.
+        `.docx-wrapper>section.docx,.docx-wrapper>section.docx *{font-family:'Times New Roman',Times,serif!important;}` +
+        `.lawflow-resize-handle,.lawflow-image-delete{display:none!important;}` +
+        `.lawflow-floating-image{outline:none!important;}` +
+        `@page{margin:0;}` +
+        `</style>${styleHtml}</head><body>${bodyHtml}</body></html>`
+    );
     printWindow.document.close();
-    setTimeout(() => {
-      printWindow.print();
-    }, 250);
 
-    setFeedback({ tone: "info", message: "Complete case file download started." });
+    // Don't open the print dialog until images (attachments + signed-page
+    // captures) have loaded, or the printout comes out blank/partial.
+    const images = Array.from(printWindow.document.images);
+    let remaining = images.filter((img) => !img.complete).length;
+    const fire = () => {
+      printWindow.focus();
+      printWindow.print();
+    };
+    if (remaining === 0) {
+      window.setTimeout(fire, 200);
+    } else {
+      images.forEach((img) => {
+        if (img.complete) return;
+        const done = () => {
+          remaining -= 1;
+          if (remaining <= 0) fire();
+        };
+        img.addEventListener("load", done);
+        img.addEventListener("error", done);
+      });
+      // Safety net: print anyway after 5s if an image never resolves.
+      window.setTimeout(() => {
+        if (remaining > 0) {
+          remaining = 0;
+          fire();
+        }
+      }, 5000);
+    }
+
+    setFeedback({ tone: "info", message: "Opening the print dialog…" });
   };
 
   const handleConfirmSubmission = () => {
@@ -829,14 +656,12 @@ export default function LawyerCaseFilingSubmissionPage() {
 
               <div className="mt-4 flex flex-wrap gap-2">
                 <button
-                  onClick={() => {
-                    void handleDownloadBundle();
-                  }}
+                  onClick={handlePrintBundle}
                   disabled={bundle.orderedDocuments.length === 0}
                   className="inline-flex items-center gap-2 rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  <Download className="h-4 w-4" />
-                  Download Complete PDF
+                  <Printer className="h-4 w-4" />
+                  Print Complete PDF
                 </button>
                 <button
                   onClick={() => {

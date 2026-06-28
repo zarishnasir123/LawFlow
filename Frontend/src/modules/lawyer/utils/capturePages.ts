@@ -50,6 +50,30 @@ export type CapturedPage = {
 // as the captureSignedPages contract.
 const PRIOR_CAPTURE_CLASS = "lawflow-prior-capture";
 
+// Lock an injected document snapshot down to READ-ONLY for the signing viewers.
+// The snapshot was captured from the live editor, so every page carries
+// contenteditable="true" and the lawyer's image attachments carry their editor
+// resize/delete chrome. A signer must be able to do NOTHING but place their own
+// signature on top — never edit the document — so we disable editing on every
+// page and neutralize the attachment chrome (marking those images
+// `lawflow-locked-image` so the viewer's always-visible handle/outline CSS skips
+// them, and stripping the baked-in handle/delete nodes outright).
+export function lockDocumentForSigning(host: HTMLElement): void {
+  host.querySelectorAll<HTMLElement>("section.docx").forEach((page) => {
+    page.setAttribute("contenteditable", "false");
+    page.setAttribute("spellcheck", "false");
+  });
+  host
+    .querySelectorAll<HTMLElement>(".lawflow-floating-image")
+    .forEach((img) => {
+      img.classList.add("lawflow-locked-image");
+      img.classList.remove("lawflow-floating-image-selected");
+      img
+        .querySelectorAll(".lawflow-resize-handle, .lawflow-image-delete")
+        .forEach((chrome) => chrome.remove());
+    });
+}
+
 export function applyPriorCapturesToHost(
   host: HTMLElement,
   pageIndices: number[],
@@ -172,9 +196,11 @@ export async function captureSignedPages(
       await new Promise((r) => requestAnimationFrame(() => r(null)));
 
       const canvas = await html2canvas(section, {
-        // Match the viewer's render DPR so the captured PNG is sharp
-        // without bloating to absurd sizes.
-        scale: Math.min(2, window.devicePixelRatio || 1),
+        // Capture at a minimum of 2x (~192 DPI for an A4 page) so the signed
+        // PDF stays crisp even on standard 1x laptop displays — where the old
+        // `min(2, dpr)` collapsed to 1x (~96 DPI) and looked soft. Honour a
+        // higher device DPR up to 3x; cap there so payloads stay reasonable.
+        scale: Math.min(3, Math.max(2, window.devicePixelRatio || 1)),
         backgroundColor: "#ffffff",
         useCORS: true,
         logging: false,

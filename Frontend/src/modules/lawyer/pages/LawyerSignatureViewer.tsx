@@ -23,6 +23,7 @@ import { mountFloatingImage } from "../utils/floatingImage";
 import {
   applyPriorCapturesToHost,
   captureSignedPages,
+  lockDocumentForSigning,
 } from "../utils/capturePages";
 
 // Lawyer self-signing viewer (FE-7) — see ClientSignatureViewer for the
@@ -152,6 +153,11 @@ export default function LawyerSignatureViewer() {
       .replace(/(^|[^.#:\w-])body\s*\{[^}]*\}/g, "$1");
     const bodyHtml = parsed.body.innerHTML;
     host.innerHTML = `${styleHtml}${bodyHtml}`;
+
+    // Read-only: the signer may ONLY drop their signature — never edit the
+    // document. Disable contenteditable on every page and neutralize the
+    // attachment-image chrome (handles/outline).
+    lockDocumentForSigning(host);
 
     // Multi-signer co-page support: if another signer already captured
     // one of these pages, render their capture as the page background
@@ -400,14 +406,17 @@ export default function LawyerSignatureViewer() {
             ) : null}
             {/* See ClientSignatureViewer for why these styles live here. */}
             <style>{`
-              .lawflow-floating-image {
+              /* Outline + handles apply ONLY to the signature being placed,
+                 never the locked (static) document attachment images. */
+              .lawflow-floating-image:not(.lawflow-locked-image) {
                 outline: 1.5px solid rgba(1, 65, 28, 0.5);
                 transition: outline-color 0.15s ease;
               }
-              .lawflow-floating-image:hover,
-              .lawflow-floating-image.lawflow-floating-image-selected {
+              .lawflow-floating-image:not(.lawflow-locked-image):hover,
+              .lawflow-floating-image:not(.lawflow-locked-image).lawflow-floating-image-selected {
                 outline: 2px solid #01411C;
               }
+              .lawflow-floating-image.lawflow-locked-image { outline: none; }
               .lawflow-resize-handle {
                 position: absolute;
                 width: 12px;
