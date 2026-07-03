@@ -45,8 +45,12 @@ export async function postJsonWithRetry({
         await onUpstreamError(res, attempt);
       }
 
+      if (res.status === 401) {
+        throw new ApiError(401, "Configuration error.");
+      }
+
       if (res.status === 429) {
-        throw new ApiError(429, "The assistant is busy right now. Please try again in a moment.");
+        throw new ApiError(429, "OCR service unavailable. Please try again later.");
       }
 
       // Transient server-side error — retry if we still can.
@@ -60,7 +64,7 @@ export async function postJsonWithRetry({
       // Definitive errors bubble up unchanged.
       if (err instanceof ApiError) throw err;
       if (err?.name === "AbortError") {
-        throw new ApiError(504, "The assistant took too long to respond. Please try again.");
+        throw new ApiError(504, "Verify manually.");
       }
 
       // Network-level failure ("fetch failed"): retry with backoff if possible.

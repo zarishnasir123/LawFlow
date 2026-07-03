@@ -1,4 +1,4 @@
-import { body, query } from "express-validator";
+import { body, query, param } from "express-validator";
 
 import { isAllowedDistrictCnic, isValidPakistanCnic } from "../../utils/cnic.js";
 import {
@@ -532,3 +532,10 @@ export const changePasswordValidator = [
 
   body().custom(validateNewPasswordConfirmation)
 ];
+
+export const verifyCnicValidator = [
+  param("lawyerProfileId")
+    .isUUID()
+    .withMessage("Invalid lawyer profile ID format")
+];
+

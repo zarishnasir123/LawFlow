@@ -35,6 +35,7 @@ import {
 import { parseDurationToMilliseconds } from "../../utils/tokens.js";
 import { ApiError } from "../../utils/apiError.js";
 import { requireSupabaseClient } from "../../config/supabase.js";
+import { verifyLawyerCnicFromCard } from "./cnicOcr.service.js";
 
 const refreshTokenCookieName = "refreshToken";
 const refreshTokenCookiePath = "/";
@@ -602,3 +603,9 @@ export async function changePassword(req, res) {
     message: "Password changed successfully. Please sign in again with your new password."
   });
 }
+
+export async function verifyLawyerCnic(req, res) {
+  const result = await verifyLawyerCnicFromCard(req.params.lawyerProfileId);
+  return res.status(200).json(result);
+}
+

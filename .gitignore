@@ -55,3 +55,7 @@ Frontend/.dev-logs/
 
 # Mac stuff
 Icon
+
+# Test scripts
+Backend/src/scripts/verifyChunk*
+

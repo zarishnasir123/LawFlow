@@ -131,3 +131,21 @@ export async function reinstateLawyer(
   );
   return data;
 }
+
+export type VerifyCnicResponse = {
+  extractedCnic: string | null;
+  enteredCnic: string;
+  match: boolean;
+  readable: boolean;
+  remarks: string;
+};
+
+export async function verifyLawyerCnic(
+  lawyerProfileId: string
+): Promise<VerifyCnicResponse> {
+  const { data } = await apiClient.post<VerifyCnicResponse>(
+    `/auth/lawyers/${lawyerProfileId}/verify-cnic`
+  );
+  return data;
+}
+

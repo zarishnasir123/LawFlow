@@ -130,6 +130,29 @@ export async function getLawyerDocumentSignedUrl({ storagePath, expiresIn }) {
   return data.signedUrl;
 }
 
+// Download the raw bytes of a lawyer verification document from Supabase
+// private storage. Returns a Buffer so callers can base64-encode the image
+// for the Gemini vision OCR call. Returns null when Supabase isn't wired
+// up or the object is missing. Mirrors downloadCaseTypeTemplate but uses
+// the lawyer bucket.
+export async function downloadLawyerDocument(storagePath) {
+  if (!storagePath) return null;
+
+  const config = getSupabaseStorageConfig();
+  const supabase = getSupabaseClient();
+  if (!supabase) return null;
+
+  const { data, error } = await supabase.storage
+    .from(config.bucket)
+    .download(storagePath);
+
+  if (error || !data) return null;
+
+  // supabase-js returns a Blob in Node; convert to a Buffer.
+  const arrayBuffer = await data.arrayBuffer();
+  return Buffer.from(arrayBuffer);
+}
+
 export async function deleteLawyerDocuments({ storagePaths }) {
   if (!Array.isArray(storagePaths) || storagePaths.length === 0) {
     return;
