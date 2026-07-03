@@ -24,6 +24,7 @@ import {
 import RejectLawyerConfirmationModal from "../components/modals/RejectLawyerConfirmationModal";
 import SuspendLawyerConfirmationModal from "../components/modals/SuspendLawyerConfirmationModal";
 import ReinstateLawyerConfirmationModal from "../components/modals/ReinstateLawyerConfirmationModal";
+import StatusToast from "../components/modals/StatusToast";
 import {
   fetchActiveLawyers,
   fetchPendingLawyers,
@@ -93,6 +94,12 @@ export default function Verifications() {
   const [pendingRejection, setPendingRejection] = useState<PendingLawyer | null>(null);
   const [pendingSuspension, setPendingSuspension] = useState<PendingLawyer | null>(null);
   const [pendingReinstatement, setPendingReinstatement] = useState<PendingLawyer | null>(null);
+  const [toast, setToast] = useState<{
+    open: boolean;
+    type: "success" | "error";
+    title: string;
+    message: string;
+  }>({ open: false, type: "success", title: "", message: "" });
 
   const pendingQuery = useQuery({
     queryKey: ["admin", "pending-lawyers"],
@@ -143,6 +150,14 @@ export default function Verifications() {
       queryClient.invalidateQueries({ queryKey: ["admin", "pending-lawyers"] });
       queryClient.invalidateQueries({ queryKey: ["admin", "active-lawyers"] });
     },
+    onError: (error) => {
+      setToast({
+        open: true,
+        type: "error",
+        title: "OCR Verification Failed",
+        message: getAuthErrorMessage(error),
+      });
+    }
   });
 
   // Memoized so its reference is stable across renders (a bare `?? []` makes a
@@ -255,6 +270,14 @@ export default function Verifications() {
         isSubmitting={reinstateMutation.isPending}
         onCancel={() => setPendingReinstatement(null)}
         onConfirm={confirmReinstatement}
+      />
+
+      <StatusToast
+        open={toast.open}
+        type={toast.type}
+        title={toast.title}
+        message={toast.message}
+        onClose={() => setToast({ ...toast, open: false })}
       />
 
       <div className="w-full px-6 lg:px-8 xl:px-10 py-8">
