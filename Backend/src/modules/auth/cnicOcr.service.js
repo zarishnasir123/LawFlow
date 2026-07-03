@@ -135,16 +135,13 @@ export async function verifyLawyerCnicFromCard(lawyerProfileId) {
         imageMimeType
       });
 
-      console.log(`[cnicOcr] Gemini raw response for ${doc.document_type}:`, JSON.stringify(ocrText));
-
       // 4. Parse the OCR response.
       const parsed = parseOcrResponse(ocrText);
-      console.log(`[cnicOcr] Parsed result:`, JSON.stringify(parsed));
       if (parsed.readable) {
         const isMatch = parsed.digits === enteredDigits;
         const remarks = isMatch
-          ? `CNIC verified — card (${parsed.formatted}) matches entered CNIC.`
-          : `CNIC mismatch — card shows ${parsed.formatted}, entered ${enteredCnic}. Review required.`;
+          ? `CNIC successfully verified. The uploaded card matches the entered CNIC.`
+          : `CNIC mismatch detected. The uploaded card does not match the entered CNIC. Please review manually.`;
 
         finalResult = {
           extractedCnic: parsed.formatted,
@@ -178,7 +175,7 @@ export async function verifyLawyerCnicFromCard(lawyerProfileId) {
       enteredCnic,
       match: false,
       readable: false,
-      remarks: "Could not read the NIC from the card image — verify manually."
+      remarks: "Unable to verify the CNIC from the uploaded card. Please review the document manually."
     };
   }
 

@@ -480,26 +480,36 @@ export default function Verifications() {
                             </dl>
 
                             <div className="mt-4 flex flex-wrap items-center gap-3">
-                              {lawyer.verificationStatus === "pending" && (
-                                <button
-                                  type="button"
-                                  disabled={verifyCnicMutation.isPending || isMutating}
-                                  onClick={() => verifyCnicMutation.mutate(lawyer.lawyerProfileId)}
-                                  className="inline-flex items-center gap-1.5 rounded-lg border border-[#01411C] bg-white px-3 py-1.5 text-xs font-semibold text-[#01411C] transition hover:bg-[#01411C]/5 disabled:cursor-not-allowed disabled:opacity-60"
-                                >
-                                  {verifyCnicMutation.isPending && verifyCnicMutation.variables === lawyer.lawyerProfileId ? (
-                                    <>
-                                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                      Reading the card...
-                                    </>
-                                  ) : (
-                                    <>
-                                      <ShieldCheck className="h-3.5 w-3.5" />
-                                      {lawyer.cnicMatchRemarks && !lawyer.cnicMatchRemarks.includes("pending") ? "Recheck OCR" : "Check CNIC (OCR)"}
-                                    </>
-                                  )}
-                                </button>
-                              )}
+                              {(() => {
+                                if (lawyer.verificationStatus !== "pending") return null;
+                                if (lawyer.cnicMatch) return null; // Matched, hide button
+                                
+                                const isMismatch = lawyer.cnicMatchRemarks?.toLowerCase().includes("mismatch");
+                                if (isMismatch) return null; // Mismatch, hide button
+
+                                const hasRun = lawyer.cnicMatchRemarks && !lawyer.cnicMatchRemarks.includes("pending");
+
+                                return (
+                                  <button
+                                    type="button"
+                                    disabled={verifyCnicMutation.isPending || isMutating}
+                                    onClick={() => verifyCnicMutation.mutate(lawyer.lawyerProfileId)}
+                                    className="inline-flex items-center gap-1.5 rounded-lg border border-[#01411C] bg-white px-3 py-1.5 text-xs font-semibold text-[#01411C] transition hover:bg-[#01411C]/5 disabled:cursor-not-allowed disabled:opacity-60"
+                                  >
+                                    {verifyCnicMutation.isPending && verifyCnicMutation.variables === lawyer.lawyerProfileId ? (
+                                      <>
+                                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                        Reading the card...
+                                      </>
+                                    ) : (
+                                      <>
+                                        <ShieldCheck className="h-3.5 w-3.5" />
+                                        {hasRun ? "Retry OCR" : "Check OCR"}
+                                      </>
+                                    )}
+                                  </button>
+                                );
+                              })()}
 
                               {lawyer.cnicMatchRemarks && !lawyer.cnicMatchRemarks.includes("pending") && !(verifyCnicMutation.isPending && verifyCnicMutation.variables === lawyer.lawyerProfileId) ? (
                                 lawyer.cnicMatch ? (
@@ -507,7 +517,7 @@ export default function Verifications() {
                                     <Check className="h-3 w-3" />
                                     Verified
                                   </span>
-                                ) : lawyer.cnicMatchRemarks.toLowerCase().includes("does not match") ? (
+                                ) : lawyer.cnicMatchRemarks.toLowerCase().includes("mismatch") ? (
                                   <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2.5 py-1 text-xs font-semibold text-red-800">
                                     <X className="h-3 w-3" />
                                     CNIC Mismatch
@@ -525,13 +535,13 @@ export default function Verifications() {
                               <div className={`mt-3 flex items-start gap-2 rounded-lg border px-3 py-2 text-xs ${
                                 lawyer.cnicMatch
                                   ? "border-green-200 bg-green-50 text-green-800"
-                                  : lawyer.cnicMatchRemarks.toLowerCase().includes("does not match")
+                                  : lawyer.cnicMatchRemarks.toLowerCase().includes("mismatch")
                                     ? "border-red-200 bg-red-50 text-red-800"
                                     : "border-amber-200 bg-amber-50 text-amber-800"
                               }`}>
                                 {lawyer.cnicMatch ? (
                                   <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                                ) : lawyer.cnicMatchRemarks.toLowerCase().includes("does not match") ? (
+                                ) : lawyer.cnicMatchRemarks.toLowerCase().includes("mismatch") ? (
                                   <XCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                                 ) : (
                                   <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
