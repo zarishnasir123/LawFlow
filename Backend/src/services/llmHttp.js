@@ -10,6 +10,7 @@ import { ApiError } from "../utils/apiError.js";
 // Retried: network errors ("fetch failed") and HTTP 5xx, with short backoff.
 
 const RETRY_BACKOFFS_MS = [400, 1200]; // delays before attempts 2 and 3
+const RATE_LIMIT_BACKOFF_MS = 2000; // single pause before one 429 retry (vision OCR)
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -21,7 +22,8 @@ export async function postJsonWithRetry({
   body,
   timeoutMs = 30000,
   label = "llm",
-  onUpstreamError
+  onUpstreamError,
+  retryOnRateLimit = false
 }) {
   const maxAttempts = RETRY_BACKOFFS_MS.length + 1;
 
@@ -46,11 +48,16 @@ export async function postJsonWithRetry({
       }
 
       if (res.status === 401) {
-        throw new ApiError(401, "Configuration error.");
+        throw new ApiError(502, "The AI provider rejected the request (check the API key).");
       }
 
       if (res.status === 429) {
-        throw new ApiError(429, "OCR service unavailable. Please try again later.");
+        if (retryOnRateLimit && attempt < maxAttempts) {
+          console.warn(`[${label}] rate limited (429); retrying after ${RATE_LIMIT_BACKOFF_MS}ms`);
+          await sleep(RATE_LIMIT_BACKOFF_MS);
+          continue;
+        }
+        throw new ApiError(429, "The assistant is busy right now. Please try again in a moment.");
       }
 
       // Transient server-side error — retry if we still can.
@@ -64,7 +71,7 @@ export async function postJsonWithRetry({
       // Definitive errors bubble up unchanged.
       if (err instanceof ApiError) throw err;
       if (err?.name === "AbortError") {
-        throw new ApiError(504, "Verify manually.");
+        throw new ApiError(504, "The assistant took too long to respond. Please try again.");
       }
 
       // Network-level failure ("fetch failed"): retry with backoff if possible.

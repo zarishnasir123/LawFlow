@@ -248,6 +248,10 @@ CREATE TABLE lawyer_profiles (
 
   cnic_match         BOOLEAN NOT NULL DEFAULT false,
   cnic_match_remarks TEXT,
+  -- CNIC OCR outcome from admin "Check OCR" (Gemini vision on bar license card).
+  -- not_checked = never run; matched / mismatch / unreadable = last OCR result.
+  -- The admin UI keys off this column — not cnic_match_remarks prose.
+  cnic_verification_status VARCHAR(20) NOT NULL DEFAULT 'not_checked',
 
   verification_status  VARCHAR(30) NOT NULL DEFAULT 'pending',
   verification_remarks TEXT,
@@ -258,7 +262,10 @@ CREATE TABLE lawyer_profiles (
   updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
 
   CONSTRAINT valid_lawyer_verification_status
-    CHECK (verification_status IN ('pending', 'approved', 'rejected', 'suspended'))
+    CHECK (verification_status IN ('pending', 'approved', 'rejected', 'suspended')),
+
+  CONSTRAINT valid_cnic_verification_status
+    CHECK (cnic_verification_status IN ('not_checked', 'matched', 'mismatch', 'unreadable'))
 );
 
 -- File metadata only; actual files live in Supabase private storage.

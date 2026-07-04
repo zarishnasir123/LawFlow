@@ -146,9 +146,32 @@ export default function Verifications() {
 
   const verifyCnicMutation = useMutation({
     mutationFn: verifyLawyerCnic,
-    onSuccess: () => {
+    onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ["admin", "pending-lawyers"] });
       queryClient.invalidateQueries({ queryKey: ["admin", "active-lawyers"] });
+
+      if (result.cnicVerificationStatus === "matched") {
+        setToast({
+          open: true,
+          type: "success",
+          title: "CNIC Verified",
+          message: result.remarks,
+        });
+      } else if (result.cnicVerificationStatus === "mismatch") {
+        setToast({
+          open: true,
+          type: "error",
+          title: "CNIC Mismatch",
+          message: result.remarks,
+        });
+      } else {
+        setToast({
+          open: true,
+          type: "error",
+          title: "Unable to Verify CNIC",
+          message: result.remarks,
+        });
+      }
     },
     onError: (error) => {
       setToast({
@@ -482,12 +505,9 @@ export default function Verifications() {
                             <div className="mt-4 flex flex-wrap items-center gap-3">
                               {(() => {
                                 if (lawyer.verificationStatus !== "pending") return null;
-                                if (lawyer.cnicMatch) return null; // Matched, hide button
-                                
-                                const isMismatch = lawyer.cnicMatchRemarks?.toLowerCase().includes("mismatch");
-                                if (isMismatch) return null; // Mismatch, hide button
+                                if (lawyer.cnicVerificationStatus === "matched") return null;
 
-                                const hasRun = lawyer.cnicMatchRemarks && !lawyer.cnicMatchRemarks.includes("pending");
+                                const hasRun = lawyer.cnicVerificationStatus !== "not_checked";
 
                                 return (
                                   <button
@@ -511,13 +531,13 @@ export default function Verifications() {
                                 );
                               })()}
 
-                              {lawyer.cnicMatchRemarks && !lawyer.cnicMatchRemarks.includes("pending") && !(verifyCnicMutation.isPending && verifyCnicMutation.variables === lawyer.lawyerProfileId) ? (
-                                lawyer.cnicMatch ? (
+                              {lawyer.cnicVerificationStatus !== "not_checked" && !(verifyCnicMutation.isPending && verifyCnicMutation.variables === lawyer.lawyerProfileId) ? (
+                                lawyer.cnicVerificationStatus === "matched" ? (
                                   <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2.5 py-1 text-xs font-semibold text-green-800">
                                     <Check className="h-3 w-3" />
                                     Verified
                                   </span>
-                                ) : lawyer.cnicMatchRemarks.toLowerCase().includes("mismatch") ? (
+                                ) : lawyer.cnicVerificationStatus === "mismatch" ? (
                                   <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2.5 py-1 text-xs font-semibold text-red-800">
                                     <X className="h-3 w-3" />
                                     CNIC Mismatch
@@ -531,17 +551,17 @@ export default function Verifications() {
                               ) : null}
                             </div>
 
-                            {lawyer.cnicMatchRemarks && !lawyer.cnicMatchRemarks.includes("pending") ? (
+                            {lawyer.cnicVerificationStatus !== "not_checked" && lawyer.cnicMatchRemarks ? (
                               <div className={`mt-3 flex items-start gap-2 rounded-lg border px-3 py-2 text-xs ${
-                                lawyer.cnicMatch
+                                lawyer.cnicVerificationStatus === "matched"
                                   ? "border-green-200 bg-green-50 text-green-800"
-                                  : lawyer.cnicMatchRemarks.toLowerCase().includes("mismatch")
+                                  : lawyer.cnicVerificationStatus === "mismatch"
                                     ? "border-red-200 bg-red-50 text-red-800"
                                     : "border-amber-200 bg-amber-50 text-amber-800"
                               }`}>
-                                {lawyer.cnicMatch ? (
+                                {lawyer.cnicVerificationStatus === "matched" ? (
                                   <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                                ) : lawyer.cnicMatchRemarks.toLowerCase().includes("mismatch") ? (
+                                ) : lawyer.cnicVerificationStatus === "mismatch" ? (
                                   <XCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                                 ) : (
                                   <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />

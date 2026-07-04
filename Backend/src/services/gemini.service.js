@@ -36,7 +36,8 @@ export function isGeminiConfigured() {
 // Parses Gemini's generateContent response into plain text, turning the
 // various "no usable text" outcomes (safety block, empty candidate) into
 // clear ApiErrors the controller can surface.
-function extractText(data) {
+// mode: "chat" (default) for legal Q&A, "vision" for license-card OCR.
+function extractText(data, { mode = "chat" } = {}) {
   const candidate = data?.candidates?.[0];
   const parts = candidate?.content?.parts;
   const text = Array.isArray(parts)
@@ -51,11 +52,18 @@ function extractText(data) {
   if (blockReason || finishReason === "SAFETY" || finishReason === "RECITATION") {
     throw new ApiError(
       422,
-      "The assistant couldn't answer that request. Please rephrase your question."
+      mode === "vision"
+        ? "Could not read the license card image. Please verify the document manually."
+        : "The assistant couldn't answer that request. Please rephrase your question."
     );
   }
 
-  throw new ApiError(502, "The assistant returned an empty response. Please try again.");
+  throw new ApiError(
+    502,
+    mode === "vision"
+      ? "OCR returned no text from the card image. Please try again."
+      : "The assistant returned an empty response. Please try again."
+  );
 }
 
 // Calls Gemini's generateContent endpoint.
@@ -174,6 +182,7 @@ export async function generateGeminiVision({
     body,
     timeoutMs,
     label: "gemini-vision",
+    retryOnRateLimit: true,
     onUpstreamError: async (res) => {
       let upstreamStatus = "";
       try {
@@ -186,5 +195,5 @@ export async function generateGeminiVision({
     }
   });
 
-  return extractText(data);
+  return extractText(data, { mode: "vision" });
 }

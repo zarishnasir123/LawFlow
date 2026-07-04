@@ -40,7 +40,6 @@ import {
   otpResendLimiter,
   registerLimiter,
   resetPasswordLimiter,
-  aiGuidanceLimiter
 } from "../../middleware/rateLimiter.js";
 import {
   changePasswordValidator,
@@ -137,7 +136,7 @@ router.post(
   "/lawyers/:lawyerProfileId/verify-cnic",
   authenticate,
   authorizeRoles("admin"),
-  aiGuidanceLimiter,
+  lawyerReviewLimiter,
   verifyCnicValidator,
   validateRequest,
   asyncHandler(verifyLawyerCnic)

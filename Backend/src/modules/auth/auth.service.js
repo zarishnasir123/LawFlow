@@ -141,6 +141,7 @@ async function mapPendingLawyer(row) {
     experienceYears: row.experience_years,
     cnicMatch: row.cnic_match,
     cnicMatchRemarks: row.cnic_match_remarks,
+    cnicVerificationStatus: row.cnic_verification_status ?? "not_checked",
     verificationStatus: row.verification_status,
     submittedAt: row.submitted_at,
     documents: mappedDocuments
@@ -1125,6 +1126,7 @@ async function listLawyerVerificationsByStatus({ statuses, limit, offset }) {
       lawyer_profiles.experience_years,
       lawyer_profiles.cnic_match,
       lawyer_profiles.cnic_match_remarks,
+      lawyer_profiles.cnic_verification_status,
       lawyer_profiles.verification_status,
       lawyer_profiles.verification_remarks,
       lawyer_profiles.verified_at,

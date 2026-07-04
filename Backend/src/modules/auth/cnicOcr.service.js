@@ -3,10 +3,7 @@ import { ApiError } from "../../utils/apiError.js";
 import { normalizeCnic } from "../../utils/cnic.js";
 import { downloadLawyerDocument } from "../../services/storage.service.js";
 import { generateGeminiVision } from "../../services/gemini.service.js";
-
-// Matches a 13-digit Pakistani CNIC with optional dashes: 34101-9721875-9
-// Also matches the dashless form: 3410197218759
-const CNIC_PATTERN = /\d{5}-?\d{7}-?\d{1}/;
+import { parseOcrResponse, stripDashes } from "./cnicOcr.parse.js";
 
 const OCR_PROMPT =
   "This is a Pakistani Bar Council advocate license card. " +
@@ -14,44 +11,18 @@ const OCR_PROMPT =
   "Return ONLY that number with dashes and nothing else. " +
   "If you cannot find any 13-digit CNIC/NIC number, return exactly NOT_FOUND.";
 
-// Formats a 13-digit string as XXXXX-XXXXXXX-X for display.
-function formatCnic(digits) {
-  if (digits.length !== 13) return digits;
-  return `${digits.slice(0, 5)}-${digits.slice(5, 12)}-${digits.slice(12)}`;
-}
-
-// Strips dashes from a CNIC for digit-only comparison.
-function stripDashes(cnic) {
-  return String(cnic || "").replace(/-/g, "");
-}
-
-// Attempts to extract a CNIC from the OCR response text.
-// Returns { readable: true, digits, formatted } or { readable: false }.
-function parseOcrResponse(text) {
-  const cleaned = String(text || "").trim();
-
-  if (cleaned === "NOT_FOUND" || !cleaned) {
-    return { readable: false, digits: null, formatted: null };
-  }
-
-  const match = cleaned.match(CNIC_PATTERN);
-  if (!match) {
-    return { readable: false, digits: null, formatted: null };
-  }
-
-  const digits = stripDashes(match[0]);
-  if (digits.length !== 13) {
-    return { readable: false, digits: null, formatted: null };
-  }
-
-  return { readable: true, digits, formatted: formatCnic(digits) };
-}
+export const CNIC_VERIFICATION_STATUS = {
+  NOT_CHECKED: "not_checked",
+  MATCHED: "matched",
+  MISMATCH: "mismatch",
+  UNREADABLE: "unreadable"
+};
 
 // Core service: reads the NIC off a lawyer's bar license card (front or back)
 // using Gemini vision and compares it to the CNIC the lawyer entered.
 //
-// Returns { extractedCnic, enteredCnic, match, readable, remarks }.
-// Persists the result into lawyer_profiles.cnic_match / cnic_match_remarks.
+// Returns { extractedCnic, enteredCnic, match, readable, remarks, cnicVerificationStatus }.
+// Persists the result into lawyer_profiles.
 export async function verifyLawyerCnicFromCard(lawyerProfileId) {
   // 1. Fetch the lawyer's entered CNIC + card document metadata (front, back or combined).
   const { rows } = await pool.query(
@@ -83,19 +54,24 @@ export async function verifyLawyerCnicFromCard(lawyerProfileId) {
 
   if (!enteredCnic) {
     const remarks = "No CNIC on file for this user.";
-    await persistResult(lawyerProfileId, false, remarks);
+    const status = CNIC_VERIFICATION_STATUS.UNREADABLE;
+    await persistResult(lawyerProfileId, { match: false, remarks, status });
     return {
       extractedCnic: null,
       enteredCnic: null,
       match: false,
       readable: false,
-      remarks
+      remarks,
+      cnicVerificationStatus: status
     };
   }
 
   const enteredDigits = stripDashes(enteredCnic);
   if (enteredDigits.length !== 13) {
-    throw new ApiError(422, "Entered CNIC is invalid format. Should reject before OCR.");
+    throw new ApiError(
+      422,
+      "This lawyer's CNIC on file is invalid, so it can't be verified."
+    );
   }
 
   const documents = rows.filter(r => r.storage_path);
@@ -122,7 +98,7 @@ export async function verifyLawyerCnicFromCard(lawyerProfileId) {
     try {
       const imageBuffer = await downloadLawyerDocument(doc.storage_path);
       if (!imageBuffer) continue;
-      
+
       documentFoundInStorage = true;
 
       const imageBase64 = imageBuffer.toString("base64");
@@ -141,14 +117,17 @@ export async function verifyLawyerCnicFromCard(lawyerProfileId) {
         const isMatch = parsed.digits === enteredDigits;
         const remarks = isMatch
           ? `CNIC successfully verified. The uploaded card matches the entered CNIC.`
-          : `CNIC mismatch detected. The uploaded card does not match the entered CNIC. Please review manually.`;
+          : `CNIC mismatch detected. Card shows ${parsed.formatted}; entered CNIC is ${enteredCnic}. Please review manually.`;
 
         finalResult = {
           extractedCnic: parsed.formatted,
           enteredCnic,
           match: isMatch,
           readable: true,
-          remarks
+          remarks,
+          cnicVerificationStatus: isMatch
+            ? CNIC_VERIFICATION_STATUS.MATCHED
+            : CNIC_VERIFICATION_STATUS.MISMATCH
         };
 
         // If we found a matching CNIC, we can stop scanning!
@@ -157,7 +136,7 @@ export async function verifyLawyerCnicFromCard(lawyerProfileId) {
         }
       }
     } catch (err) {
-      // Let definitive API errors (429, 401, 504) bubble up to the controller
+      // Let definitive API errors (429, 502, 504) bubble up to the controller
       // instead of silently falling through to "Unable to verify".
       if (err instanceof ApiError) throw err;
       console.error(`[cnicOcr] OCR failed for doc type ${doc.document_type}:`, err);
@@ -175,23 +154,29 @@ export async function verifyLawyerCnicFromCard(lawyerProfileId) {
       enteredCnic,
       match: false,
       readable: false,
-      remarks: "Unable to verify the CNIC from the uploaded card. Please review the document manually."
+      remarks: "Unable to verify the CNIC from the uploaded card. Please review the document manually.",
+      cnicVerificationStatus: CNIC_VERIFICATION_STATUS.UNREADABLE
     };
   }
 
   // 6. Persist the final result.
-  await persistResult(lawyerProfileId, finalResult.match, finalResult.remarks);
+  await persistResult(lawyerProfileId, {
+    match: finalResult.match,
+    remarks: finalResult.remarks,
+    status: finalResult.cnicVerificationStatus
+  });
 
   return finalResult;
 }
 
-async function persistResult(lawyerProfileId, match, remarks) {
+async function persistResult(lawyerProfileId, { match, remarks, status }) {
   await pool.query(
     `UPDATE lawyer_profiles
         SET cnic_match = $1,
             cnic_match_remarks = $2,
+            cnic_verification_status = $3,
             updated_at = NOW()
-      WHERE id = $3`,
-    [match, remarks, lawyerProfileId]
+      WHERE id = $4`,
+    [match, remarks, status, lawyerProfileId]
   );
 }

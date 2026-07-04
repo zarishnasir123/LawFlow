@@ -605,7 +605,37 @@ export async function changePassword(req, res) {
 }
 
 export async function verifyLawyerCnic(req, res) {
-  const result = await verifyLawyerCnicFromCard(req.params.lawyerProfileId);
-  return res.status(200).json(result);
+  try {
+    const result = await verifyLawyerCnicFromCard(req.params.lawyerProfileId);
+    return res.status(200).json(result);
+  } catch (error) {
+    if (error instanceof ApiError) {
+      if (error.statusCode === 429) {
+        throw new ApiError(
+          429,
+          "OCR service is rate-limited. Wait a minute, then click Retry OCR."
+        );
+      }
+      if (error.statusCode === 504) {
+        throw new ApiError(
+          504,
+          "Card read timed out. Please verify the document manually."
+        );
+      }
+      if (error.statusCode === 503) {
+        throw new ApiError(
+          503,
+          "OCR is not configured. Add GEMINI_API_KEY to the backend environment."
+        );
+      }
+      if (error.statusCode === 502) {
+        throw new ApiError(
+          502,
+          "OCR could not reach the AI service. Check GEMINI_API_KEY or try again."
+        );
+      }
+    }
+    throw error;
+  }
 }
 

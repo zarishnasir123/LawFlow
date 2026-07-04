@@ -33,6 +33,7 @@ export type PendingLawyer = {
   experienceYears: number | null;
   cnicMatch: boolean;
   cnicMatchRemarks: string | null;
+  cnicVerificationStatus: "not_checked" | "matched" | "mismatch" | "unreadable";
   verificationStatus: "pending" | "approved" | "rejected" | "suspended";
   verificationRemarks?: string | null;
   verifiedAt?: string | null;
@@ -138,6 +139,7 @@ export type VerifyCnicResponse = {
   match: boolean;
   readable: boolean;
   remarks: string;
+  cnicVerificationStatus: "not_checked" | "matched" | "mismatch" | "unreadable";
 };
 
 export async function verifyLawyerCnic(
