@@ -151,8 +151,6 @@ export const registrationStrategies = {
     roleName: "lawyer",
 
     mapProfileData(payload) {
-      const extractedCnic = optionalString(getField(payload, "extractedCnic", "extracted_cnic"));
-
       return {
         specialization: optionalString(payload.specialization)?.toLowerCase(),
         districtBar: optionalString(getField(payload, "districtBar", "district_bar")),
@@ -169,17 +167,11 @@ export const registrationStrategies = {
         licenseCardBackImage: mapDocumentReference(payload, "licenseCardBackImage", [
           "barLicenseCardBackUrl",
           "bar_license_card_back_url"
-        ]),
-        extractedCnic,
-        ocrReadable: getField(payload, "ocrReadable", "ocr_readable") !== false
+        ])
       };
     },
 
-    async createProfile(dbClient, userId, profileData, commonData) {
-      const cnicMatch = Boolean(
-        profileData.extractedCnic && profileData.extractedCnic === commonData.cnic
-      );
-
+    async createProfile(dbClient, userId, profileData) {
       const lawyerProfileResult = await dbClient.query(
         `INSERT INTO lawyer_profiles (
           user_id,
@@ -189,9 +181,10 @@ export const registrationStrategies = {
           experience_years,
           cnic_match,
           cnic_match_remarks,
+          cnic_verification_status,
           verification_status
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending')
+        VALUES ($1, $2, $3, $4, $5, false, $6, 'not_checked', 'pending')
         RETURNING id, verification_status, cnic_match`,
         [
           userId,
@@ -199,10 +192,7 @@ export const registrationStrategies = {
           profileData.districtBar,
           profileData.barLicenseNumber,
           profileData.experienceYears,
-          cnicMatch,
-          cnicMatch
-            ? "CNIC matched from license card OCR"
-            : "CNIC OCR check pending; document will be reviewed by admin"
+          "CNIC OCR check pending; document will be reviewed by admin"
         ]
       );
 

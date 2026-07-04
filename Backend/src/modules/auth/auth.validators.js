@@ -1,4 +1,4 @@
-import { body, query } from "express-validator";
+import { body, query, param } from "express-validator";
 
 import { isAllowedDistrictCnic, isValidPakistanCnic } from "../../utils/cnic.js";
 import {
@@ -351,27 +351,7 @@ export const registerLawyerValidator = [
     field: "licenseCardBackImage",
     label: "Bar license card back picture",
     allowedMimeTypes: ["image/jpeg", "image/png"]
-  }),
-
-  body("extractedCnic")
-    .optional({ nullable: true, checkFalsy: true })
-    .trim(),
-
-  body("extracted_cnic")
-    .optional({ nullable: true, checkFalsy: true })
-    .trim(),
-
-  body("ocrReadable")
-    .optional()
-    .isBoolean()
-    .withMessage("OCR readable must be true or false")
-    .toBoolean(),
-
-  body("ocr_readable")
-    .optional()
-    .isBoolean()
-    .withMessage("OCR readable must be true or false")
-    .toBoolean()
+  })
 ];
 
 export const verifyEmailValidator = [
@@ -532,3 +512,10 @@ export const changePasswordValidator = [
 
   body().custom(validateNewPasswordConfirmation)
 ];
+
+export const verifyCnicValidator = [
+  param("lawyerProfileId")
+    .isUUID()
+    .withMessage("Invalid lawyer profile ID format")
+];
+

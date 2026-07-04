@@ -33,6 +33,7 @@ export type PendingLawyer = {
   experienceYears: number | null;
   cnicMatch: boolean;
   cnicMatchRemarks: string | null;
+  cnicVerificationStatus: "not_checked" | "matched" | "mismatch" | "unreadable";
   verificationStatus: "pending" | "approved" | "rejected" | "suspended";
   verificationRemarks?: string | null;
   verifiedAt?: string | null;
@@ -131,3 +132,22 @@ export async function reinstateLawyer(
   );
   return data;
 }
+
+export type VerifyCnicResponse = {
+  extractedCnic: string | null;
+  enteredCnic: string;
+  match: boolean;
+  readable: boolean;
+  remarks: string;
+  cnicVerificationStatus: "not_checked" | "matched" | "mismatch" | "unreadable";
+};
+
+export async function verifyLawyerCnic(
+  lawyerProfileId: string
+): Promise<VerifyCnicResponse> {
+  const { data } = await apiClient.post<VerifyCnicResponse>(
+    `/auth/lawyers/${lawyerProfileId}/verify-cnic`
+  );
+  return data;
+}
+

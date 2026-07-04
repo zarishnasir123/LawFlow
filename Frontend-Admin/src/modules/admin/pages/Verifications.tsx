@@ -16,17 +16,22 @@ import {
   Search,
   ShieldCheck,
   XCircle,
+  Loader2,
+  Check,
+  X,
 } from "lucide-react";
 
 import RejectLawyerConfirmationModal from "../components/modals/RejectLawyerConfirmationModal";
 import SuspendLawyerConfirmationModal from "../components/modals/SuspendLawyerConfirmationModal";
 import ReinstateLawyerConfirmationModal from "../components/modals/ReinstateLawyerConfirmationModal";
+import StatusToast from "../components/modals/StatusToast";
 import {
   fetchActiveLawyers,
   fetchPendingLawyers,
   reinstateLawyer,
   reviewLawyer,
   suspendLawyer,
+  verifyLawyerCnic,
   type ActiveLawyersResponse,
   type PendingLawyer,
   type LawyerDocumentType,
@@ -89,6 +94,12 @@ export default function Verifications() {
   const [pendingRejection, setPendingRejection] = useState<PendingLawyer | null>(null);
   const [pendingSuspension, setPendingSuspension] = useState<PendingLawyer | null>(null);
   const [pendingReinstatement, setPendingReinstatement] = useState<PendingLawyer | null>(null);
+  const [toast, setToast] = useState<{
+    open: boolean;
+    type: "success" | "error";
+    title: string;
+    message: string;
+  }>({ open: false, type: "success", title: "", message: "" });
 
   const pendingQuery = useQuery({
     queryKey: ["admin", "pending-lawyers"],
@@ -131,6 +142,45 @@ export default function Verifications() {
     onSettled: () => {
       setPendingReinstatement(null);
     },
+  });
+
+  const verifyCnicMutation = useMutation({
+    mutationFn: verifyLawyerCnic,
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ["admin", "pending-lawyers"] });
+      queryClient.invalidateQueries({ queryKey: ["admin", "active-lawyers"] });
+
+      if (result.cnicVerificationStatus === "matched") {
+        setToast({
+          open: true,
+          type: "success",
+          title: "CNIC Verified",
+          message: result.remarks,
+        });
+      } else if (result.cnicVerificationStatus === "mismatch") {
+        setToast({
+          open: true,
+          type: "error",
+          title: "CNIC Mismatch",
+          message: result.remarks,
+        });
+      } else {
+        setToast({
+          open: true,
+          type: "error",
+          title: "Unable to Verify CNIC",
+          message: result.remarks,
+        });
+      }
+    },
+    onError: (error) => {
+      setToast({
+        open: true,
+        type: "error",
+        title: "OCR Verification Failed",
+        message: getAuthErrorMessage(error),
+      });
+    }
   });
 
   // Memoized so its reference is stable across renders (a bare `?? []` makes a
@@ -243,6 +293,14 @@ export default function Verifications() {
         isSubmitting={reinstateMutation.isPending}
         onCancel={() => setPendingReinstatement(null)}
         onConfirm={confirmReinstatement}
+      />
+
+      <StatusToast
+        open={toast.open}
+        type={toast.type}
+        title={toast.title}
+        message={toast.message}
+        onClose={() => setToast({ ...toast, open: false })}
       />
 
       <div className="w-full px-6 lg:px-8 xl:px-10 py-8">
@@ -444,9 +502,70 @@ export default function Verifications() {
                               />
                             </dl>
 
-                            {lawyer.cnicMatchRemarks ? (
-                              <div className="mt-3 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                                <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                            <div className="mt-4 flex flex-wrap items-center gap-3">
+                              {(() => {
+                                if (lawyer.verificationStatus !== "pending") return null;
+                                if (lawyer.cnicVerificationStatus === "matched") return null;
+
+                                const hasRun = lawyer.cnicVerificationStatus !== "not_checked";
+
+                                return (
+                                  <button
+                                    type="button"
+                                    disabled={verifyCnicMutation.isPending || isMutating}
+                                    onClick={() => verifyCnicMutation.mutate(lawyer.lawyerProfileId)}
+                                    className="inline-flex items-center gap-1.5 rounded-lg border border-[#01411C] bg-white px-3 py-1.5 text-xs font-semibold text-[#01411C] transition hover:bg-[#01411C]/5 disabled:cursor-not-allowed disabled:opacity-60"
+                                  >
+                                    {verifyCnicMutation.isPending && verifyCnicMutation.variables === lawyer.lawyerProfileId ? (
+                                      <>
+                                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                        Reading the card...
+                                      </>
+                                    ) : (
+                                      <>
+                                        <ShieldCheck className="h-3.5 w-3.5" />
+                                        {hasRun ? "Retry OCR" : "Check OCR"}
+                                      </>
+                                    )}
+                                  </button>
+                                );
+                              })()}
+
+                              {lawyer.cnicVerificationStatus !== "not_checked" && !(verifyCnicMutation.isPending && verifyCnicMutation.variables === lawyer.lawyerProfileId) ? (
+                                lawyer.cnicVerificationStatus === "matched" ? (
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2.5 py-1 text-xs font-semibold text-green-800">
+                                    <Check className="h-3 w-3" />
+                                    Verified
+                                  </span>
+                                ) : lawyer.cnicVerificationStatus === "mismatch" ? (
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2.5 py-1 text-xs font-semibold text-red-800">
+                                    <X className="h-3 w-3" />
+                                    CNIC Mismatch
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-800">
+                                    <AlertTriangle className="h-3 w-3" />
+                                    Unable to Verify
+                                  </span>
+                                )
+                              ) : null}
+                            </div>
+
+                            {lawyer.cnicVerificationStatus !== "not_checked" && lawyer.cnicMatchRemarks ? (
+                              <div className={`mt-3 flex items-start gap-2 rounded-lg border px-3 py-2 text-xs ${
+                                lawyer.cnicVerificationStatus === "matched"
+                                  ? "border-green-200 bg-green-50 text-green-800"
+                                  : lawyer.cnicVerificationStatus === "mismatch"
+                                    ? "border-red-200 bg-red-50 text-red-800"
+                                    : "border-amber-200 bg-amber-50 text-amber-800"
+                              }`}>
+                                {lawyer.cnicVerificationStatus === "matched" ? (
+                                  <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                                ) : lawyer.cnicVerificationStatus === "mismatch" ? (
+                                  <XCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                                ) : (
+                                  <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                                )}
                                 <span>{lawyer.cnicMatchRemarks}</span>
                               </div>
                             ) : null}

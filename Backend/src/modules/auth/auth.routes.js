@@ -24,7 +24,8 @@ import {
   supabaseAuthWebhook,
   updateMe,
   updateMyAvatar,
-  verifyEmail
+  verifyEmail,
+  verifyLawyerCnic
 } from "./auth.controller.js";
 import { asyncHandler } from "../../middleware/asyncHandler.js";
 import { authenticate } from "../../middleware/authenticate.js";
@@ -38,7 +39,7 @@ import {
   loginLimiter,
   otpResendLimiter,
   registerLimiter,
-  resetPasswordLimiter
+  resetPasswordLimiter,
 } from "../../middleware/rateLimiter.js";
 import {
   changePasswordValidator,
@@ -53,7 +54,8 @@ import {
   updateMyProfileValidator,
   verifyEmailValidator,
   forgotPasswordValidator,
-  resetPasswordValidator
+  resetPasswordValidator,
+  verifyCnicValidator
 } from "./auth.validators.js";
 
 const router = Router();
@@ -128,6 +130,16 @@ router.patch(
   authorizeRoles("admin"),
   lawyerReviewLimiter,
   asyncHandler(reinstateLawyer)
+);
+
+router.post(
+  "/lawyers/:lawyerProfileId/verify-cnic",
+  authenticate,
+  authorizeRoles("admin"),
+  lawyerReviewLimiter,
+  verifyCnicValidator,
+  validateRequest,
+  asyncHandler(verifyLawyerCnic)
 );
 
 router.post(

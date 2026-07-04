@@ -139,9 +139,9 @@ async function insertFakeLawyer(client, lawyerRoleId, passwordHash) {
     `INSERT INTO lawyer_profiles (
        user_id, specialization, district_bar, bar_license_number,
        experience_years, bio,
-       cnic_match, verification_status, verified_at
+       cnic_match, cnic_verification_status, verification_status, verified_at
      )
-     VALUES ($1, $2, $3, $4, $5, $6, true, 'approved', NOW())`,
+     VALUES ($1, $2, $3, $4, $5, $6, true, 'matched', 'approved', NOW())`,
     [
       userId,
       specialization,

@@ -36,7 +36,8 @@ export function isGeminiConfigured() {
 // Parses Gemini's generateContent response into plain text, turning the
 // various "no usable text" outcomes (safety block, empty candidate) into
 // clear ApiErrors the controller can surface.
-function extractText(data) {
+// mode: "chat" (default) for legal Q&A, "vision" for license-card OCR.
+function extractText(data, { mode = "chat" } = {}) {
   const candidate = data?.candidates?.[0];
   const parts = candidate?.content?.parts;
   const text = Array.isArray(parts)
@@ -51,11 +52,18 @@ function extractText(data) {
   if (blockReason || finishReason === "SAFETY" || finishReason === "RECITATION") {
     throw new ApiError(
       422,
-      "The assistant couldn't answer that request. Please rephrase your question."
+      mode === "vision"
+        ? "Could not read the license card image. Please verify the document manually."
+        : "The assistant couldn't answer that request. Please rephrase your question."
     );
   }
 
-  throw new ApiError(502, "The assistant returned an empty response. Please try again.");
+  throw new ApiError(
+    502,
+    mode === "vision"
+      ? "OCR returned no text from the card image. Please try again."
+      : "The assistant returned an empty response. Please try again."
+  );
 }
 
 // Calls Gemini's generateContent endpoint.
@@ -124,4 +132,68 @@ export async function generateGeminiText({
   });
 
   return extractText(data);
+}
+
+// Vision variant: sends a single image + text prompt to Gemini and returns the
+// model's text reply. Used for OCR tasks (e.g. reading a CNIC off a Bar Council
+// card). Mirrors generateGeminiText but builds an inlineData part instead of a
+// conversation. Defaults to temperature 0 and a short output cap since OCR
+// replies are terse.
+export async function generateGeminiVision({
+  prompt,
+  imageBase64,
+  imageMimeType,
+  systemInstruction,
+  temperature = 0,
+  maxOutputTokens = 64
+}) {
+  if (!isGeminiConfigured()) {
+    throw new ApiError(
+      503,
+      "AI assistant is not configured. Add GEMINI_API_KEY to the backend .env."
+    );
+  }
+
+  const model = getGeminiModel();
+  const timeoutMs = Number(process.env.GEMINI_TIMEOUT_MS || 30000);
+
+  const body = {
+    contents: [{
+      role: "user",
+      parts: [
+        { inlineData: { mimeType: imageMimeType, data: imageBase64 } },
+        { text: prompt }
+      ]
+    }],
+    generationConfig: {
+      temperature,
+      maxOutputTokens,
+      thinkingConfig: { thinkingBudget: 0 }
+    }
+  };
+
+  if (systemInstruction) {
+    body.system_instruction = { parts: [{ text: systemInstruction }] };
+  }
+
+  const data = await postJsonWithRetry({
+    url: `${GENERATIVE_LANGUAGE_BASE}/${model}:generateContent`,
+    headers: { "x-goog-api-key": getApiKey() },
+    body,
+    timeoutMs,
+    label: "gemini-vision",
+    retryOnRateLimit: true,
+    onUpstreamError: async (res) => {
+      let upstreamStatus = "";
+      try {
+        const errBody = await res.json();
+        upstreamStatus = errBody?.error?.status || "";
+      } catch {
+        // body wasn't JSON; ignore
+      }
+      console.error(`[gemini-vision] upstream error ${res.status} ${upstreamStatus}`);
+    }
+  });
+
+  return extractText(data, { mode: "vision" });
 }
