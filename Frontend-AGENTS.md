@@ -41,12 +41,12 @@ Frontend/src/
     routeGuards.ts    requireAuth() role-based redirect
   modules/            feature modules grouped by domain / role
     auth/             login, register, OTP, password reset, OAuth
-    client/           client-side dashboard, profile, cases, hearings, payments
-    lawyer/           lawyer-side dashboard, case filing, document editor, signatures
-    registrar/        registrar-side dashboard, case review (note: backend wiring
-                      for registrar login still pending — currently a local mock)
+    client/           client dashboard, profile, cases, hearings, payments, chat
+    lawyer/           lawyer dashboard, case filing, document editor, signatures,
+                      AI legal guidance, payments, chat
+    registrar/        registrar dashboard, case review, hearings, courtrooms
     marketing/        landing page
-    payments/         shared payment screens
+    payments/         shared payment screens (agreements, installments, Safepay)
   shared/             code reused across more than one module
     api/              axios instance + shared API helpers
     components/       cross-module UI primitives
@@ -209,6 +209,19 @@ private document URL in Zustand or any storage that JS can read freely.
 - Frontend never talks to Supabase REST directly. Backend uses the
   service role key; frontend uses our own JWT after the round-trip.
 
+## Lawyer registration (no client-side OCR)
+
+Lawyers upload degree + license card images at signup. CNIC OCR runs later
+when an **admin** clicks Check OCR in `Frontend-Admin` — the main app never
+calls `/verify-cnic` and must not send client-claimed OCR fields.
+
+## Real-time chat
+
+- One-to-one client ↔ lawyer conversations via REST (`/api/chat`) + WebSocket
+  (`/ws/chat` on the backend). Use the existing chat module pages/hooks; don't
+  poll HTTP for new messages when the socket is connected.
+- Chat attachments live in a private Supabase bucket; URLs are signed server-side.
+
 ## Anti-patterns (don't ship these)
 
 - `axios.create(...)` inside a module file — use `apiClient`.
@@ -235,8 +248,8 @@ Same rule as `AGENTS.md`:
 
 ## When you finish a task
 
-- Run the local dev server (`npm run dev` from `Frontend/`) and try the
-  feature in a real browser. Type-checks and lints are necessary, not
+- Run `npm run dev` from the repo root (or `Frontend/`) and try the feature in
+  a real browser at `:5173`. Type-checks and lints are necessary, not
   sufficient — feature correctness needs eyes on the UI.
 - If you cannot test the UI (no browser available, no fixtures), say so
   explicitly instead of claiming success.

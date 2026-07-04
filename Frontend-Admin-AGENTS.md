@@ -53,7 +53,7 @@ Frontend-Admin/src/
       components/     AdminLayout (sidebar + outlet), shared admin UI,
                       modals subfolder
       pages/          one file per route (Dashboard, Registrars, Verifications,
-                      …) — pages own data fetching + mutations
+                      RejectionHistory, Cases, Finances, Payouts, Templates, …)
       store/          Zustand stores: notifications, templateCases (template
                       data). Add new ones sparingly.
       data/           static mock data — clearly labelled (*.mock.ts)
@@ -210,6 +210,34 @@ IndexedDB).
 - `user.role` from `localStorage` is a UI hint, not authorisation. The
   backend is the boundary.
 
+## Lawyer verification and CNIC OCR (`Verifications.tsx`)
+
+The admin **Verifications** page (`/verifications`) is where pending lawyers
+are reviewed. CNIC OCR is an advisory check on top of manual document review.
+
+Flow:
+
+- Pending list: `GET /api/auth/lawyers/pending` via `lawyerVerifications.ts`
+- Check OCR: `POST /api/auth/lawyers/:lawyerProfileId/verify-cnic`
+- Approve/reject: `PATCH /api/auth/lawyers/:lawyerProfileId/review`
+- Suspend/reinstate active lawyers from the Active tab
+
+UI rules:
+
+- Drive badges and the Check/Retry OCR button from
+  `lawyer.cnicVerificationStatus` (`not_checked` | `matched` | `mismatch` |
+  `unreadable`). **Do not** infer state from substrings in `cnicMatchRemarks`.
+- Hide Check OCR only when status is `matched`. Keep **Retry OCR** visible for
+  `mismatch` and `unreadable` — OCR can misread a card.
+- On OCR success, show `StatusToast` with outcome-specific title/message from
+  the API response (`matched` → success toast; `mismatch` / `unreadable` → error
+  toast with remarks). Network/Gemini failures use the existing error toast.
+- The manual verification checklist (license number verified, card matches
+  records) is optional and does **not** gate Approve.
+
+API types live in `modules/admin/api/lawyerVerifications.ts`. Extend
+`PendingLawyer` and `VerifyCnicResponse` there — don't duplicate types in pages.
+
 ## React Query conventions
 
 - Query keys are tuples starting with `"admin"`, then resource, then
@@ -244,10 +272,10 @@ Same rule as `AGENTS.md`:
 
 ## When you finish a task
 
-- Run `npm run dev` from `Frontend-Admin/` and exercise the actual
-  feature in a browser at `:5174`. Type-checks and lints are necessary,
+- Run `npm run dev` from the repo root (or `Frontend-Admin/`) and exercise the
+  actual feature in a browser at `:5174`. Type-checks and lints are necessary,
   not sufficient.
-- Run `npm run typecheck` and `npm run lint` before declaring done.
+- Run `npm run build` (includes `tsc -b`) before declaring done.
 - Pre-existing lint warnings in `RegistrarForm.tsx`, `Verifications.tsx`,
   and `SuspendLawyerConfirmationModal.tsx` are tracked separately; your
   PR shouldn't add new ones.

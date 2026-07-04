@@ -2,9 +2,27 @@
 
 Rules for AI agents and contributors working in this LawFlow repo.
 
+## Monorepo layout
+
+LawFlow is a **three-app monorepo**. Run everything from the repo root with
+`npm run dev` (starts Backend `:5000`, Frontend `:5173`, Frontend-Admin `:5174`).
+
+```text
+LawFlow/
+  Backend/           Node/Express API + WebSocket chat server
+  Frontend/          Client, lawyer, registrar SPA (:5173)
+  Frontend-Admin/    Admin-only SPA (:5174)
+  AGENTS.md          this file — cross-cutting rules
+  Frontend-AGENTS.md main-app rules
+  Frontend-Admin-AGENTS.md admin-panel rules
+```
+
+Role-specific frontend rules live in the dedicated `*-AGENTS.md` files. When
+they disagree with this file, the more specific file wins.
+
 ## Basic Rules
 
-- Keep the folder names exactly as they are: `Backend` and `Frontend`.
+- Keep the folder names exactly as they are: `Backend`, `Frontend`, and `Frontend-Admin`.
 - Do not mix frontend code with backend code.
 - Do not over-engineer. Add abstractions only when they remove real duplication or make the code easier to maintain.
 - Follow the existing code style and folder structure before creating a new pattern.
@@ -32,27 +50,31 @@ Current backend module architecture:
 
 ```text
 Backend/src/
-  config/
-  middleware/
+  config/           app, db, supabase
+  middleware/       auth, RBAC, validation, rate limits, errors, uploads
   modules/
-    auth/
-      auth.routes.js
-      auth.controller.js
-      auth.service.js
-      auth.validators.js
-      registration.service.js
-      registration.strategies.js
+    auth/           registration, login, OTP, OAuth, password reset,
+                    lawyer pending/active lists, review/suspend/reinstate,
+                    CNIC OCR verification (cnicOcr.service.js, cnicOcr.parse.js)
     users/
-    admin/
-    cases/
-    documents/
-    signatures/
-    registrar/
-    payments/
-    messages/
-    notifications/
-  services/
-  utils/
+    clients/        client-facing case reads
+    lawyers/        public lawyer directory
+    registrar/      registrar CRUD (admin-provisioned accounts)
+    registrarReview/ registrar case queue (accept/return)
+    cases/          case CRUD, submission, templates, audit events
+    signatures/     per-signer requests + signed-PDF compiler
+    hearings/       courtrooms, holidays, scheduling
+    payments/       service charges, agreements, Safepay gateway, payouts
+    chat/           one-to-one messaging
+    ai/             lawyer AI legal assistant (Groq or Gemini)
+    notifications/  in-app notifications + email preferences
+    admin/          statistics, money dashboard, templates, case tracking
+  realtime/         WebSocket chat server (/ws/chat)
+  services/         email, storage, groq, gemini, llmHttp, disbursement,
+                    activityTracker, case-templates
+  models/           schema.sql (+ dated upgrade scripts when needed)
+  seeders/          dev data helpers (e.g. fakeLawyers.js)
+  scripts/          local verifyChunk*.js smoke tests (gitignored)
   app.js
   server.js
 ```
@@ -75,7 +97,27 @@ Auth registration has an extra split:
 modules/auth/
   registration.service.js      shared registration workflow
   registration.strategies.js   role-specific profile mapping and creation
+  cnicOcr.service.js           admin-triggered CNIC OCR on bar license cards
+  cnicOcr.parse.js             pure CNIC extract/compare helpers (no Gemini/DB)
 ```
+
+Shared LLM integrations live in `services/` — not inside feature modules:
+
+```text
+services/
+  llmHttp.js        shared fetch + retry for Groq/Gemini (generic error messages)
+  groq.service.js   chat completions (AI legal assistant)
+  gemini.service.js text + vision (vision used for license-card OCR)
+  storage.service.js  Supabase private buckets (lawyer docs, case files, avatars, chat)
+  email.service.js    queued + synchronous SMTP delivery
+```
+
+**LLM error-message rule:** `llmHttp.js` is shared by the chatbot and OCR.
+Keep its user-facing strings generic ("assistant is busy", "took too long").
+OCR-specific copy belongs in `auth.controller.js` (`verifyLawyerCnic`) or
+`cnicOcr.service.js`. Never map upstream provider 401 to HTTP 401 — use 502
+so the admin panel's token-refresh interceptor does not log users out on a
+bad API key.
 
 Responsibilities:
 
@@ -96,6 +138,9 @@ Do not put database queries directly in route files.
 - Reuse helpers for CNIC validation, password hashing, JWT handling, async errors, and RBAC.
 - Keep helpers small and easy to understand.
 - Avoid generic helper functions that are not clearly needed yet.
+- Local smoke tests: `Backend/src/scripts/verifyChunk*.js` are gitignored dev
+  scripts. Add one when a feature needs repeatable verification without hitting
+  external APIs (see `verifyChunkCnicOcr.js` for pure-parse OCR tests).
 
 ## Database Rules
 
@@ -113,9 +158,15 @@ Do not put database queries directly in route files.
 - Add indexes for real query patterns, foreign-key joins, and common filters.
 - Do not add duplicate indexes for `PRIMARY KEY` or `UNIQUE` columns because PostgreSQL already creates indexes for them.
 - Review `EXPLAIN`/query plans before adding broad indexes or denormalizing data for performance.
-- Keep schema changes in `Backend/src/models/schema.sql` until migrations are introduced.
-- `schema.sql` is a clean drop-and-recreate script: running it wipes every row. Use it only for local dev and fresh Supabase setup. For incremental changes once users exist, write a migration.
-- When migrations are introduced, use ordered migration files and never edit historical migrations casually.
+- Keep schema changes in `Backend/src/models/schema.sql` for fresh installs.
+- `schema.sql` is a clean drop-and-recreate script: running it wipes every row. Use it only for local dev and fresh Supabase setup.
+- For incremental changes on databases that already have users, add a dated
+  `YYYY-MM-DD_description.sql` next to `schema.sql` (idempotent). Once applied
+  everywhere, fold the change into `schema.sql` and delete the upgrade script
+  if the team only tracks the canonical schema going forward.
+- `lawyer_profiles.cnic_verification_status` tracks CNIC OCR outcome:
+  `not_checked` | `matched` | `mismatch` | `unreadable`. The admin UI keys off
+  this column — not free-text in `cnic_match_remarks`.
 - `users.cnic`, `users.phone`, and `users.password_hash` are nullable. Local registrants are required to provide CNIC and phone via the `registerClient` / `registerLawyer` validators; OAuth users do not have them at signup and may add them later via profile editing.
 - Use the `auth_identities` table for OAuth provider linkage — one row per `(provider, provider_user_id)` pair. Never look up an OAuth user by email.
 - Row Level Security is enabled on every public table by default with no policies. The Express backend bypasses RLS via `SUPABASE_SERVICE_ROLE_KEY`. The frontend never talks to Supabase REST directly. Add a policy only when a new role legitimately needs direct database access.
@@ -203,6 +254,36 @@ Login flow on the frontend:
   frontend must clear local auth and route to `/login`. The user signs
   in again with the new password.
 
+## Lawyer verification and CNIC OCR
+
+Lawyers self-register with degree PDF + bar license card images (front/back).
+They start as `verification_status = 'pending'` and `account_status = 'inactive'`
+until an admin approves them.
+
+CNIC verification is **admin-triggered server-side OCR**, not client-side:
+
+- Endpoint: `POST /api/auth/lawyers/:lawyerProfileId/verify-cnic`
+- Gated: `authenticate` + `authorizeRoles("admin")` + `lawyerReviewLimiter`
+- Service: `cnicOcr.service.js` downloads card images from Supabase private
+  storage, calls `generateGeminiVision` (Gemini), parses the CNIC with
+  `cnicOcr.parse.js`, compares digit-for-digit to `users.cnic`, persists
+  `cnic_match`, `cnic_match_remarks`, and `cnic_verification_status`.
+- Document scan order: back → front → combined. Stops early on match; keeps
+  scanning after a readable mismatch in case the other side reads correctly.
+- Registration does **not** accept client-supplied OCR results.
+
+Approval/rejection (`PATCH .../review`) is separate from OCR. OCR is advisory
+— it does not gate the Approve button. Reject still requires remarks.
+
+Rejection deletes the user row (cascades profiles, documents, sessions) and
+best-effort sweeps Supabase storage. Same email/CNIC/license can re-register.
+
+`cnic_verification_status` values: `not_checked` | `matched` | `mismatch` |
+`unreadable`. The admin UI keys off this column — not remark-string parsing.
+
+Local logic tests: `node Backend/src/scripts/verifyChunkCnicOcr.js` (gitignored).
+Requires `GEMINI_API_KEY` only for the live OCR path, not the parse script.
+
 ## OAuth (Google sign-in)
 
 Only clients can sign in with Google. Lawyers, registrars, and admins use the local password flow only.
@@ -253,6 +334,16 @@ Compile rules:
 - `Backend/src/modules/signatures/signatures.compiler.js` renders **each editor section as its own standalone PDF** and concatenates with pdf-lib. The earlier "render the whole document as A4 once" approach caused signature drift when section dimensions didn't match A4 — content re-flowed into PDF page N+1 and the signature landed on a blank trailing page. Don't fold this back into a single `page.pdf()` call.
 - The compile fires inside `setImmediate(...)` from `submitSignature` so the signer's HTTP response returns in ~50ms instead of waiting 2–4 seconds for puppeteer. The lawyer's editor polls every 15 seconds and picks up `signed_pdf_storage_path` once the compile finishes. Don't switch to a synchronous compile.
 - Email sends (signer-completion notification, deactivation confirmation, etc.) follow the same `setImmediate` rule. They never block the request that triggered them.
+
+## AI legal assistant (lawyer-only)
+
+- Module: `modules/ai/`. Lawyer-facing Q&A grounded in Pakistani civil/family law.
+- Provider: `AI_PROVIDER` env (`groq` | `gemini`). Shared HTTP layer: `llmHttp.js`.
+  Chat uses `groq.service.js` or `generateGeminiText`; license-card OCR uses
+  `generateGeminiVision` only — do not route OCR through the chat endpoints.
+- Rate limit: `aiGuidanceLimiter` on chat routes. OCR uses `lawyerReviewLimiter`
+  on `/verify-cnic` — keep them separate.
+- Sessions persist in `ai_chat_sessions` / `ai_chat_messages`.
 
 ## Profile And Account Lifecycle
 
