@@ -3,6 +3,30 @@ import { ImagePlus } from "lucide-react";
 import { renderAsync } from "docx-preview";
 import { rehydrateFloatingImages } from "../../utils/floatingImage";
 
+// Point every restored floating-image's <img src> at its fresh signed URL
+// (keyed by data-attachment-id). The URLs baked into a saved HTML snapshot
+// expire an hour after the lawyer last saved, so any surface restoring a
+// snapshot must re-point them. No-op when src already matches.
+function rewriteFloatingImageSrcs(
+  container: HTMLElement,
+  urlMap: Record<string, string> | undefined
+) {
+  if (!urlMap) return;
+  const wrappers = container.querySelectorAll<HTMLSpanElement>(
+    ".lawflow-floating-image[data-attachment-id]"
+  );
+  wrappers.forEach((wrapper) => {
+    const id = wrapper.getAttribute("data-attachment-id");
+    if (!id) return;
+    const freshUrl = urlMap[id];
+    if (!freshUrl) return;
+    const img = wrapper.querySelector("img");
+    if (img && img.getAttribute("src") !== freshUrl) {
+      img.setAttribute("src", freshUrl);
+    }
+  });
+}
+
 interface DocxPreviewSurfaceProps {
   // The raw .docx bytes fetched from the backend. We deliberately accept
   // a fresh ArrayBuffer (not Uint8Array / Blob) so the rendering stays
@@ -66,6 +90,17 @@ export default function DocxPreviewSurface({
   // dragend via the window-level listener below.
   const [isDragOver, setIsDragOver] = useState(false);
 
+  // Keep the freshest map reachable from the render effect below. The two
+  // surfaces feed us on different schedules: the lawyer editor's map lands
+  // AFTER mount (attachments fetch), while the registrar review page has it
+  // ready in the SAME commit as editedHtml. The ref lets the render effect
+  // rewrite immediately after restoring the snapshot (covering the same-commit
+  // case), and the effect below covers late-arriving map updates.
+  const attachmentUrlMapRef = useRef(attachmentUrlMap);
+  useEffect(() => {
+    attachmentUrlMapRef.current = attachmentUrlMap;
+  }, [attachmentUrlMap]);
+
   // Rewrite every floating-image's <img src> to the fresh signed URL
   // keyed by its data-attachment-id. Runs whenever the parent passes
   // a new attachmentUrlMap (initial fetch lands after mount; the user
@@ -75,20 +110,8 @@ export default function DocxPreviewSurface({
   // doesn't re-trigger the docx-preview render.
   useEffect(() => {
     const container = containerRef.current;
-    if (!container || !attachmentUrlMap) return;
-    const wrappers = container.querySelectorAll<HTMLSpanElement>(
-      ".lawflow-floating-image[data-attachment-id]"
-    );
-    wrappers.forEach((wrapper) => {
-      const id = wrapper.getAttribute("data-attachment-id");
-      if (!id) return;
-      const freshUrl = attachmentUrlMap[id];
-      if (!freshUrl) return;
-      const img = wrapper.querySelector("img");
-      if (img && img.getAttribute("src") !== freshUrl) {
-        img.setAttribute("src", freshUrl);
-      }
-    });
+    if (!container) return;
+    rewriteFloatingImageSrcs(container, attachmentUrlMap);
   }, [attachmentUrlMap, editedHtml]);
   // onPagesReady is stored in a ref so we don't re-run the render effect
   // when the parent's callback identity changes — only re-render when the
@@ -179,6 +202,14 @@ export default function DocxPreviewSurface({
         if (editable) {
           rehydrateFloatingImages(container);
         }
+
+        // Re-point restored floating images at fresh signed URLs right away.
+        // The standalone rewrite effect above runs BEFORE this render effect
+        // (declaration order), so when the parent supplies editedHtml and the
+        // url map in the same commit (registrar review) it found an empty
+        // container and would never re-run — the snapshot's stale, expired
+        // URLs would render broken images without this call.
+        rewriteFloatingImageSrcs(container, attachmentUrlMapRef.current);
 
         onPagesReadyRef.current?.(Array.from(pages));
       } catch (err) {

@@ -98,6 +98,30 @@ function validateCnic(_, { req }) {
   return true;
 }
 
+// PATCH-time CNIC check. Unlike validateCnic (registration, where CNIC is
+// mandatory) a cnic is optional here: absent/empty is fine. When one IS sent we
+// validate the same format + Gujranwala region so a Google-OAuth user setting
+// their CNIC for the first time gets the identical rules as sign-up. Whether
+// the set is actually allowed (one-time only, immutable once present) is
+// enforced in updateCurrentUser, which can read the stored value.
+function validateOptionalCnic(_, { req }) {
+  const value = getTrimmedField(req.body, "cnic", "CNIC");
+
+  if (value === undefined || value === "") return true;
+
+  if (!isValidPakistanCnic(value)) {
+    throw new Error("CNIC must follow Pakistan format: 12345-1234567-1");
+  }
+
+  if (!isAllowedDistrictCnic(value)) {
+    throw new Error(
+      "Invalid region — LawFlow is currently available only to residents of Gujranwala."
+    );
+  }
+
+  return true;
+}
+
 function validatePasswordConfirmation(_, { req }) {
   const password = req.body.password;
   const confirmPassword = getField(req.body, "confirmPassword", "confirm_password");
@@ -247,18 +271,13 @@ export const updateMyProfileValidator = [
 
   optionalStringField(["phoneNumber", "phone_number", "phone"], "Phone number", { max: 20 }),
 
-  // CNIC is the user's national identity number. It's set at
-  // registration (or by an admin for admin-provisioned accounts) and
-  // is treated as immutable from there on — changing it would silently
-  // rewrite the identity that audit trails, lawyer verifications, and
-  // unique constraints all depend on. The Edit Profile UI for every
-  // role renders CNIC as a locked field; this validator is the
-  // defense-in-depth layer for anyone bypassing the UI.
-  body().custom((_, { req }) => {
-    const value = getTrimmedField(req.body, "cnic", "CNIC");
-    if (value === undefined || value === "") return true;
-    throw new Error("CNIC cannot be changed. Contact an administrator if it was set incorrectly.");
-  }),
+  // CNIC is the user's national identity number. Manual registrants set it at
+  // sign-up and it's immutable thereafter; Google-OAuth users register with NO
+  // cnic and may set it ONCE from Edit Profile. So here we only validate the
+  // FORMAT + region of any cnic that's sent — the one-time-set / immutability
+  // rule is enforced in updateCurrentUser (which can read the stored value),
+  // and the Edit Profile UI locks the field once a cnic already exists.
+  body().custom(validateOptionalCnic),
 
   optionalStringField(["address"], "Address"),
   optionalStringField(["city"], "City", { max: 100 }),

@@ -695,6 +695,34 @@ export async function updateCurrentUser({ userId, patch }) {
     bio: patch.bio !== undefined ? (trim(patch.bio) || null) : undefined
   };
 
+  // CNIC is one-time-set. Google-OAuth users register with no cnic and may set
+  // it once from Edit Profile; manual registrants already have one and it's
+  // immutable. We can only tell which case we're in by reading the stored value,
+  // so the rule lives here (the validator only checks format/region). A no-op
+  // (same value) or an attempt to clear an existing cnic is silently ignored;
+  // a genuine change to a different value is rejected.
+  if (normalized.cnic !== undefined) {
+    const currentRow = await pool.query(
+      `SELECT cnic FROM users WHERE id = $1`,
+      [userId]
+    );
+    const currentCnic = currentRow.rows[0]?.cnic ?? null;
+    const nextCnic = normalized.cnic || null;
+    if (currentCnic) {
+      if (nextCnic && nextCnic !== currentCnic) {
+        throw new ApiError(
+          409,
+          "CNIC cannot be changed. Contact an administrator if it was set incorrectly."
+        );
+      }
+      normalized.cnic = undefined;
+    } else if (!nextCnic) {
+      // Not set yet and nothing meaningful sent → leave it unset.
+      normalized.cnic = undefined;
+    }
+    // else: first-time set — keep normalized.cnic so it flows into the UPDATE.
+  }
+
   // Auto-derive city + tehsil from the address string whenever the
   // address is being updated and the caller hasn't supplied explicit
   // values. This keeps the user from having to type their city /

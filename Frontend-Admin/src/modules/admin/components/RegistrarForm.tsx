@@ -204,8 +204,12 @@ export default function RegistrarForm({
 
           <div className="grid md:grid-cols-2 gap-4">
             <div className="space-y-2">
-              <label className="text-sm font-medium">CNIC Number *</label>
+              <label htmlFor="registrar-cnic" className="text-sm font-medium">
+                CNIC Number *
+              </label>
               <CnicInput
+                id="registrar-cnic"
+                name="cnic"
                 className="w-full rounded-lg border border-gray-300 px-4 py-2 focus:outline-none focus:ring-2 focus:ring-[#01411C] disabled:bg-gray-100"
                 value={values.cnic}
                 onChange={(cnic) => setValues({ ...values, cnic })}

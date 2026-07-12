@@ -6,7 +6,8 @@ import { Trash2 } from "lucide-react";
 import ClientLayout from "../components/ClientLayout";
 import ProfileCard from "../../../shared/components/profile/ProfileCard";
 import AvatarCropperModal from "../../../shared/components/profile/AvatarCropperModal";
-import { formatPkPhone } from "../../../shared/utils/pkFormat";
+import CnicInput from "../../../shared/components/CnicInput";
+import { formatPkPhone, isAllowedGujranwalaCnic } from "../../../shared/utils/pkFormat";
 import {
   useCurrentUser,
   type CurrentUser,
@@ -51,8 +52,10 @@ function buildPatch(
   if (form.lastName !== (initial.lastName ?? "")) patch.lastName = form.lastName;
   if (form.email !== initial.email) patch.email = form.email;
   if (form.phone !== (initial.phone ?? "")) patch.phone = form.phone;
-  // CNIC is intentionally not diffed — it's locked in the UI and the
-  // backend's updateMyProfileValidator rejects any cnic in the body.
+  // CNIC is one-time-set: clients who registered without one (Google sign-up)
+  // can add it here; manual users already have it and the UI locks the field,
+  // so it's only diffed when it started empty and the user filled it in.
+  if (!(initial.cnic ?? "") && form.cnic) patch.cnic = form.cnic;
   if (form.address !== (initial.address ?? "")) patch.address = form.address;
   if (form.city !== (initial.city ?? "")) patch.city = form.city;
   if (form.tehsil !== (initial.tehsil ?? "")) patch.tehsil = form.tehsil;
@@ -209,6 +212,23 @@ export default function ClientProfileEdit() {
   const handleSave = () => {
     if (!form) return;
     setError(null);
+
+    // A first-time CNIC entry (Google sign-up clients) must be a full, valid
+    // Gujranwala CNIC. Empty is allowed — it just stays unset. Manual users
+    // never reach this because the field renders locked.
+    if (!currentUser.cnic && form.cnic) {
+      if (!/^\d{5}-\d{7}-\d{1}$/.test(form.cnic)) {
+        setError("Enter your full CNIC in the format 12345-1234567-1.");
+        return;
+      }
+      if (!isAllowedGujranwalaCnic(form.cnic)) {
+        setError(
+          "Invalid region — LawFlow is available only to Gujranwala residents."
+        );
+        return;
+      }
+    }
+
     const patch = buildPatch(currentUser, form);
     // Empty diff → nothing to save; just navigate back so the lawyer
     // doesn't see a silent no-op spinner.
@@ -296,15 +316,36 @@ export default function ClientProfileEdit() {
               value={form.phone}
               onChange={(v) => handleChange("phone", formatPkPhone(v))}
             />
-            {/* CNIC is set at registration and treated as immutable —
-                changing it would silently rewrite the identity that
-                audit trails and unique constraints depend on. Backend
-                rejects any cnic in the PATCH body. */}
-            <LockedField
-              label="CNIC Number"
-              value={form.cnic}
-              hint="Contact support if your CNIC was set incorrectly."
-            />
+            {/* CNIC. Manual registrants set it at sign-up → immutable, shown
+                locked. Google sign-up clients have none yet → let them add it
+                once (validated to a Gujranwala CNIC here + server-side; the
+                backend refuses to change an existing one). */}
+            {currentUser.cnic ? (
+              <LockedField
+                label="CNIC Number"
+                value={form.cnic}
+                hint="Contact support if your CNIC was set incorrectly."
+              />
+            ) : (
+              <div>
+                <label
+                  htmlFor="client-cnic"
+                  className="text-sm font-medium text-gray-700"
+                >
+                  CNIC Number
+                </label>
+                <CnicInput
+                  id="client-cnic"
+                  name="cnic"
+                  value={form.cnic}
+                  onChange={(v) => handleChange("cnic", v)}
+                  className="mt-1 w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-green-600"
+                />
+                <p className="mt-1 text-xs text-gray-400">
+                  Add your CNIC to complete your profile. It can only be set once.
+                </p>
+              </div>
+            )}
           </div>
 
           <EditableField
