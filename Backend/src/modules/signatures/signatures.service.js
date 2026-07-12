@@ -492,6 +492,26 @@ export async function getSignatureRequestForSigner({ requestId, userId }) {
     }
   }
 
+  // A signed request doubles as the signer's read-only receipt: their own
+  // captures (taken at submit time, already compositing any earlier
+  // signer's ink) ARE the signed pages. Returning them as
+  // priorSignedPages lets the viewer render the signed document as page
+  // backgrounds with zero extra plumbing — the signing UI simply flips
+  // to preview-only when the row is signed.
+  if (row.status === "signed" && Array.isArray(row.signed_page_images)) {
+    const own = [];
+    for (const cap of row.signed_page_images) {
+      if (
+        cap &&
+        typeof cap.pageIndex === "number" &&
+        typeof cap.imageDataUrl === "string"
+      ) {
+        own.push({ pageIndex: cap.pageIndex, imageDataUrl: cap.imageDataUrl });
+      }
+    }
+    if (own.length > 0) priorSignedPages = own;
+  }
+
   return {
     ...mapSignatureRequest(row, { includeSnapshot: true }),
     caseTitle: row.case_title,

@@ -27,6 +27,7 @@ type CnicInputProps = {
   readOnly?: boolean;
   className?: string;
   "aria-invalid"?: boolean | "true" | "false";
+  "aria-describedby"?: string;
 };
 
 const DIGIT_INK = "#111827"; // gray-900 — typed digits + caret
@@ -41,6 +42,7 @@ export default function CnicInput({
   readOnly,
   className,
   "aria-invalid": ariaInvalid,
+  "aria-describedby": ariaDescribedBy,
 }: CnicInputProps) {
   const ref = useRef<HTMLInputElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
@@ -103,12 +105,23 @@ export default function CnicInput({
   };
 
   const handleChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const inputType = (e.nativeEvent as InputEvent).inputType || "";
     let next = cnicDigits(e.target.value);
-    // A deletion that only removed a separator (dash) leaves the digit count
-    // unchanged — treat it as deleting the digit before the caret so Backspace
-    // works over the dashes on every platform (incl. mobile, which fires no
-    // keydown for the delete).
+    // Backspacing over a permanent dash removes only the separator, so the
+    // digit count is unchanged. In that one case, drop the digit before the
+    // caret so Backspace works over the dashes on every platform. The inputType
+    // guard is what keeps this from also firing on a forward-Delete, a paste,
+    // or a select-all-then-type (all of which legitimately keep the same digit
+    // count). When inputType is unavailable (rare, older mobile) we fall back to
+    // the count check so Backspace-over-a-dash still works there.
+    const isBackwardDelete =
+      inputType === "deleteContentBackward" ||
+      inputType === "deleteWordBackward" ||
+      inputType === "deleteSoftLineBackward" ||
+      inputType === "deleteHardLineBackward" ||
+      inputType === "";
     if (
+      isBackwardDelete &&
       e.target.value.length < skeleton.length &&
       next.length === digits.length &&
       next.length > 0
@@ -118,11 +131,18 @@ export default function CnicInput({
     commit(next);
   };
 
+  // Enforce strictly left-to-right entry: whenever the caret moves (focus,
+  // click, Arrow/Home keys, drag-select) snap it back onto the next empty slot.
+  // This also stops mid-field insertions/deletions from landing a digit in the
+  // wrong group. The guard makes the programmatic set a no-op once parked, so
+  // the resulting `select` event doesn't loop.
   const parkCaret = () => {
     const el = ref.current;
     if (!el) return;
     const pos = cnicCaretPos(cnicDigits(el.value).length);
-    el.setSelectionRange(pos, pos);
+    if (el.selectionStart !== pos || el.selectionEnd !== pos) {
+      el.setSelectionRange(pos, pos);
+    }
   };
 
   // Disabled / read-only (e.g. admin edit mode showing an existing CNIC): a
@@ -141,6 +161,7 @@ export default function CnicInput({
         defaultValue={skeleton}
         className={className}
         aria-invalid={ariaInvalid}
+        aria-describedby={ariaDescribedBy}
       />
     );
   }
@@ -158,12 +179,11 @@ export default function CnicInput({
         className={className}
         style={{ color: "transparent", caretColor: DIGIT_INK }}
         aria-invalid={ariaInvalid}
+        aria-describedby={ariaDescribedBy}
         onChange={handleChange}
-        // Keep entry strictly left-to-right: focusing or clicking parks the
-        // caret on the next empty slot (rAF so it runs after the browser's own
-        // caret placement).
         onFocus={() => requestAnimationFrame(parkCaret)}
         onClick={() => requestAnimationFrame(parkCaret)}
+        onSelect={parkCaret}
         onBlur={onBlur}
       />
       <div

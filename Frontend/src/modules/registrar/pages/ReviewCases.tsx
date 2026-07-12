@@ -12,7 +12,7 @@ import {
   UserCircle2,
   XCircle,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import RegistrarLayout from "../components/RegistrarLayout";
@@ -63,6 +63,20 @@ export default function ReviewCases() {
     },
     onError: (error) => setErrorMessage(getRegistrarErrorMessage(error)),
   });
+
+  // attachmentId → fresh signed URL. The edited_html snapshot still carries the
+  // signed URLs from whenever the lawyer last saved — those expire after an
+  // hour, so by review time any inline image would render broken. The detail
+  // endpoint mints fresh URLs for every attachment; DocxPreviewSurface uses
+  // this map to rewrite each floating image's <img src> (same mechanism the
+  // lawyer's editor uses on case re-open).
+  const attachmentUrlMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const attachment of caseData?.attachments ?? []) {
+      if (attachment.url) map[attachment.id] = attachment.url;
+    }
+    return map;
+  }, [caseData?.attachments]);
 
   const signedPdfUrl = caseData?.signedPdfUrl ?? null;
   // Stable string key for the page-index list so the rasterize effect only
@@ -318,6 +332,7 @@ export default function ReviewCases() {
                 editedHtml={caseData.editedHtml}
                 isLoading={false}
                 editable={false}
+                attachmentUrlMap={attachmentUrlMap}
                 onPagesReady={(pages) => setRenderedPages(pages)}
               />
             </div>

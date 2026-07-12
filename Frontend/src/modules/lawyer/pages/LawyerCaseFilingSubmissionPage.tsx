@@ -105,6 +105,26 @@ export default function LawyerCaseFilingSubmissionPage() {
     refetchOnMount: "always",
   });
 
+  // attachmentId → fresh signed URL for this case's uploads. The edited_html
+  // snapshot's inline-image srcs are the signed URLs from whenever the lawyer
+  // last saved — they expire after an hour, so re-opening this preview later
+  // would render broken images. DocxPreviewSurface rewrites each floating
+  // image's src from this map (same mechanism the editor uses on case open).
+  const { data: caseAttachments } = useQuery({
+    queryKey: ["case", selectedCaseId, "attachments"],
+    queryFn: () => casesApi.listAttachments(selectedCaseId),
+    enabled: Boolean(selectedCaseId) && selectedCaseId !== "default-case",
+    staleTime: 0,
+    refetchOnMount: "always",
+  });
+  const attachmentUrlMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const attachment of caseAttachments ?? []) {
+      if (attachment.url) map[attachment.id] = attachment.url;
+    }
+    return map;
+  }, [caseAttachments]);
+
   // Signature requests for this case — we only need the set of absolute page
   // indices that have actually been signed so we can overlay the signed
   // captures onto the matching sections of the full-document preview.
@@ -485,6 +505,7 @@ export default function LawyerCaseFilingSubmissionPage() {
                     editedHtml={backendCase?.editedHtml ?? null}
                     isLoading={backendCaseLoading}
                     editable={false}
+                    attachmentUrlMap={attachmentUrlMap}
                     onPagesReady={handlePagesReady}
                   />
                 )}

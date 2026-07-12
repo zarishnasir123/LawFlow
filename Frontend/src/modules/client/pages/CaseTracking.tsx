@@ -3,6 +3,7 @@ import { useNavigate } from "@tanstack/react-router";
 import {
   CalendarClock,
   ChevronDown,
+  Eye,
   FileSignature,
   History,
   Loader2,
@@ -88,10 +89,10 @@ export default function CaseTracking() {
   // queue is the primary affordance.
   const [historyOpen, setHistoryOpen] = useState(false);
 
+  // Mount-only fetch — loading/error start in their initial states
+  // (true / null), so no synchronous setState is needed here.
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
-    setError(null);
     // Fetch pending + history in parallel — same auth, two cheap
     // queries, single render once both land. A history-fetch failure
     // alone doesn't block the pending list (caught inside Promise.all).
@@ -122,10 +123,10 @@ export default function CaseTracking() {
       onBackClick={() => navigate({ to: "/client-dashboard" })}
     >
       <div className="space-y-6">
-        <Card className="border border-amber-100/80 bg-gradient-to-br from-white via-amber-50/30 to-white p-6 shadow-[0_18px_45px_-32px_rgba(120,53,15,0.35)]">
+        <Card className="border border-gray-200 bg-white p-6 shadow-sm">
           <div className="mb-4 flex items-center justify-between">
             <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-amber-700">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[#01411C]">
                 Signature queue
               </p>
               <h3 className="mt-1 text-lg font-semibold text-gray-900">
@@ -134,12 +135,12 @@ export default function CaseTracking() {
             </div>
             <Badge
               text={`${pendingRequests.length} Pending`}
-              color="bg-amber-100 text-amber-800"
+              color="bg-amber-50 text-amber-700 ring-1 ring-amber-200"
             />
           </div>
 
           {loading ? (
-            <div className="flex items-center justify-center gap-2 rounded-xl border border-dashed border-amber-200/70 bg-white/70 p-6 text-sm text-gray-500">
+            <div className="flex items-center justify-center gap-2 rounded-xl border border-dashed border-gray-200 bg-gray-50/60 p-6 text-sm text-gray-500">
               <Loader2 className="h-4 w-4 animate-spin" />
               Loading your signature requests…
             </div>
@@ -148,7 +149,7 @@ export default function CaseTracking() {
               {error}
             </div>
           ) : pendingRequests.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-amber-200/70 bg-white/70 p-6 text-center text-sm text-gray-600">
+            <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50/60 p-6 text-center text-sm text-gray-600">
               No documents are waiting for your signature right now.
             </div>
           ) : (
@@ -158,10 +159,10 @@ export default function CaseTracking() {
                 return (
                   <div
                     key={req.id}
-                    className="flex flex-wrap items-start justify-between gap-3 rounded-xl border border-amber-100 bg-white p-4 shadow-[0_10px_25px_-22px_rgba(120,53,15,0.4)]"
+                    className="flex flex-wrap items-start justify-between gap-3 rounded-xl border border-gray-200 bg-white p-4 shadow-sm transition-shadow hover:shadow-md"
                   >
                     <div className="flex items-start gap-3">
-                      <div className="mt-0.5 rounded-lg bg-amber-50 p-2 text-amber-700 shadow-sm">
+                      <div className="mt-0.5 rounded-lg bg-emerald-50 p-2 text-[#01411C]">
                         <FileSignature className="h-4 w-4" />
                       </div>
                       <div>
@@ -186,13 +187,13 @@ export default function CaseTracking() {
                     <div className="flex items-center gap-2">
                       <Badge
                         text="Pending Signature"
-                        color="bg-amber-100 text-amber-700"
+                        color="bg-amber-50 text-amber-700 ring-1 ring-amber-200"
                       />
                       <button
                         onClick={() =>
                           navigate({ to: `/client-signatures/${req.id}` })
                         }
-                        className="rounded-lg border border-amber-200 px-3 py-1 text-xs font-semibold text-amber-800 hover:bg-amber-50"
+                        className="rounded-lg bg-[#01411C] px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-[#024a23]"
                       >
                         Open
                       </button>
@@ -268,6 +269,21 @@ export default function CaseTracking() {
                             : req.requestingLawyerName}
                         </p>
                       </div>
+                      {/* Signed rows open the read-only preview of the
+                          signed pages (same viewer route — it flips to
+                          preview mode for completed requests). */}
+                      {req.status === "signed" ? (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            navigate({ to: `/client-signatures/${req.id}` })
+                          }
+                          className="inline-flex flex-shrink-0 items-center gap-1 self-center rounded-md border border-gray-200 px-2.5 py-1 text-[11px] font-semibold text-[#01411C] transition-colors hover:border-[#01411C] hover:bg-emerald-50/50"
+                        >
+                          <Eye className="h-3 w-3" />
+                          View
+                        </button>
+                      ) : null}
                     </li>
                   );
                 })}

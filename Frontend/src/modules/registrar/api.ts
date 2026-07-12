@@ -56,7 +56,9 @@ export type RegistrarCaseAttachment = {
 //     This is only the signed page(s), not the whole file.
 //   - editedHtml: the prepared-document HTML snapshot (cases.edited_html,
 //     the same value the lawyer's getCase returns). The full multi-section
-//     plaint, with inline images embedded as data: URLs. null when the
+//     plaint. Inline images point at the signed URLs from when the lawyer
+//     last saved — those expire after an hour, so the review page re-points
+//     them at the fresh `attachments[].url` values below. null when the
 //     lawyer has not built the document yet.
 //   - signedPageIndices: sorted, de-duplicated 0-based absolute page indices
 //     that carry a completed signature for this case (union of every signed
