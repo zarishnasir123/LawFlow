@@ -15,6 +15,7 @@ export const SUPPORTED_TEHSILS = [
   "Gujranwala City & Sadar",
   "Kamoke",
   "Nowshera Virkan",
+  "Wazirabad",
 ] as const;
 
 export type SupportedTehsil = (typeof SUPPORTED_TEHSILS)[number];

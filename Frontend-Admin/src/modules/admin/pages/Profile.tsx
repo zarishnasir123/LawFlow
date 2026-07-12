@@ -10,6 +10,7 @@ import {
   ShieldCheck,
   Trash2,
 } from "lucide-react";
+import { formatPkPhone } from "../../../shared/utils/pkFormat";
 
 import {
   avatarInitial,
@@ -345,7 +346,7 @@ export default function Profile() {
                 disabled={!editing}
                 placeholder={editing ? "+92 300 0000000" : undefined}
                 onChange={(e) =>
-                  setForm((p) => p && { ...p, phone: e.target.value })
+                  setForm((p) => p && { ...p, phone: formatPkPhone(e.target.value) })
                 }
                 className={editing ? editableField : lockedField}
               />

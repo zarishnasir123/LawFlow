@@ -22,7 +22,13 @@ export function isValidPakistanCnic(cnic) {
 }
 
 export function getAllowedCnicPrefixes() {
-  return String(process.env.ALLOWED_CNIC_PREFIXES || "")
+  // Defaults to the Gujranwala tehsil locality codes (Gujranwala City/Saddar,
+  // Kamoke, Nowshera Virkan, Wazirabad) so the restriction is ON out of the box
+  // even when ALLOWED_CNIC_PREFIXES is unset/blank. Override via the env var.
+  return String(
+    process.env.ALLOWED_CNIC_PREFIXES ||
+      "34101,34102,34103,34104,34105,34106"
+  )
     .split(",")
     .map((prefix) => prefix.trim())
     .filter(Boolean);

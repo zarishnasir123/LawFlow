@@ -3,6 +3,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { useMutation } from "@tanstack/react-query";
 import { Briefcase } from "lucide-react";
 import LawyerLayout from "../components/LawyerLayout";
+import { formatPkPhone } from "../../../shared/utils/pkFormat";
 import {
   casesApi,
   getCasesErrorMessage,
@@ -28,7 +29,7 @@ export default function CreateCase() {
   const [formData, setFormData] = useState({
     clientName: "",
     clientEmail: "",
-    clientPhone: "",
+    clientPhone: "+92-",
     oppositeParty: "",
     caseTitle: "",
     description: "",
@@ -44,7 +45,7 @@ export default function CreateCase() {
     const { name, value } = e.target;
     setFormData((prev) => ({
       ...prev,
-      [name]: value,
+      [name]: name === "clientPhone" ? formatPkPhone(value) : value,
     }));
   };
 
@@ -257,7 +258,7 @@ export default function CreateCase() {
               disabled={
                 !formData.clientName ||
                 !formData.clientEmail ||
-                !formData.clientPhone ||
+                formData.clientPhone.replace(/\D/g, "").length <= 2 ||
                 !formData.oppositeParty ||
                 !formData.caseTitle ||
                 !formData.assignedTehsil ||
