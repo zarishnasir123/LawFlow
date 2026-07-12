@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import {
-  CalendarClock,
   ChevronDown,
   Eye,
   FileSignature,
   History,
   Loader2,
+  PenLine,
 } from "lucide-react";
 
 import ClientLayout from "../components/ClientLayout";
@@ -27,19 +27,6 @@ function Badge({ text, color }: { text: string; color?: string }) {
       {text}
     </span>
   );
-}
-
-function formatDateTime(value?: string) {
-  if (!value) return "N/A";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
 }
 
 function formatDateOnly(value?: string) {
@@ -124,14 +111,19 @@ export default function CaseTracking() {
     >
       <div className="space-y-6">
         <Card className="border border-gray-200 bg-white p-6 shadow-sm">
-          <div className="mb-4 flex items-center justify-between">
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[#01411C]">
-                Signature queue
-              </p>
-              <h3 className="mt-1 text-lg font-semibold text-gray-900">
-                Pending Signatures
-              </h3>
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="rounded-xl bg-emerald-50 p-2.5 text-[#01411C]">
+                <FileSignature className="h-5 w-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-semibold text-gray-900">
+                  Pending Signatures
+                </h3>
+                <p className="text-sm text-gray-500">
+                  Documents your lawyer sent for your signature.
+                </p>
+              </div>
             </div>
             <Badge
               text={`${pendingRequests.length} Pending`}
@@ -153,49 +145,44 @@ export default function CaseTracking() {
               No documents are waiting for your signature right now.
             </div>
           ) : (
-            <div className="space-y-3">
+            <div className="divide-y divide-gray-100">
               {pendingRequests.map((req) => {
                 const pageCount = req.pageIndices?.length || 0;
                 return (
                   <div
                     key={req.id}
-                    className="flex flex-wrap items-start justify-between gap-3 rounded-xl border border-gray-200 bg-white p-4 shadow-sm transition-shadow hover:shadow-md"
+                    className="flex flex-wrap items-center justify-between gap-4 px-1 py-4 transition-colors hover:bg-gray-50"
                   >
-                    <div className="flex items-start gap-3">
-                      <div className="mt-0.5 rounded-lg bg-emerald-50 p-2 text-[#01411C]">
-                        <FileSignature className="h-4 w-4" />
+                    <div className="flex min-w-0 items-center gap-3.5">
+                      <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-[#01411C]">
+                        <FileSignature className="h-5 w-5" />
                       </div>
-                      <div>
-                        <p className="text-sm font-semibold text-gray-900">
+                      <div className="min-w-0">
+                        <p className="truncate text-[15px] font-semibold text-gray-900">
                           {req.caseTitle}
                         </p>
-                        <p className="text-xs text-gray-500">
+                        <p className="mt-0.5 truncate text-sm text-gray-500">
                           {pageCount > 0
-                            ? `${pageCount} page${pageCount === 1 ? "" : "s"} • Sent by ${req.requestingLawyerName}`
-                            : `Sent by ${req.requestingLawyerName}`}
+                            ? `${pageCount} page${pageCount === 1 ? "" : "s"} · `
+                            : ""}
+                          Sent by {req.requestingLawyerName} · Expires{" "}
+                          {formatDateOnly(req.expiresAt)}
                         </p>
-                        <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-gray-500">
-                          <span className="inline-flex items-center gap-1">
-                            <CalendarClock className="h-3.5 w-3.5" />
-                            Requested {formatDateTime(req.createdAt)}
-                          </span>
-                          <span className="text-gray-300">•</span>
-                          <span>Expires {formatDateOnly(req.expiresAt)}</span>
-                        </div>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-shrink-0 items-center gap-3">
                       <Badge
-                        text="Pending Signature"
+                        text="Pending"
                         color="bg-amber-50 text-amber-700 ring-1 ring-amber-200"
                       />
                       <button
                         onClick={() =>
                           navigate({ to: `/client-signatures/${req.id}` })
                         }
-                        className="rounded-lg bg-[#01411C] px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-[#024a23]"
+                        className="inline-flex items-center gap-2 rounded-lg bg-[#01411C] px-4 py-2 text-sm font-semibold text-white hover:bg-[#024a23]"
                       >
-                        Open
+                        <PenLine className="h-4 w-4" />
+                        Review &amp; Sign
                       </button>
                     </div>
                   </div>
@@ -247,28 +234,27 @@ export default function CaseTracking() {
                   return (
                     <li
                       key={req.id}
-                      className="flex items-start gap-2 rounded-md px-2 py-2 text-[12px] text-gray-600 hover:bg-gray-50"
+                      className="flex items-center gap-3 px-2 py-2.5 text-sm text-gray-600"
                     >
                       <span
                         aria-hidden
-                        className={`mt-1.5 inline-block h-1.5 w-1.5 flex-shrink-0 rounded-full ${dotColor}`}
+                        className={`inline-block h-2 w-2 flex-shrink-0 rounded-full ${dotColor}`}
                       />
-                      <div className="min-w-0 flex-1 leading-relaxed">
-                        <p>
-                          <span className="font-semibold text-gray-700">
-                            {formatDateOnly(stampSource)}
-                          </span>{" "}
-                          · {verb}{" "}
-                          <span className="font-medium text-gray-800">
-                            {req.caseTitle}
+                      <p className="min-w-0 flex-1 truncate">
+                        <span className="font-semibold text-gray-700">
+                          {formatDateOnly(stampSource)}
+                        </span>{" "}
+                        · {verb}{" "}
+                        <span className="font-medium text-gray-900">
+                          {req.caseTitle}
+                        </span>
+                        {pageCount > 0 ? (
+                          <span className="text-gray-400">
+                            {" "}
+                            · {pageCount} page{pageCount === 1 ? "" : "s"}
                           </span>
-                        </p>
-                        <p className="text-[11px] text-gray-500">
-                          {pageCount > 0
-                            ? `${pageCount} page${pageCount === 1 ? "" : "s"} · ${req.requestingLawyerName}`
-                            : req.requestingLawyerName}
-                        </p>
-                      </div>
+                        ) : null}
+                      </p>
                       {/* Signed rows open the read-only preview of the
                           signed pages (same viewer route — it flips to
                           preview mode for completed requests). */}
@@ -278,9 +264,9 @@ export default function CaseTracking() {
                           onClick={() =>
                             navigate({ to: `/client-signatures/${req.id}` })
                           }
-                          className="inline-flex flex-shrink-0 items-center gap-1 self-center rounded-md border border-gray-200 px-2.5 py-1 text-[11px] font-semibold text-[#01411C] transition-colors hover:border-[#01411C] hover:bg-emerald-50/50"
+                          className="inline-flex flex-shrink-0 items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-semibold text-[#01411C] transition-colors hover:border-[#01411C] hover:bg-emerald-50/50"
                         >
-                          <Eye className="h-3 w-3" />
+                          <Eye className="h-3.5 w-3.5" />
                           View
                         </button>
                       ) : null}
