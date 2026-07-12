@@ -14,6 +14,9 @@ export type ClientCase = {
   category: string | null;
   status: ClientCaseStatus;
   lawyerName: string | null;
+  // The lawyer's public profile id — used to link to their profile (e.g. to
+  // leave a review). Null when the case has no linked lawyer profile.
+  lawyerProfileId: string | null;
   createdAt: string;
   submittedAt: string | null;
   reviewedAt: string | null;

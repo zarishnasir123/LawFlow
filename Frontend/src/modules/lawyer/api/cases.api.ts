@@ -110,6 +110,8 @@ export type LawyerDashboardStats = {
   pendingSubmissions: number;
   clientSigned: number;
   totalEarnings: number | null;
+  // Mean of the lawyer's visible reviews (1–5), or null when they have none yet.
+  averageRating: number | null;
 };
 
 // One row in the lawyer dashboard "Recent Activity" feed. The backend builds

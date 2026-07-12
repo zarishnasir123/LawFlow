@@ -18,6 +18,9 @@ function mapClientCase(row) {
       .filter(Boolean)
       .join(" ")
       .trim() || null,
+    // Public profile id of the case's lawyer — lets the client jump to that
+    // lawyer's profile (e.g. to leave a review). Null if no linked lawyer.
+    lawyerProfileId: row.lawyer_profile_id || null,
     createdAt: row.created_at,
     submittedAt: row.submitted_at,
     reviewedAt: row.reviewed_at
@@ -45,10 +48,12 @@ export async function listCasesForClient({ clientUserId }) {
        case_types.display_name AS case_type_display_name,
        case_types.category     AS case_type_category,
        lawyer.first_name       AS lawyer_first_name,
-       lawyer.last_name        AS lawyer_last_name
+       lawyer.last_name        AS lawyer_last_name,
+       lawyer_profile.id       AS lawyer_profile_id
      FROM cases
      JOIN case_types ON case_types.id = cases.case_type_id
      LEFT JOIN users AS lawyer ON lawyer.id = cases.lawyer_user_id
+     LEFT JOIN lawyer_profiles AS lawyer_profile ON lawyer_profile.user_id = cases.lawyer_user_id
      WHERE cases.client_user_id = $1
      ORDER BY cases.created_at DESC`,
     [clientUserId]

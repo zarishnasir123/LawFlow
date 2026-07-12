@@ -5,6 +5,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import LawyerLayout from "../components/LawyerLayout";
 import ProfileCard from "../../../shared/components/profile/ProfileCard";
 import ProfileField from "../../../shared/components/profile/ProfileField";
+import LawyerReceivedReviews from "../components/LawyerReceivedReviews";
 import {
   ChangePasswordModal,
   NotificationPreferencesModal,
@@ -147,6 +148,8 @@ export default function LawyerProfile() {
                 : <span className="text-gray-400">No about section yet — add one from Edit Profile.</span>}
             </p>
           </div>
+
+          <LawyerReceivedReviews />
 
           {/* Account Settings */}
           <div className="pt-6 border-t">

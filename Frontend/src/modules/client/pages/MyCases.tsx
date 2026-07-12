@@ -7,6 +7,7 @@ import {
   CreditCard,
   Loader2,
   Search,
+  Star,
 } from "lucide-react";
 
 import ClientLayout from "../components/ClientLayout";
@@ -260,6 +261,19 @@ export default function ClientMyCases() {
                       <CreditCard className="h-4 w-4" />
                       View Payments
                     </button>
+                    {/* Once the case is submitted, the client can review the
+                        lawyer — jumps to that lawyer's profile (Reviews section). */}
+                    {item.status !== "draft" && item.lawyerProfileId ? (
+                      <button
+                        onClick={() =>
+                          navigate({ to: `/client-lawyer/${item.lawyerProfileId}` })
+                        }
+                        className="inline-flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-700 hover:bg-amber-100"
+                      >
+                        <Star className="h-4 w-4" />
+                        Review your lawyer
+                      </button>
+                    ) : null}
                   </div>
                 </article>
               );

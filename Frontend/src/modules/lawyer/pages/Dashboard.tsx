@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { DollarSign, FileText, FolderOpen } from "lucide-react";
+import { DollarSign, FileText, FolderOpen, Star } from "lucide-react";
 import LawyerLayout from "../components/LawyerLayout";
 import StatCard from "../../../shared/components/dashboard/StatCard";
 import UpcomingHearings from "../../../shared/components/dashboard/UpcomingHearings";
@@ -123,7 +123,7 @@ export default function LawyerDashboard() {
         </header>
 
         {/* STATS */}
-        <section className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+        <section className="grid gap-5 sm:grid-cols-2 lg:grid-cols-5">
           {/* Active Cases — all of the lawyer's cases, any status (live). */}
           <StatCard
             label="Active Cases"
@@ -152,6 +152,17 @@ export default function LawyerDashboard() {
             value={statValue(stats?.clientSigned)}
             icon={FileText}
             accentClassName="bg-emerald-500"
+          />
+          {/* Average Rating — mean of the lawyer's visible client reviews (live). */}
+          <StatCard
+            label="Average Rating"
+            value={
+              statsReady && stats.averageRating !== null
+                ? `${stats.averageRating.toFixed(1)} / 5`
+                : "—"
+            }
+            icon={Star}
+            accentClassName="bg-amber-500"
           />
         </section>
 

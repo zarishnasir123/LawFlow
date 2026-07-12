@@ -1,5 +1,12 @@
 import { Router } from "express";
+import { param } from "express-validator";
 
+import {
+  listReportedReviews,
+  hideReview,
+  dismissReport,
+  blockReviewAuthor,
+} from "./adminReviews.service.js";
 import {
   getAdminCaseDetailHandler,
   getCommissionRateHandler,
@@ -159,6 +166,62 @@ router.delete(
   caseTypeIdParamValidator,
   validateRequest,
   asyncHandler(removeCaseTypeTemplateHandler)
+);
+
+// =====================================================================
+// Review moderation (admin-only, gated by the router.use above). Reported
+// reviews queue + hide / dismiss. Thin handlers delegate to adminReviews.service.
+// =====================================================================
+const reviewIdParam = [
+  param("reviewId").isUUID().withMessage("reviewId must be a valid UUID"),
+];
+
+router.get(
+  "/reviews",
+  asyncHandler(async (req, res) => {
+    const result = await listReportedReviews({ status: req.query.status });
+    res.status(200).json(result);
+  })
+);
+
+router.post(
+  "/reviews/:reviewId/hide",
+  reviewIdParam,
+  validateRequest,
+  asyncHandler(async (req, res) => {
+    const result = await hideReview({
+      reviewId: req.params.reviewId,
+      adminUserId: req.user.sub,
+    });
+    res.status(200).json(result);
+  })
+);
+
+router.post(
+  "/reviews/:reviewId/dismiss",
+  reviewIdParam,
+  validateRequest,
+  asyncHandler(async (req, res) => {
+    const result = await dismissReport({
+      reviewId: req.params.reviewId,
+      adminUserId: req.user.sub,
+    });
+    res.status(200).json(result);
+  })
+);
+
+// Block the client who posted the review (suspend their account + hide it).
+router.post(
+  "/reviews/:reviewId/block-user",
+  reviewIdParam,
+  validateRequest,
+  asyncHandler(async (req, res) => {
+    const result = await blockReviewAuthor({
+      reviewId: req.params.reviewId,
+      adminUserId: req.user.sub,
+    });
+    res.status(200).json(result);
+  })
 );
 
 export default router;
