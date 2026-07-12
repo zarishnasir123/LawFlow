@@ -145,13 +145,13 @@ export default function CaseTracking() {
               No documents are waiting for your signature right now.
             </div>
           ) : (
-            <div className="space-y-3">
+            <div className="divide-y divide-gray-100">
               {pendingRequests.map((req) => {
                 const pageCount = req.pageIndices?.length || 0;
                 return (
                   <div
                     key={req.id}
-                    className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-gray-200 bg-white p-4 shadow-sm transition-shadow hover:shadow-md"
+                    className="flex flex-wrap items-center justify-between gap-4 px-1 py-4 transition-colors hover:bg-gray-50"
                   >
                     <div className="flex min-w-0 items-center gap-3.5">
                       <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-[#01411C]">

@@ -215,13 +215,13 @@ export default function Signatures() {
                 No documents waiting for your signature right now.
               </div>
             ) : (
-              <ul className="space-y-3">
+              <ul className="divide-y divide-gray-100">
                 {pending.map((req) => {
                   const pageCount = req.pageIndices?.length || 0;
                   return (
                     <li
                       key={req.id}
-                      className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-gray-200 bg-white p-4 shadow-sm transition-shadow hover:shadow-md"
+                      className="flex flex-wrap items-center justify-between gap-4 px-1 py-4 transition-colors hover:bg-gray-50"
                     >
                       <div className="flex min-w-0 items-center gap-3.5">
                         <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-[#01411C]">
@@ -365,11 +365,11 @@ export default function Signatures() {
                 signer on a case has submitted their signature.
               </div>
             ) : (
-              <ul className="space-y-3">
+              <ul className="divide-y divide-gray-100">
                 {signedCases.map((c) => (
                   <li
                     key={c.id}
-                    className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-gray-200 bg-white p-4 shadow-sm transition-shadow hover:shadow-md"
+                    className="flex flex-wrap items-center justify-between gap-4 px-1 py-4 transition-colors hover:bg-gray-50"
                   >
                     <div className="flex min-w-0 items-center gap-3.5">
                       <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-[#01411C]">
