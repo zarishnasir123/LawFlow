@@ -2,7 +2,7 @@ import { pool } from "../../config/db.js";
 import { ApiError } from "../../utils/apiError.js";
 import {
   getChatAttachmentSignedUrl,
-  getUserAvatarPublicUrl,
+  getUserAvatarSignedUrl,
   uploadChatAttachment,
 } from "../../services/storage.service.js";
 
@@ -160,8 +160,8 @@ export async function assertConversationParticipant(conversationId, userId) {
         id: row.lawyer_user_id,
         name: lawyerName,
         initials: initialsFor(lawyerName),
-        avatarUrl: getUserAvatarPublicUrl(row.lawyer_avatar),
       },
+      counterpartAvatarPath: row.lawyer_avatar || null,
     };
   }
 
@@ -175,8 +175,8 @@ export async function assertConversationParticipant(conversationId, userId) {
         id: row.client_user_id,
         name: clientName,
         initials: initialsFor(clientName),
-        avatarUrl: getUserAvatarPublicUrl(row.client_avatar),
       },
+      counterpartAvatarPath: row.client_avatar || null,
     };
   }
 
@@ -227,7 +227,7 @@ export async function startConversationForClient({ clientUserId, lawyerUserId })
       id: lawyerUserId,
       name: lawyerName,
       initials: initialsFor(lawyerName),
-      avatarUrl: getUserAvatarPublicUrl(lawyer.rows[0].avatar_storage_path),
+      avatarUrl: await getUserAvatarSignedUrl(lawyer.rows[0].avatar_storage_path),
       status: "offline",
     },
     lastMessage: "",
@@ -296,31 +296,34 @@ export async function listConversationsForUser({ userId, role }) {
 
   const { rows } = await pool.query(sql, [userId]);
 
-  return rows.map((row) => {
-    const name = (row.counterpart_name || "").trim() || fallbackName;
-    return {
-      id: row.conversation_id,
-      counterpart: {
-        id: row.counterpart_id,
-        name,
-        initials: initialsFor(name),
-        avatarUrl: getUserAvatarPublicUrl(row.counterpart_avatar),
-        status: "offline",
-      },
-      lastMessage: previewFor({ body: row.last_body, message_kind: row.last_kind }),
-      lastMessageKind: row.last_kind || null,
-      lastMessageAt: row.last_message_at || row.updated_at,
-      unreadCount: Number(row.unread_count) || 0,
-    };
-  });
+  return Promise.all(
+    rows.map(async (row) => {
+      const name = (row.counterpart_name || "").trim() || fallbackName;
+      return {
+        id: row.conversation_id,
+        counterpart: {
+          id: row.counterpart_id,
+          name,
+          initials: initialsFor(name),
+          avatarUrl: await getUserAvatarSignedUrl(row.counterpart_avatar),
+          status: "offline",
+        },
+        lastMessage: previewFor({ body: row.last_body, message_kind: row.last_kind }),
+        lastMessageKind: row.last_kind || null,
+        lastMessageAt: row.last_message_at || row.updated_at,
+        unreadCount: Number(row.unread_count) || 0,
+      };
+    })
+  );
 }
 
 // Header info for a single conversation (opening a chat directly by id).
 export async function getConversationHeader({ conversationId, userId }) {
   const participant = await assertConversationParticipant(conversationId, userId);
+  const avatarUrl = await getUserAvatarSignedUrl(participant.counterpartAvatarPath);
   return {
     id: participant.conversationId,
-    counterpart: { ...participant.counterpart, status: "offline" },
+    counterpart: { ...participant.counterpart, avatarUrl, status: "offline" },
   };
 }
 
