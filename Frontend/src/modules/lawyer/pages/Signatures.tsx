@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import {
-  CalendarClock,
   ChevronDown,
   Download,
   FileCheck2,
@@ -32,21 +31,21 @@ function SignerMixBadge({ roles }: { roles: ApiCase["signedByRoles"] }) {
 
   if (hasClient && hasLawyer) {
     return (
-      <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-semibold text-indigo-700 ring-1 ring-indigo-100">
+      <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[11px] font-semibold text-indigo-700 ring-1 ring-indigo-100">
         Client + Lawyer
       </span>
     );
   }
   if (hasClient) {
     return (
-      <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700 ring-1 ring-amber-100">
+      <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700 ring-1 ring-amber-100">
         Client only
       </span>
     );
   }
   if (hasLawyer) {
     return (
-      <span className="rounded-full bg-sky-50 px-2 py-0.5 text-[10px] font-semibold text-sky-700 ring-1 ring-sky-100">
+      <span className="rounded-full bg-sky-50 px-2 py-0.5 text-[11px] font-semibold text-sky-700 ring-1 ring-sky-100">
         Lawyer only
       </span>
     );
@@ -140,12 +139,10 @@ export default function Signatures() {
     }
   };
 
+  // Mount-only fetch — loading/error start in their initial states
+  // (true / null), so no synchronous setState is needed here.
   useEffect(() => {
     let cancelled = false;
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setLoading(true);
-    setError(null);
-    setSignedError(null);
     // Three parallel fetches: pending inbox, history log, and the
     // dedicated signed-cases list. Each failure is isolated so a
     // slow / failing one doesn't block the others.
@@ -179,99 +176,95 @@ export default function Signatures() {
   return (
     <LawyerLayout brandTitle="LawFlow" brandSubtitle="Signatures">
       <div className="space-y-4">
-        {/* Pending section — emerald-tinted to match the lawyer's
-            self-sign viewer hero. Same recipe the client's
-            /case-tracking uses, swapped to LawFlow green. */}
-        <section className="rounded-2xl border border-emerald-100 bg-gradient-to-br from-white via-emerald-50/40 to-white p-6 shadow-[0_18px_45px_-32px_rgba(1,65,28,0.35)]">
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[#01411C]">
-                Signature inbox
-              </p>
-              <h2 className="mt-1 text-lg font-semibold text-gray-900">
-                Sign Your Documents
-              </h2>
-              <p className="mt-1 text-xs text-gray-600">
-                Documents waiting on your signature before the case can move
-                forward.
-              </p>
+        {/* Signing inbox — one clean row per waiting document. Titles
+            carry the weight; everything else folds into a single quiet
+            meta line so the card never reads as a wall of micro-text. */}
+        <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-100 bg-gray-50/80 px-5 py-4">
+            <div className="flex items-center gap-3">
+              <div className="rounded-xl bg-emerald-50 p-2.5 text-[#01411C]">
+                <PenLine className="h-5 w-5" />
+              </div>
+              <div>
+                <h2 className="text-base font-semibold text-gray-900">
+                  Sign Your Documents
+                </h2>
+                <p className="text-sm text-gray-500">
+                  Documents waiting on your signature before the case can move
+                  forward.
+                </p>
+              </div>
             </div>
-            <span className="inline-flex items-center rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-[#01411C]">
+            <span className="inline-flex items-center rounded-full bg-emerald-50 px-3 py-1 text-sm font-semibold text-[#01411C] ring-1 ring-emerald-200">
               {pending.length} pending
             </span>
           </div>
 
-          {loading ? (
-            <div className="flex items-center justify-center gap-2 rounded-xl border border-dashed border-emerald-200/70 bg-white/70 p-6 text-sm text-gray-500">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Loading your signature inbox…
-            </div>
-          ) : error ? (
-            <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-sm text-red-700">
-              {error}
-            </div>
-          ) : pending.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-emerald-200/70 bg-white/70 p-6 text-center text-sm text-gray-600">
-              No documents waiting for your signature right now.
-            </div>
-          ) : (
-            <div className="grid gap-3 lg:grid-cols-2">
-              {pending.map((req) => {
-                const pageCount = req.pageIndices?.length || 0;
-                return (
-                  <div
-                    key={req.id}
-                    className="flex flex-col gap-3 rounded-xl border border-emerald-100 bg-white p-4 shadow-[0_10px_25px_-22px_rgba(1,65,28,0.4)]"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex items-start gap-3">
-                        <div className="mt-0.5 rounded-lg bg-emerald-50 p-2 text-[#01411C] shadow-sm">
-                          <FileSignature className="h-4 w-4" />
+          <div className="p-5">
+            {loading ? (
+              <div className="flex items-center justify-center gap-2 rounded-xl border border-dashed border-gray-200 bg-gray-50/60 p-8 text-sm text-gray-500">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Loading your signature inbox…
+              </div>
+            ) : error ? (
+              <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-sm text-red-700">
+                {error}
+              </div>
+            ) : pending.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50/60 p-8 text-center text-sm text-gray-600">
+                No documents waiting for your signature right now.
+              </div>
+            ) : (
+              <ul className="space-y-3">
+                {pending.map((req) => {
+                  const pageCount = req.pageIndices?.length || 0;
+                  return (
+                    <li
+                      key={req.id}
+                      className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-gray-200 bg-white p-4 shadow-sm transition-shadow hover:shadow-md"
+                    >
+                      <div className="flex min-w-0 items-center gap-3.5">
+                        <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-[#01411C]">
+                          <FileSignature className="h-5 w-5" />
                         </div>
-                        <div>
-                          <p className="text-sm font-semibold text-gray-900">
+                        <div className="min-w-0">
+                          <p className="truncate text-[15px] font-semibold text-gray-900">
                             {req.caseTitle}
                           </p>
-                          <p className="text-xs text-gray-500">
+                          <p className="mt-0.5 text-sm text-gray-500">
                             {pageCount > 0
-                              ? `${pageCount} page${pageCount === 1 ? "" : "s"}`
-                              : "Signature requested"}
+                              ? `${pageCount} page${pageCount === 1 ? "" : "s"} · `
+                              : ""}
+                            Requested {formatDateOnly(req.createdAt)} · Expires{" "}
+                            {formatDateOnly(req.expiresAt)}
                           </p>
-                          <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-gray-500">
-                            <span className="inline-flex items-center gap-1">
-                              <CalendarClock className="h-3.5 w-3.5" />
-                              Requested {formatDateTime(req.createdAt)}
-                            </span>
-                            <span className="text-gray-300">•</span>
-                            <span>Expires {formatDateOnly(req.expiresAt)}</span>
-                          </div>
                         </div>
                       </div>
-                      <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700">
-                        Pending
-                      </span>
-                    </div>
-
-                    <button
-                      onClick={() =>
-                        navigate({ to: `/lawyer-signatures/${req.id}` })
-                      }
-                      className="self-start inline-flex items-center gap-2 rounded-lg bg-[#01411C] px-3 py-2 text-xs font-semibold text-white hover:bg-[#024a23]"
-                    >
-                      <PenLine className="h-4 w-4" />
-                      Review & Sign
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          )}
+                      <div className="flex flex-shrink-0 items-center gap-3">
+                        <span className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700 ring-1 ring-amber-200">
+                          Pending
+                        </span>
+                        <button
+                          onClick={() =>
+                            navigate({ to: `/lawyer-signatures/${req.id}` })
+                          }
+                          className="inline-flex items-center gap-2 rounded-lg bg-[#01411C] px-4 py-2 text-sm font-semibold text-white hover:bg-[#024a23]"
+                        >
+                          <PenLine className="h-4 w-4" />
+                          Review &amp; Sign
+                        </button>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
         </section>
 
         {/* Activity log — terminal-state rows where I was the signer.
             Collapsed by default; expand to audit "did I sign that?"
-            or "did the lawyer withdraw that one?" without leaving
-            the inbox. Same shape as /case-tracking's history. */}
+            without leaving the inbox. Same shape as /case-tracking's. */}
         {history.length > 0 && (
           <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
             <button
@@ -280,22 +273,22 @@ export default function Signatures() {
               aria-expanded={historyOpen}
               className="flex w-full items-center justify-between rounded-md px-1 py-1 text-left transition-colors hover:bg-gray-50"
             >
-              <span className="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-gray-500">
-                <History className="h-3.5 w-3.5" />
+              <span className="inline-flex items-center gap-2 text-sm font-semibold text-gray-700">
+                <History className="h-4 w-4 text-gray-400" />
                 Activity log
-                <span className="rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] font-semibold text-gray-600">
+                <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-semibold text-gray-600">
                   {history.length}
                 </span>
               </span>
               <ChevronDown
-                className={`h-3.5 w-3.5 text-gray-400 transition-transform ${
+                className={`h-4 w-4 text-gray-400 transition-transform ${
                   historyOpen ? "rotate-180" : ""
                 }`}
               />
             </button>
 
             {historyOpen && (
-              <ul className="mt-3 space-y-1.5">
+              <ul className="mt-3 divide-y divide-gray-50">
                 {history.map((req) => {
                   const { verb, dotColor } = describeHistoryAction(req.status);
                   const pageCount = req.pageIndices?.length || 0;
@@ -309,28 +302,27 @@ export default function Signatures() {
                   return (
                     <li
                       key={req.id}
-                      className="flex items-start gap-2 rounded-md px-2 py-2 text-[12px] text-gray-600 hover:bg-gray-50"
+                      className="flex items-center gap-3 px-2 py-2.5 text-sm text-gray-600"
                     >
                       <span
                         aria-hidden
-                        className={`mt-1.5 inline-block h-1.5 w-1.5 flex-shrink-0 rounded-full ${dotColor}`}
+                        className={`inline-block h-2 w-2 flex-shrink-0 rounded-full ${dotColor}`}
                       />
-                      <div className="min-w-0 flex-1 leading-relaxed">
-                        <p>
-                          <span className="font-semibold text-gray-700">
-                            {formatDateOnly(stampSource)}
-                          </span>{" "}
-                          · {verb}{" "}
-                          <span className="font-medium text-gray-800">
-                            {req.caseTitle}
+                      <p className="min-w-0 flex-1 truncate">
+                        <span className="font-semibold text-gray-700">
+                          {formatDateOnly(stampSource)}
+                        </span>{" "}
+                        · {verb}{" "}
+                        <span className="font-medium text-gray-900">
+                          {req.caseTitle}
+                        </span>
+                        {pageCount > 0 ? (
+                          <span className="text-gray-400">
+                            {" "}
+                            · {pageCount} page{pageCount === 1 ? "" : "s"}
                           </span>
-                        </p>
-                        <p className="text-[11px] text-gray-500">
-                          {pageCount > 0
-                            ? `${pageCount} page${pageCount === 1 ? "" : "s"}`
-                            : "Signature request"}
-                        </p>
-                      </div>
+                        ) : null}
+                      </p>
                     </li>
                   );
                 })}
@@ -339,98 +331,98 @@ export default function Signatures() {
           </section>
         )}
 
-        {/* Signed Documents tracker — every case the lawyer owns
-            where the PDF compile has finished. Lives here, NOT on
-            /lawyer-cases, so the lawyer's signed artifacts have a
-            dedicated home alongside the signing inbox + activity
-            log. Each row offers preview (open in tab) and download
-            via the fresh 5-min signed URL. */}
-        <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-            <div className="inline-flex items-center gap-2">
-              <FileCheck2 className="h-4 w-4 text-emerald-700" />
-              <h3 className="text-sm font-semibold text-gray-900">
-                Signed Documents
-              </h3>
-              <span className="rounded-full bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700 ring-1 ring-emerald-200">
-                {signedCases.length}
-              </span>
+        {/* Signed Documents tracker — every case the lawyer owns where
+            the PDF compile has finished. Each row: strong title + a
+            single meta line, actions on the right. */}
+        <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-100 bg-gray-50/80 px-5 py-4">
+            <div className="flex items-center gap-3">
+              <div className="rounded-xl bg-emerald-50 p-2.5 text-[#01411C]">
+                <FileCheck2 className="h-5 w-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-semibold text-gray-900">
+                  Signed Documents
+                </h3>
+                <p className="text-sm text-gray-500">
+                  Finalised PDFs after every signer completed their signature.
+                </p>
+              </div>
             </div>
-            <p className="text-[11px] text-gray-500">
-              Finalised PDFs after every signer completed their signature.
-            </p>
+            <span className="inline-flex items-center rounded-full bg-emerald-50 px-3 py-1 text-sm font-semibold text-[#01411C] ring-1 ring-emerald-200">
+              {signedCases.length}
+            </span>
           </div>
 
-          {signedError ? (
-            <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-700">
-              {signedError}
-            </div>
-          ) : signedCases.length === 0 ? (
-            <div className="rounded-lg border border-dashed border-gray-200 p-6 text-center text-xs text-gray-500">
-              No signed PDFs yet. They appear here automatically once every
-              signer on a case has submitted their signature.
-            </div>
-          ) : (
-            <ul className="space-y-2">
-              {signedCases.map((c) => (
-                <li
-                  key={c.id}
-                  className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-emerald-100 bg-emerald-50/30 p-4"
-                >
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <p className="truncate text-sm font-semibold text-gray-900">
-                        {c.title}
-                      </p>
-                      <span
-                        className={`rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ${
-                          c.caseCategory === "civil"
-                            ? "bg-emerald-50 text-emerald-700 ring-emerald-100"
-                            : "bg-purple-50 text-purple-700 ring-purple-100"
-                        }`}
-                      >
-                        {c.caseCategory === "civil" ? "Civil" : "Family"}
-                      </span>
-                      <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-medium text-gray-600 ring-1 ring-gray-200">
-                        {c.caseTypeName}
-                      </span>
-                      <SignerMixBadge roles={c.signedByRoles} />
+          <div className="p-5">
+            {signedError ? (
+              <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+                {signedError}
+              </div>
+            ) : signedCases.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50/60 p-8 text-center text-sm text-gray-500">
+                No signed PDFs yet. They appear here automatically once every
+                signer on a case has submitted their signature.
+              </div>
+            ) : (
+              <ul className="space-y-3">
+                {signedCases.map((c) => (
+                  <li
+                    key={c.id}
+                    className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-gray-200 bg-white p-4 shadow-sm transition-shadow hover:shadow-md"
+                  >
+                    <div className="flex min-w-0 items-center gap-3.5">
+                      <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-[#01411C]">
+                        <FileCheck2 className="h-5 w-5" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="truncate text-[15px] font-semibold text-gray-900">
+                            {c.title}
+                          </p>
+                          <span
+                            className={`rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ${
+                              c.caseCategory === "civil"
+                                ? "bg-emerald-50 text-emerald-700 ring-emerald-100"
+                                : "bg-purple-50 text-purple-700 ring-purple-100"
+                            }`}
+                          >
+                            {c.caseCategory === "civil" ? "Civil" : "Family"}
+                          </span>
+                          <SignerMixBadge roles={c.signedByRoles} />
+                        </div>
+                        <p className="mt-0.5 truncate text-sm text-gray-500">
+                          {c.caseTypeName} · Client: {c.clientName} · Compiled{" "}
+                          {c.signedPdfGeneratedAt
+                            ? formatDateTime(c.signedPdfGeneratedAt)
+                            : "—"}
+                        </p>
+                      </div>
                     </div>
-                    <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-gray-500">
-                      <span className="inline-flex items-center gap-1">
-                        <CalendarClock className="h-3 w-3" />
-                        Compiled{" "}
-                        {c.signedPdfGeneratedAt
-                          ? formatDateTime(c.signedPdfGeneratedAt)
-                          : "—"}
-                      </span>
-                      <span className="text-gray-300">•</span>
-                      <span>Client: {c.clientName}</span>
-                    </div>
-                  </div>
 
-                  <div className="flex flex-shrink-0 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => handleDownloadSignedPdf(c.id)}
-                      className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-700"
-                    >
-                      <Download className="h-3.5 w-3.5" />
-                      Download PDF
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setPreviewCase(c)}
-                      className="inline-flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-xs font-medium text-gray-700 hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700"
-                    >
-                      <FileSignature className="h-3.5 w-3.5" />
-                      Preview
-                    </button>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
+                    <div className="flex flex-shrink-0 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setPreviewCase(c)}
+                        className="inline-flex items-center gap-2 rounded-lg border border-gray-200 px-3.5 py-2 text-sm font-medium text-gray-700 hover:border-[#01411C] hover:text-[#01411C]"
+                      >
+                        <FileSignature className="h-4 w-4" />
+                        Preview
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDownloadSignedPdf(c.id)}
+                        className="inline-flex items-center gap-2 rounded-lg bg-[#01411C] px-3.5 py-2 text-sm font-semibold text-white hover:bg-[#024a23]"
+                      >
+                        <Download className="h-4 w-4" />
+                        Download PDF
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         </section>
       </div>
 

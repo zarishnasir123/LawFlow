@@ -268,6 +268,10 @@ export default function SignatureSigningScreen({
   // Live-render the typed signature any time the name or font changes.
   useEffect(() => {
     if (mode !== "type") return;
+    // Once type mode drives the signature, any previously-uploaded file
+    // label is stale — clear it so the Upload tab never claims an image
+    // that is no longer the active signature.
+    setUploadedFileName(null);
     const trimmed = typedName.trim();
     if (!trimmed) {
       setSignatureDataUrl(null);
@@ -429,12 +433,12 @@ export default function SignatureSigningScreen({
     return () => document.removeEventListener("keyup", syncPlacement);
   }, [hasPlaced, syncPlacement]);
 
-  // When the signature image changes (re-type, font switch, new upload),
-  // drop any existing on-page placement — the signer re-places the new
-  // version explicitly, so what's on the paper never silently diverges
-  // from the preview in the panel.
+  // When the signature image changes — INCLUDING being cleared (draw-pad
+  // Clear, emptying the typed name) — drop any existing on-page placement.
+  // The signer re-places the new version explicitly, so the paper never
+  // shows a signature that no longer matches the panel, and clearing the
+  // source can't orphan a stuck signature with no visible remove control.
   useEffect(() => {
-    if (!signatureDataUrl) return;
     if (floatingRef.current && floatingRef.current.parentElement) {
       floatingRef.current.remove();
       floatingRef.current = null;
@@ -527,6 +531,9 @@ export default function SignatureSigningScreen({
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    // Clear the input value so picking the SAME file again still fires
+    // onChange (browsers suppress the event when the value is unchanged).
+    if (e.target) e.target.value = "";
     if (!file) return;
     if (!file.type.startsWith("image/")) {
       setError("Please upload a PNG or JPG image of your signature.");
@@ -553,6 +560,11 @@ export default function SignatureSigningScreen({
     }
     setSubmitting(true);
     setError(null);
+    // Strip the selection highlight before capturing — the selected-state
+    // outline is applied via a class that only clears on a click INSIDE
+    // the document host, and the Submit button lives outside it. Without
+    // this, the dashed selection chrome could survive into the captures.
+    floatingRef.current.classList.remove("lawflow-floating-image-selected");
     try {
       // Capture each assigned page AS RENDERED in this browser, with the
       // floating signature already on it. The captured PNGs become the
@@ -709,10 +721,13 @@ export default function SignatureSigningScreen({
                 border-radius: 2px;
                 transition: outline-color 0.15s ease;
               }
+              /* NOTE: hover/selected feedback is outline-only, NEVER a
+                 background — captureSignedPages resets outlines before
+                 rasterizing, but a background would survive into the
+                 captured PNGs and end up printed in the signed PDF. */
               .lawflow-floating-image:not(.lawflow-locked-image):hover,
               .lawflow-floating-image:not(.lawflow-locked-image).lawflow-floating-image-selected {
                 outline: 2px dashed #01411C;
-                background: rgba(1, 65, 28, 0.04);
               }
               .lawflow-floating-image.lawflow-locked-image { outline: none; }
               .lawflow-resize-handle {
@@ -1003,17 +1018,11 @@ export default function SignatureSigningScreen({
                   active={step2Done && !signedSuccessfully}
                 />
                 <div className="mt-3 space-y-3 pl-[34px]">
-                  <p className="flex items-start gap-2 rounded-lg bg-gray-50 p-2.5 text-[11px] leading-relaxed text-gray-500">
+                  <p className="flex items-start gap-2 rounded-lg bg-gray-50 p-2.5 text-xs leading-relaxed text-gray-500">
                     <ShieldCheck className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-gray-400" />
                     Your signature will be embedded on the document exactly where
                     you placed it and recorded with this case file.
                   </p>
-
-                  {error && (
-                    <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
-                      {error}
-                    </p>
-                  )}
 
                   <button
                     type="button"
@@ -1035,6 +1044,16 @@ export default function SignatureSigningScreen({
                   </button>
                 </div>
               </section>
+
+              {/* Errors live OUTSIDE the step sections — never subject to
+                  a step's opacity/pointer-events lock. An upload-validation
+                  failure (step 1) or a placement-lost message must render
+                  at full strength no matter which step is active. */}
+              {error && (
+                <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                  {error}
+                </p>
+              )}
             </div>
           </div>
         </aside>
