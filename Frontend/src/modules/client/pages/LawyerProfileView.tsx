@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { BadgeCheck, Mail, Star, Gavel, MapPin, HandCoins, Loader2 } from "lucide-react";
 import ClientLayout from "../components/ClientLayout";
 import ImageLightbox from "../../../shared/components/ImageLightbox";
+import LawyerReviews from "../components/LawyerReviews";
 import { fetchLawyer, type DirectoryLawyer } from "../api/lawyers";
 import { startConversationWithLawyer } from "../api";
 import { getLawyerPublicCaseCharges } from "../../payments/api";
@@ -172,13 +173,20 @@ export default function LawyerProfileView() {
                           {lawyer.districtBar} District Bar
                         </span>
                       ) : null}
-                      {/* Rating placeholder — same dash convention
-                          as the directory card until the ratings
-                          table ships. */}
-                      <span className="inline-flex items-center gap-1 rounded-full border border-gray-200 bg-white px-2.5 py-0.5 text-xs font-medium text-gray-400">
-                        <Star className="h-3.5 w-3.5 text-amber-300" />
-                        {PENDING} rating
-                      </span>
+                      {lawyer.reviewCount > 0 && lawyer.averageRating !== null ? (
+                        <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-100 bg-amber-50 px-2.5 py-0.5 text-xs font-semibold text-amber-700">
+                          <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
+                          {lawyer.averageRating.toFixed(1)}
+                          <span className="font-normal text-amber-600/80">
+                            ({lawyer.reviewCount} review{lawyer.reviewCount === 1 ? "" : "s"})
+                          </span>
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 rounded-full border border-gray-200 bg-white px-2.5 py-0.5 text-xs font-medium text-gray-400">
+                          <Star className="h-3.5 w-3.5 text-gray-300" />
+                          No reviews yet
+                        </span>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -284,7 +292,14 @@ export default function LawyerProfileView() {
                 <div className="mt-4 grid gap-3">
                   <div className="flex items-center justify-between rounded-xl border border-gray-100 bg-gray-50/70 px-4 py-3 text-sm">
                     <span className="text-gray-500">Rating</span>
-                    <span className="font-semibold text-gray-400">{PENDING}</span>
+                    {lawyer.reviewCount > 0 && lawyer.averageRating !== null ? (
+                      <span className="inline-flex items-center gap-1 font-semibold text-gray-900">
+                        <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
+                        {lawyer.averageRating.toFixed(1)} ({lawyer.reviewCount})
+                      </span>
+                    ) : (
+                      <span className="font-semibold text-gray-400">No reviews</span>
+                    )}
                   </div>
                   <div className="flex items-center justify-between rounded-xl border border-gray-100 bg-gray-50/70 px-4 py-3 text-sm">
                     <span className="text-gray-500">Experience</span>
@@ -314,6 +329,11 @@ export default function LawyerProfileView() {
               </div>
             </div>
           </div>
+
+          <LawyerReviews
+            lawyerProfileId={lawyer.lawyerProfileId}
+            lawyerName={name}
+          />
         </div>
       </div>
 

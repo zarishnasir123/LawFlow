@@ -2,9 +2,8 @@ import { apiClient } from "../../../shared/api/axios";
 
 // Public lawyer directory entry returned by GET /api/lawyers. Mirrors
 // the sanitized backend payload — no CNIC, phone, documents, or
-// verification audit fields. Rating / cases handled / success rate
-// are intentionally absent for now; the backend will surface them
-// once the supporting tables exist.
+// verification audit fields. (Cases handled / success rate are still
+// absent pending those tables.)
 export type DirectoryLawyer = {
   lawyerProfileId: string;
   userId: string;
@@ -18,6 +17,10 @@ export type DirectoryLawyer = {
   // Null when they haven't filled it in yet — the UI then renders
   // a generic fallback line instead of an empty section.
   bio: string | null;
+  // Rating aggregates from lawyer_reviews (admin-hidden excluded).
+  // averageRating is null when the lawyer has no reviews yet.
+  averageRating: number | null;
+  reviewCount: number;
 };
 
 export type LawyerDirectoryResponse = {

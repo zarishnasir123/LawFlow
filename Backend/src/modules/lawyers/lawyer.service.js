@@ -37,6 +37,16 @@ async function mapDirectoryLawyer(row) {
     // can show a preview snippet later if the design calls for one.
     // Null when the lawyer hasn't filled it in yet.
     bio: row.bio || null,
+    // Rating aggregates (LEFT JOIN LATERAL over lawyer_reviews, hidden excluded).
+    // averageRating is null when the lawyer has no reviews yet.
+    averageRating:
+      row.avg_rating !== null && row.avg_rating !== undefined
+        ? Number(row.avg_rating)
+        : null,
+    reviewCount:
+      row.review_count !== null && row.review_count !== undefined
+        ? Number(row.review_count)
+        : 0,
   };
 }
 
@@ -91,9 +101,16 @@ export async function listApprovedLawyers({
       lawyer_profiles.district_bar,
       lawyer_profiles.experience_years,
       lawyer_profiles.bio,
+      rev.avg_rating,
+      rev.review_count,
       COUNT(*) OVER () AS total_count
     FROM lawyer_profiles
     JOIN users ON users.id = lawyer_profiles.user_id
+    LEFT JOIN LATERAL (
+      SELECT ROUND(AVG(rating)::numeric, 1) AS avg_rating, COUNT(*)::int AS review_count
+      FROM lawyer_reviews lr
+      WHERE lr.lawyer_profile_id = lawyer_profiles.id AND lr.status <> 'hidden'
+    ) rev ON TRUE
     WHERE lawyer_profiles.verification_status = 'approved'
       AND users.account_status = 'active'
       AND users.deactivated_at IS NULL
@@ -143,9 +160,16 @@ export async function getApprovedLawyerById(lawyerProfileId) {
       lawyer_profiles.specialization,
       lawyer_profiles.district_bar,
       lawyer_profiles.experience_years,
-      lawyer_profiles.bio
+      lawyer_profiles.bio,
+      rev.avg_rating,
+      rev.review_count
     FROM lawyer_profiles
     JOIN users ON users.id = lawyer_profiles.user_id
+    LEFT JOIN LATERAL (
+      SELECT ROUND(AVG(rating)::numeric, 1) AS avg_rating, COUNT(*)::int AS review_count
+      FROM lawyer_reviews lr
+      WHERE lr.lawyer_profile_id = lawyer_profiles.id AND lr.status <> 'hidden'
+    ) rev ON TRUE
     WHERE lawyer_profiles.id = $1
       AND lawyer_profiles.verification_status = 'approved'
       AND users.account_status = 'active'

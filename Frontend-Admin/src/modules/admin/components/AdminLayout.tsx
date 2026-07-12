@@ -18,6 +18,7 @@ import {
   LogOut,
   Menu,
   Shield,
+  Star,
   UserCheck,
   UserCircle2,
   UserX,
@@ -59,6 +60,7 @@ const navItems: NavItem[] = [
   },
   { to: "/verifications", label: "Lawyer Verifications", icon: BadgeCheck },
   { to: "/rejection-history", label: "Rejection History", icon: UserX },
+  { to: "/reviews", label: "Reviews", icon: Star },
   {
     to: "/cases",
     label: "Case Tracking",

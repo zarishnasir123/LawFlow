@@ -30,6 +30,7 @@ DROP TABLE IF EXISTS payment_transactions           CASCADE;
 DROP TABLE IF EXISTS installments                   CASCADE;
 DROP TABLE IF EXISTS payment_plans                  CASCADE;
 DROP TABLE IF EXISTS agreements                     CASCADE;
+DROP TABLE IF EXISTS lawyer_reviews                 CASCADE;
 DROP TABLE IF EXISTS lawyer_service_charges         CASCADE;
 DROP TABLE IF EXISTS case_events                    CASCADE;
 DROP TABLE IF EXISTS signature_requests             CASCADE;
@@ -855,6 +856,34 @@ CREATE TABLE case_events (
 );
 
 -- =====================================================================
+-- Lawyer Reviews: a client rates + reviews a lawyer they've worked with.
+-- Abusive text is auto-blocked at submit time (never stored). A lawyer may
+-- REPORT a stored review; it stays visible until an admin hides or dismisses
+-- it. Public reads and all rating aggregates exclude status='hidden'.
+-- =====================================================================
+CREATE TABLE lawyer_reviews (
+  id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  lawyer_profile_id    UUID NOT NULL REFERENCES lawyer_profiles(id) ON DELETE CASCADE,
+  client_user_id       UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+
+  rating               SMALLINT NOT NULL CHECK (rating BETWEEN 1 AND 5),
+  comment              TEXT,
+
+  status               VARCHAR(20) NOT NULL DEFAULT 'visible'
+                       CHECK (status IN ('visible', 'reported', 'hidden')),
+  report_reason        TEXT,
+  reported_at          TIMESTAMP,
+  moderated_by_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+
+  created_at           TIMESTAMP NOT NULL DEFAULT NOW(),
+  updated_at           TIMESTAMP NOT NULL DEFAULT NOW(),
+
+  UNIQUE (lawyer_profile_id, client_user_id)   -- one review per client per lawyer (ON CONFLICT upsert-edit)
+);
+CREATE INDEX idx_lawyer_reviews_lawyer_profile_id ON lawyer_reviews(lawyer_profile_id);
+CREATE INDEX idx_lawyer_reviews_status            ON lawyer_reviews(status);
+
+-- =====================================================================
 -- Payment Module: Service Charges, Agreements, Payment Plans, Installments
 -- =====================================================================
 CREATE TABLE lawyer_service_charges (
@@ -1258,6 +1287,7 @@ ALTER TABLE cases                          ENABLE ROW LEVEL SECURITY;
 ALTER TABLE signature_requests             ENABLE ROW LEVEL SECURITY;
 ALTER TABLE case_events                    ENABLE ROW LEVEL SECURITY;
 ALTER TABLE lawyer_service_charges         ENABLE ROW LEVEL SECURITY;
+ALTER TABLE lawyer_reviews                 ENABLE ROW LEVEL SECURITY;
 ALTER TABLE agreements                     ENABLE ROW LEVEL SECURITY;
 ALTER TABLE payment_plans                  ENABLE ROW LEVEL SECURITY;
 ALTER TABLE installments                   ENABLE ROW LEVEL SECURITY;

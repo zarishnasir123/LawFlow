@@ -26,6 +26,7 @@ import AdminPayoutsPage from "../modules/admin/pages/Payouts";
 import AdminFinancesPage from "../modules/admin/pages/Finances";
 import AdminProfilePage from "../modules/admin/pages/Profile";
 import AdminNotificationsPage from "../modules/admin/pages/Notifications";
+import AdminReviewsPage from "../modules/admin/pages/ReviewsModeration";
 
 const rootRoute = createRootRoute({
   component: () => <Outlet />,
@@ -162,6 +163,12 @@ const notificationsRoute = createRoute({
   component: AdminNotificationsPage,
 });
 
+const reviewsRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: "reviews",
+  component: AdminReviewsPage,
+});
+
 const routeTree = rootRoute.addChildren([
   indexRoute,
   loginRoute,
@@ -181,6 +188,7 @@ const routeTree = rootRoute.addChildren([
     financesRoute,
     profileRoute,
     notificationsRoute,
+    reviewsRoute,
   ]),
 ]);
 

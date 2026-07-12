@@ -453,7 +453,7 @@ export async function listSignedCasesForLawyer({ lawyerUserId }) {
 //                        the two never disagree. Always a number (0 when the
 //                        lawyer has no successful payments).
 export async function getLawyerDashboardStats({ lawyerUserId }) {
-  const [activeCases, pendingSubmissions, clientSigned, totalEarnings] =
+  const [activeCases, pendingSubmissions, clientSigned, totalEarnings, ratingAgg] =
     await Promise.all([
       pool.query(
         `SELECT COUNT(*)::int AS count
@@ -485,6 +485,14 @@ export async function getLawyerDashboardStats({ lawyerUserId }) {
          FROM payment_transactions
          WHERE lawyer_user_id = $1 AND status = 'success'`,
         [lawyerUserId]
+      ),
+      // Average star rating across this lawyer's visible reviews (null = none yet).
+      pool.query(
+        `SELECT ROUND(AVG(lr.rating)::numeric, 1) AS avg
+           FROM lawyer_reviews lr
+           JOIN lawyer_profiles lp ON lp.id = lr.lawyer_profile_id
+          WHERE lp.user_id = $1 AND lr.status <> 'hidden'`,
+        [lawyerUserId]
       )
     ]);
 
@@ -492,7 +500,11 @@ export async function getLawyerDashboardStats({ lawyerUserId }) {
     activeCases: activeCases.rows[0].count,
     pendingSubmissions: pendingSubmissions.rows[0].count,
     clientSigned: clientSigned.rows[0].count,
-    totalEarnings: totalEarnings.rows[0].total
+    totalEarnings: totalEarnings.rows[0].total,
+    averageRating:
+      ratingAgg.rows[0].avg !== null && ratingAgg.rows[0].avg !== undefined
+        ? Number(ratingAgg.rows[0].avg)
+        : null
   };
 }
 

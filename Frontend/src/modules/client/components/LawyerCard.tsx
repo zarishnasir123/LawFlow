@@ -131,10 +131,20 @@ export default function LawyerCard({
               {lawyer.districtBar}
             </span>
           ) : null}
-          <span className="inline-flex items-center gap-1.5 text-gray-400">
-            <Star className="h-3.5 w-3.5" />
-            — rating
-          </span>
+          {lawyer.reviewCount > 0 && lawyer.averageRating !== null ? (
+            <span className="inline-flex items-center gap-1">
+              <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
+              <span className="font-semibold text-gray-900">
+                {lawyer.averageRating.toFixed(1)}
+              </span>
+              <span className="text-gray-400">({lawyer.reviewCount})</span>
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1.5 text-gray-400">
+              <Star className="h-3.5 w-3.5" />
+              No reviews yet
+            </span>
+          )}
         </div>
 
         {/* Bio — quoted, in a soft container. Adds personality
