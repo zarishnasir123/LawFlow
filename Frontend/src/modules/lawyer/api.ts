@@ -203,13 +203,15 @@ export async function polishSelectedText(
 import type {
   ChatClient,
   ChatMessage,
+  ChatMessageKind,
+  ChatParticipantProfile,
   LawyerChatThread,
   SendMessagePayload,
 } from "../../types/chat";
 
 // =====================================================================
-// Case chat (real backend). The conversation id IS the case id, so the
-// `threadId` the chat screens pass around is a case UUID. The backend
+// Chat (real backend). A conversation is a (client, lawyer) PAIR — it is NOT
+// tied to a case, so `threadId` is the conversation's own UUID. The backend
 // returns a role-agnostic `counterpart`; for the lawyer app that's the
 // client, so we map it onto the LawyerChatThread.client field the UI uses.
 // =====================================================================
@@ -218,6 +220,7 @@ interface ChatConversationDto {
   id: string;
   counterpart: ChatClient;
   lastMessage?: string;
+  lastMessageKind?: ChatMessageKind | null;
   lastMessageAt?: string;
   unreadCount?: number;
 }
@@ -228,6 +231,7 @@ function toLawyerThread(dto: ChatConversationDto): LawyerChatThread {
     client: dto.counterpart,
     tags: [],
     lastMessage: dto.lastMessage ?? "",
+    lastMessageKind: dto.lastMessageKind ?? null,
     lastMessageAt: dto.lastMessageAt ?? new Date().toISOString(),
     unreadCount: dto.unreadCount ?? 0,
   };
@@ -258,6 +262,17 @@ export async function getThreadMessages(threadId: string): Promise<ChatMessage[]
     `/chat/conversations/${threadId}/messages`
   );
   return data.messages ?? [];
+}
+
+// The other participant's real profile (the client, for the lawyer app) —
+// powers the interaction side-panel: real name, CNIC, phone, email, city/tehsil.
+export async function getLawyerConversationParticipant(
+  threadId: string
+): Promise<ChatParticipantProfile> {
+  const { data } = await apiClient.get<{ participant: ChatParticipantProfile }>(
+    `/chat/conversations/${threadId}/participant`
+  );
+  return data.participant;
 }
 
 export async function sendThreadMessage(

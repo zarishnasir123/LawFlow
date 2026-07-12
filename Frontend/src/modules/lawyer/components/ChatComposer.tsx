@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   createVoiceRecorder,
   formatDuration,
+  MAX_VOICE_DURATION_SECONDS,
   type VoiceRecorderHandle,
 } from "../../../shared/utils/voiceRecorder";
 
@@ -45,6 +46,9 @@ export default function ChatComposer({
   const [sendingVoice, setSendingVoice] = useState(false);
   const recorderRef = useRef<VoiceRecorderHandle | null>(null);
   const timerRef = useRef<number | null>(null);
+  // Latest stopAndSend, so the recording-cap timer can auto-send without a
+  // stale closure. Updated each render below.
+  const stopAndSendRef = useRef<() => void>(() => {});
 
   // Typing-indicator throttle: emit true on first keystroke, then false after
   // a short idle gap, rather than on every keystroke.
@@ -125,10 +129,20 @@ export default function ChatComposer({
       recorderRef.current = recorder;
       setElapsed(0);
       setRecording(true);
-      timerRef.current = window.setInterval(
-        () => setElapsed((s) => s + 1),
-        1000
-      );
+      let seconds = 0;
+      timerRef.current = window.setInterval(() => {
+        seconds += 1;
+        setElapsed(seconds);
+        if (seconds >= MAX_VOICE_DURATION_SECONDS) {
+          // Cap reached — stop the ticker and auto-send so a voice note can't
+          // grow indefinitely.
+          if (timerRef.current) {
+            window.clearInterval(timerRef.current);
+            timerRef.current = null;
+          }
+          stopAndSendRef.current();
+        }
+      }, 1000);
     } catch (err) {
       console.error("Microphone error:", err);
       alert(
@@ -168,6 +182,9 @@ export default function ChatComposer({
       setSendingVoice(false);
     }
   };
+
+  // Keep the cap timer's reference to the latest stopAndSend.
+  stopAndSendRef.current = stopAndSend;
 
   return (
     <div className="bg-white px-5 sm:px-8 py-3 border-t-2 border-gray-300">
@@ -218,7 +235,8 @@ export default function ChatComposer({
           <>
             <span className="flex flex-1 items-center gap-2 rounded-lg border-2 border-red-200 bg-red-50 px-4 py-2.5 text-sm font-medium text-red-700">
               <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-red-500" />
-              Recording… {formatDuration(elapsed)}
+              Recording… {formatDuration(elapsed)} /{" "}
+              {formatDuration(MAX_VOICE_DURATION_SECONDS)}
             </span>
             <button
               type="button"

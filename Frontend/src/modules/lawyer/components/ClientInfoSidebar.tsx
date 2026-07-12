@@ -1,34 +1,67 @@
-import { X, Mail, Phone, FileText, Download } from "lucide-react";
-import type { LawyerChatThread } from "../../../types/chat";
+import { X, Mail, FileText, Download, CreditCard, MapPin } from "lucide-react";
+import { useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
+import type { LawyerChatThread, ChatMessage } from "../../../types/chat";
+import { getLawyerConversationParticipant } from "../api";
+import ChatAvatar from "../../../shared/components/ChatAvatar";
 
 interface ClientInfoSidebarProps {
   thread: LawyerChatThread;
   isOpen: boolean;
   onClose: () => void;
-  sharedDocuments?: Array<{ name: string; size: number; uploadedAt: string }>;
+  // The conversation's messages — the shared-documents list is derived from the
+  // real "file" messages (no session-only state).
+  messages?: ChatMessage[];
+}
+
+// Force a browser download of a Supabase signed URL (append &download=<name>).
+function downloadHref(url?: string | null, name?: string | null) {
+  if (!url) return undefined;
+  const sep = url.includes("?") ? "&" : "?";
+  return `${url}${sep}download=${encodeURIComponent(name || "document")}`;
+}
+
+// Open Gmail's compose window (new tab) with the recipient pre-filled. Avoids
+// the blank page a bare mailto: gives when no desktop mail app is registered.
+function mailHref(email?: string | null) {
+  if (!email) return undefined;
+  return `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(email)}`;
 }
 
 export default function ClientInfoSidebar({
   thread,
   isOpen,
   onClose,
-  sharedDocuments = [],
+  messages = [],
 }: ClientInfoSidebarProps) {
-  // Handle phone click - opens dialpad
-  const handlePhoneClick = () => {
-    const phoneNumber = "+923001234567";
-    window.location.href = `tel:${phoneNumber}`;
-  };
+  // Real client profile (name, CNIC, phone, email, city/tehsil). Fetched only
+  // while the panel is open. The authz check lives in the backend.
+  const { data: profile } = useQuery({
+    queryKey: ["chat", "participant", thread.id],
+    queryFn: () => getLawyerConversationParticipant(thread.id),
+    enabled: isOpen && Boolean(thread.id),
+    staleTime: 60_000,
+  });
 
-  // Handle email click - opens Gmail inbox
-  const handleEmailClick = () => {
-    const email = `${thread.client.name.toLowerCase().replace(" ", ".")}@gmail.com`;
-    window.location.href = `mailto:${email}`;
-  };
+  // Shared documents = the real "file" messages in this conversation, newest first.
+  const documents = useMemo(
+    () =>
+      messages
+        .filter((m) => m.kind === "file" && m.attachmentName)
+        .sort(
+          (a, b) =>
+            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        ),
+    [messages]
+  );
+
+  const email = profile?.email ?? null;
+  const cnic = profile?.cnic ?? null;
+  const location = [profile?.city, profile?.tehsil].filter(Boolean).join(", ");
 
   return (
     <div
-      className={`fixed sm:relative inset-y-0 right-0 sm:inset-auto flex-shrink-0 bg-white border-l-2 border-gray-300 overflow-hidden transition-all duration-300 ease-out transform z-50 ${
+      className={`fixed sm:relative inset-y-0 right-0 sm:inset-auto flex-shrink-0 bg-white border-l-2 border-gray-300 overflow-hidden transition-all duration-300 ease-out transform z-50 sm:z-40 ${
         isOpen
           ? "w-full sm:w-96 opacity-100 visible"
           : "w-0 opacity-0 invisible"
@@ -43,9 +76,9 @@ export default function ClientInfoSidebar({
       )}
 
       <div className="h-full w-full sm:w-96 flex flex-col bg-white">
-        {/* Header with Close Button - Aligned with chat border */}
+        {/* Header */}
         <div className="flex-shrink-0 bg-gradient-to-r from-[#01411C] to-green-700 text-white px-5 py-4 flex items-center justify-between border-b-2 border-gray-300">
-          <h3 className="font-semibold text-base">Client Info</h3>
+          <h3 className="font-semibold text-base">Client Profile</h3>
           <button
             onClick={onClose}
             className="text-white hover:bg-white/20 p-1.5 rounded-lg transition duration-200"
@@ -56,13 +89,16 @@ export default function ClientInfoSidebar({
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto">
-          {/* Client Profile Section - Minimalist */}
+          {/* Client Profile Section */}
           <div className="px-5 py-6">
             <div className="flex flex-col items-center">
               {/* Avatar */}
-              <div className="w-16 h-16 rounded-full bg-[#01411C] text-white text-2xl font-bold flex items-center justify-center mb-3">
-                {thread.client.initials}
-              </div>
+              <ChatAvatar
+                name={thread.client.name}
+                initials={thread.client.initials}
+                avatarUrl={thread.client.avatarUrl}
+                className="w-16 h-16 text-2xl mb-3"
+              />
 
               {/* Name */}
               <h2 className="text-lg font-bold text-gray-900 text-center">
@@ -91,70 +127,98 @@ export default function ClientInfoSidebar({
             </div>
           </div>
 
-          {/* Contact Information - Minimalist with clickable buttons */}
+          {/* Contact Information */}
           <div className="px-5 py-4 border-t border-gray-200">
             {/* Email */}
-            <button
-              onClick={handleEmailClick}
-              className="w-full flex items-center gap-3 mb-3 p-3 bg-gray-50 rounded-lg border border-gray-200 hover:bg-gray-100 hover:border-[#01411C] transition duration-200 group"
+            <a
+              href={mailHref(email)}
+              target="_blank"
+              rel="noreferrer"
+              className={`w-full flex items-center gap-3 mb-3 p-3 bg-gray-50 rounded-lg border border-gray-200 transition duration-200 group ${
+                email ? "hover:bg-gray-100 hover:border-[#01411C]" : "opacity-60 cursor-default"
+              }`}
             >
               <Mail className="h-5 w-5 text-[#01411C] flex-shrink-0 group-hover:scale-110 transition" />
               <div className="text-left flex-1 min-w-0">
                 <p className="text-xs text-gray-600 font-medium">Email</p>
                 <p className="text-sm text-gray-900 break-all group-hover:text-[#01411C] transition">
-                  {thread.client.name.toLowerCase().replace(" ", ".")}@gmail.com
+                  {email ?? "—"}
                 </p>
               </div>
-            </button>
+            </a>
 
-            {/* Phone */}
-            <button
-              onClick={handlePhoneClick}
-              className="w-full flex items-center gap-3 p-3 bg-gray-50 rounded-lg border border-gray-200 hover:bg-gray-100 hover:border-[#01411C] transition duration-200 group"
-            >
-              <Phone className="h-5 w-5 text-[#01411C] flex-shrink-0 group-hover:scale-110 transition" />
-              <div className="text-left flex-1">
-                <p className="text-xs text-gray-600 font-medium">Phone</p>
-                <p className="text-sm text-gray-900 group-hover:text-[#01411C] transition">+92 300 1234567</p>
+            {/* CNIC */}
+            <div className="w-full flex items-center gap-3 mb-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
+              <CreditCard className="h-5 w-5 text-[#01411C] flex-shrink-0" />
+              <div className="text-left flex-1 min-w-0">
+                <p className="text-xs text-gray-600 font-medium">CNIC</p>
+                <p className="text-sm text-gray-900 break-all">{cnic ?? "—"}</p>
               </div>
-            </button>
+            </div>
+
+            {/* Location */}
+            {location && (
+              <div className="w-full flex items-center gap-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
+                <MapPin className="h-5 w-5 text-[#01411C] flex-shrink-0" />
+                <div className="text-left flex-1 min-w-0">
+                  <p className="text-xs text-gray-600 font-medium">Location</p>
+                  <p className="text-sm text-gray-900">{location}</p>
+                </div>
+              </div>
+            )}
           </div>
 
-          {/* Shared Documents - Minimalist */}
+          {/* Shared Documents */}
           <div className="px-5 py-4 border-t border-gray-200">
             <h3 className="text-sm font-bold text-gray-900 mb-3 flex items-center gap-2">
               <FileText className="h-4 w-4 text-[#01411C]" />
-              Documents
+              Shared Documents
             </h3>
 
-            {sharedDocuments.length === 0 ? (
+            {documents.length === 0 ? (
               <div className="text-center py-4">
                 <FileText className="h-8 w-8 text-gray-300 mx-auto mb-2" />
                 <p className="text-xs text-gray-500">No documents shared</p>
               </div>
             ) : (
               <div className="space-y-2 max-h-64 overflow-y-auto">
-                {sharedDocuments.map((doc, index) => (
-                  <div
-                    key={index}
-                    className="flex items-center justify-between p-2.5 bg-gray-50 rounded border border-gray-200 hover:bg-gray-100 hover:border-[#01411C] transition duration-200 group"
-                  >
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs font-semibold text-gray-900 truncate">
-                        {doc.name}
-                      </p>
-                      <p className="text-xs text-gray-500 mt-0.5">
-                        {(doc.size / 1024).toFixed(2)} KB
-                      </p>
-                    </div>
-                    <button
-                      className="ml-2 text-[#01411C] hover:bg-[#01411C] hover:text-white p-1.5 rounded transition duration-200 flex-shrink-0 group-hover:scale-110"
-                      title="Download"
+                {documents.map((doc) => {
+                  const mine = doc.sender === "lawyer";
+                  const status = mine
+                    ? doc.seen
+                      ? "Seen"
+                      : "Sent"
+                    : "Received";
+                  return (
+                    <div
+                      key={doc.id}
+                      className="flex items-center justify-between p-2.5 bg-gray-50 rounded border border-gray-200 hover:bg-gray-100 hover:border-[#01411C] transition duration-200 group"
                     >
-                      <Download className="h-4 w-4" />
-                    </button>
-                  </div>
-                ))}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-semibold text-gray-900 truncate">
+                          {doc.attachmentName}
+                        </p>
+                        <p className="text-xs text-gray-500 mt-0.5">
+                          {doc.attachmentSize
+                            ? `${(doc.attachmentSize / 1024).toFixed(1)} KB · `
+                            : ""}
+                          {new Date(doc.createdAt).toLocaleDateString()} · {status}
+                        </p>
+                      </div>
+                      {doc.attachmentUrl && (
+                        <a
+                          href={downloadHref(doc.attachmentUrl, doc.attachmentName)}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="ml-2 text-[#01411C] hover:bg-[#01411C] hover:text-white p-1.5 rounded transition duration-200 flex-shrink-0 group-hover:scale-110"
+                          title="Download"
+                        >
+                          <Download className="h-4 w-4" />
+                        </a>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>

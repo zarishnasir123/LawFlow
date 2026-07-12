@@ -111,10 +111,9 @@ export default function ChatMessageBubble({
               {[1, 2, 3, 4, 5, 6, 7, 8, 9, "*", 0, "#"].map((digit) => (
                 <button
                   key={digit}
-                  onClick={() => {
-                    // In real app, would update the number being dialed
-                    console.log("Pressed:", digit);
-                  }}
+                  onClick={() =>
+                    setDialpadNumber((n) => `${n ?? ""}${digit}`)
+                  }
                   className="bg-gray-100 hover:bg-gray-200 text-gray-900 font-bold py-4 rounded-lg text-xl transition"
                 >
                   {digit}

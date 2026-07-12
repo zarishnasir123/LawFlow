@@ -51,6 +51,12 @@ function pickSupportedMimeType(): string {
 // this; it's set low to avoid false positives.
 const SILENCE_PEAK_THRESHOLD = 2;
 
+// Hard cap on a single voice note (seconds). The chat composers auto-stop and
+// send the recording once it reaches this length, so neither a client nor a
+// lawyer can record indefinitely. Keep the client and lawyer composers in sync
+// by importing this constant rather than hard-coding a number.
+export const MAX_VOICE_DURATION_SECONDS = 120;
+
 export function createVoiceRecorder(): VoiceRecorderHandle {
   let mediaRecorder: MediaRecorder | null = null;
   let stream: MediaStream | null = null;

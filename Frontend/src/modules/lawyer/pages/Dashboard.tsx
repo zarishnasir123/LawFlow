@@ -14,6 +14,7 @@ import { casesApi } from "../api/cases.api";
 import { lawyerHearingsApi } from "../api/hearings.api";
 import { useMemo } from "react";
 import { lawyerDashboardQuickActions } from "../data/dashboard.mock";
+import { getLawyerThreads } from "../api";
 // Compact PKR formatting for the Total Earnings tile: large amounts collapse to
 // "Rs. 450K" / "Rs. 1.2M" so the number fits the card; smaller amounts show
 // with thousands separators. null → "Rs. —" (no clean earnings source).
@@ -54,6 +55,30 @@ export default function LawyerDashboard() {
     queryKey: ["lawyer", "hearings"],
     queryFn: lawyerHearingsApi.listMyHearings,
   });
+
+  // Unread chat messages across all of the lawyer's conversations — drives the
+  // count bubble on the "Messages" quick action. Polls every 30s so it climbs
+  // as new messages arrive without a manual reload.
+  const threadsQuery = useQuery({
+    queryKey: ["lawyer", "threads"],
+    queryFn: getLawyerThreads,
+    refetchInterval: 30_000,
+  });
+  const unreadMessages = useMemo(
+    () =>
+      (threadsQuery.data ?? []).reduce(
+        (sum, t) => sum + (t.unreadCount ?? 0),
+        0
+      ),
+    [threadsQuery.data]
+  );
+  const quickActions = useMemo(
+    () =>
+      lawyerDashboardQuickActions.map((a) =>
+        a.to === "/lawyer-messages" ? { ...a, badge: unreadMessages } : a
+      ),
+    [unreadMessages]
+  );
 
   const formattedHearings = useMemo(() => {
     return upcomingHearingsList
@@ -133,7 +158,7 @@ export default function LawyerDashboard() {
         {/* QUICK ACTIONS */}
         <section className="mt-8">
           <QuickActions
-            actions={lawyerDashboardQuickActions}
+            actions={quickActions}
             onNavigate={(to) => navigate({ to })}
           />
         </section>

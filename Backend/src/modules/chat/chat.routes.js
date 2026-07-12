@@ -9,6 +9,7 @@ import { validateRequest } from "../../middleware/validateRequest.js";
 import {
   getConversation,
   getConversationMessages,
+  getParticipant,
   listMyConversations,
   markRead,
   sendAttachment,
@@ -46,6 +47,14 @@ router.get(
   conversationIdParamValidator,
   validateRequest,
   asyncHandler(getConversation)
+);
+
+// GET /api/chat/conversations/:conversationId/participant -> { participant }
+router.get(
+  "/conversations/:conversationId/participant",
+  conversationIdParamValidator,
+  validateRequest,
+  asyncHandler(getParticipant)
 );
 
 // GET /api/chat/conversations/:conversationId/messages -> { messages }

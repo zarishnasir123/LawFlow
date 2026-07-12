@@ -1,4 +1,4 @@
-import { Download, FileText } from "lucide-react";
+import { Download, FileText, Mic } from "lucide-react";
 import type { ChatMessage } from "../../types/chat";
 import { formatDuration } from "../utils/voiceRecorder";
 import { forceDownloadUrl } from "../utils/chatAttachmentUrl";
@@ -41,9 +41,10 @@ export default function ChatAttachment({
             className="max-w-[220px]"
           />
           <span
-            className={`text-[11px] ${mine ? "text-green-200" : "text-gray-400"}`}
+            className={`flex items-center gap-1 text-[11px] ${mine ? "text-green-200" : "text-gray-400"}`}
           >
-            🎤 Voice message
+            <Mic className="h-3 w-3 flex-shrink-0" />
+            Voice message
             {msg.voiceDurationSeconds
               ? ` • ${formatDuration(msg.voiceDurationSeconds)}`
               : ""}

@@ -20,8 +20,8 @@ export function replaceMessage(
 
 // One-line preview of a message (reply bar, inbox last-message).
 export function messagePreview(msg: ChatMessage): string {
-  if (msg.kind === "file") return "📎 Document";
-  if (msg.kind === "voice") return "🎤 Voice message";
+  if (msg.kind === "file") return "Document";
+  if (msg.kind === "voice") return "Voice message";
   return msg.text;
 }
 
