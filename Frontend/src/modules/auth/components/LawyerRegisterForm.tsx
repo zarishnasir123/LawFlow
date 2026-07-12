@@ -5,6 +5,8 @@ import { useController, useForm } from "react-hook-form";
 import PasswordField from "./PasswordField";
 import RoleSelector from "./RoleSelector";
 import TextField from "./TextField";
+import CnicField from "./CnicField";
+import { formatPkPhone } from "../../../shared/utils/pkFormat";
 import { registerLawyer } from "../lawyerApi";
 import { getAuthErrorMessage } from "../api";
 import type { LawyerRegisterFormValues } from "../types";
@@ -62,7 +64,7 @@ export default function LawyerRegisterForm() {
       firstName: "",
       lastName: "",
       email: "",
-      phone: "",
+      phone: "+92-",
       cnic: "",
       specialization: "",
       districtBar: "Gujranwala",
@@ -239,32 +241,28 @@ export default function LawyerRegisterForm() {
 
         <TextField
           label="Phone Number"
-          placeholder="+92 300 1234567"
+          placeholder="+92-300-1234567"
           type="tel"
           inputMode="tel"
           autoComplete="tel"
           disabled={disabled}
           error={errors.phone?.message}
+          format={formatPkPhone}
           inputProps={register("phone", {
             required: "Phone number is required.",
-            minLength: { value: 10, message: "Enter a valid phone number." },
+            validate: (v) =>
+              /^\+92-\d{3}-\d{7}$/.test(v) ||
+              "Enter a valid Pakistani mobile number.",
           })}
         />
       </div>
 
-      <TextField
+      <CnicField
+        control={control}
+        name="cnic"
         label="CNIC Number"
-        placeholder="12345-1234567-1"
-        inputMode="numeric"
         disabled={disabled}
         error={errors.cnic?.message}
-        inputProps={register("cnic", {
-          required: "CNIC number is required.",
-          pattern: {
-            value: /^\d{5}-\d{7}-\d{1}$/,
-            message: "Use the format 12345-1234567-1.",
-          },
-        })}
       />
 
       <div className="grid gap-2 sm:grid-cols-3">

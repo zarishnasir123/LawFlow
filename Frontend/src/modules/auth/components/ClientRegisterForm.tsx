@@ -4,6 +4,8 @@ import { useForm } from "react-hook-form";
 import GoogleAuthButton from "./GoogleAuthButton";
 import PasswordField from "./PasswordField";
 import TextField from "./TextField";
+import CnicField from "./CnicField";
+import { formatPkPhone } from "../../../shared/utils/pkFormat";
 import { registerClient } from "../../client/api";
 import { getAuthErrorMessage } from "../api";
 import type { ClientRegisterFormValues } from "../types";
@@ -12,6 +14,7 @@ export default function ClientRegisterForm() {
   const navigate = useNavigate();
   const {
     register,
+    control,
     handleSubmit,
     getValues,
     formState: { errors, isSubmitting: isFormSubmitting },
@@ -22,7 +25,7 @@ export default function ClientRegisterForm() {
       firstName: "",
       lastName: "",
       email: "",
-      phone: "",
+      phone: "+92-",
       cnic: "",
       password: "",
       confirmPassword: "",
@@ -98,32 +101,28 @@ export default function ClientRegisterForm() {
 
         <TextField
           label="Phone Number"
-          placeholder="+92 300 1234567"
+          placeholder="+92-300-1234567"
           type="tel"
           inputMode="tel"
           autoComplete="tel"
           disabled={disabled}
           error={errors.phone?.message}
+          format={formatPkPhone}
           inputProps={register("phone", {
             required: "Phone number is required.",
-            minLength: { value: 10, message: "Enter a valid phone number." },
+            validate: (v) =>
+              /^\+92-\d{3}-\d{7}$/.test(v) ||
+              "Enter a valid Pakistani mobile number.",
           })}
         />
       </div>
 
-      <TextField
+      <CnicField
+        control={control}
+        name="cnic"
         label="CNIC Number"
-        placeholder="12345-1234567-1"
-        inputMode="numeric"
         disabled={disabled}
         error={errors.cnic?.message}
-        inputProps={register("cnic", {
-          required: "CNIC number is required.",
-          pattern: {
-            value: /^\d{5}-\d{7}-\d{1}$/,
-            message: "Use the format 12345-1234567-1.",
-          },
-        })}
       />
 
       <div className="grid gap-2 sm:grid-cols-2">

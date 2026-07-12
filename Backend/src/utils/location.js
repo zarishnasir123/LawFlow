@@ -9,7 +9,9 @@
 export function getSupportedTehsils() {
   return String(
     process.env.SUPPORTED_TEHSILS ||
-      "Gujranwala,Gujranwala City & Sadar,Kamoke,Nowshera Virkan"
+      // Gujranwala's four operational jurisdictions (City & Sadar share one court
+      // venue) + the legacy "Gujranwala" district-wide alias kept valid for existing rows.
+      "Gujranwala,Gujranwala City & Sadar,Kamoke,Nowshera Virkan,Wazirabad"
   )
     .split(",")
     .map((tehsil) => tehsil.trim().toLowerCase())

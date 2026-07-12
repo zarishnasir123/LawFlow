@@ -90,7 +90,9 @@ function validateCnic(_, { req }) {
   }
 
   if (!isAllowedDistrictCnic(value)) {
-    throw new Error("CNIC is not allowed for the configured district scope");
+    throw new Error(
+      "Invalid region — LawFlow is currently available only to residents of Gujranwala."
+    );
   }
 
   return true;

@@ -22,6 +22,9 @@ type TextFieldProps = {
   disabled?: boolean;
   error?: string;
   inputProps: UseFormRegisterReturn;
+  // Optional input mask — transforms the raw typed value before react-hook-form
+  // stores it (e.g. auto-insert CNIC dashes / the "+92-" phone prefix).
+  format?: (value: string) => string;
 };
 
 export default function TextField({
@@ -34,8 +37,10 @@ export default function TextField({
   disabled,
   error,
   inputProps,
+  format,
 }: TextFieldProps) {
   const inputId = id ?? inputProps.name;
+  const { onChange: rhfOnChange, ...restInputProps } = inputProps;
   const inputClass = [
     "w-full rounded-lg border px-3 py-2 text-sm outline-none focus:ring-2",
     error
@@ -58,7 +63,11 @@ export default function TextField({
         disabled={disabled}
         aria-invalid={error ? "true" : "false"}
         className={inputClass}
-        {...inputProps}
+        {...restInputProps}
+        onChange={(e) => {
+          if (format) e.target.value = format(e.target.value);
+          return rhfOnChange(e);
+        }}
       />
       {error ? <p className="text-xs text-red-600">{error}</p> : null}
     </div>

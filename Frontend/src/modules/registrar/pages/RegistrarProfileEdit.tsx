@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Trash2 } from "lucide-react";
@@ -6,6 +6,7 @@ import { Trash2 } from "lucide-react";
 import RegistrarLayout from "../components/RegistrarLayout";
 import ProfileCard from "../../../shared/components/profile/ProfileCard";
 import AvatarCropperModal from "../../../shared/components/profile/AvatarCropperModal";
+import { formatPkPhone } from "../../../shared/utils/pkFormat";
 import {
   useCurrentUser,
   type CurrentUser,
@@ -69,15 +70,17 @@ export default function RegistrarProfileEdit() {
   const [avatarError, setAvatarError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  useEffect(() => {
-    if (!currentUser || form) return;
+  // Seed the editable form once the current user loads. Done during render
+  // (React's recommended way to derive state from freshly-arrived data) rather
+  // than in an effect — the `!form` guard makes it run once and converge.
+  if (currentUser && !form) {
     setForm({
       firstName: currentUser.firstName ?? "",
       lastName: currentUser.lastName ?? "",
       email: currentUser.email,
       phone: currentUser.phone ?? "",
     });
-  }, [currentUser, form]);
+  }
 
   const mutation = useMutation({
     mutationFn: authApi.updateMyProfile,
@@ -243,7 +246,7 @@ export default function RegistrarProfileEdit() {
             <EditableField
               label="Phone Number"
               value={form.phone}
-              onChange={(v) => handleChange("phone", v)}
+              onChange={(v) => handleChange("phone", formatPkPhone(v))}
             />
           </div>
 

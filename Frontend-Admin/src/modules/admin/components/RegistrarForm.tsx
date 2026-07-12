@@ -1,5 +1,11 @@
 import { useMemo, useState, type FormEvent } from "react";
 
+import CnicInput from "../../../shared/components/CnicInput";
+import {
+  formatPkPhone,
+  isAllowedGujranwalaCnic,
+} from "../../../shared/utils/pkFormat";
+
 export type RegistrarRole = "Registrar";
 
 // Court options exposed in the Create form. Mirrors the Gujranwala
@@ -9,10 +15,10 @@ export type RegistrarRole = "Registrar";
 // expands to other districts the list grows here; the backend's
 // `assigned_court` column is plain text so no schema change is needed.
 export const REGISTRAR_COURT_OPTIONS = [
-  "Gujranwala District Courts (Civil Lines)",
-  "Tehsil Court — Gujranwala City & Sadar",
+  "Gujranwala District Courts (Civil Lines) — City & Sadar",
   "Tehsil Court — Kamoke",
   "Tehsil Court — Nowshera Virkan",
+  "Tehsil Court — Wazirabad",
 ] as const;
 
 // Tehsil options shown in the Create form. These match the entries in
@@ -25,6 +31,7 @@ export const REGISTRAR_TEHSIL_OPTIONS = [
   "Gujranwala City & Sadar",
   "Kamoke",
   "Nowshera Virkan",
+  "Wazirabad",
 ] as const;
 
 export type RegistrarFormValues = {
@@ -74,7 +81,7 @@ export default function RegistrarForm({
       firstName: initialValues?.firstName ?? "",
       lastName: initialValues?.lastName ?? "",
       email: initialValues?.email ?? "",
-      phone: initialValues?.phone ?? "",
+      phone: initialValues?.phone ?? "+92-",
       cnic: initialValues?.cnic ?? "",
       role: initialValues?.role ?? "Registrar",
       assignedCourt: initialValues?.assignedCourt ?? "",
@@ -103,8 +110,14 @@ export default function RegistrarForm({
     if (!values.firstName.trim()) return setError("First name is required.");
     if (!values.lastName.trim()) return setError("Last name is required.");
     if (!values.email.trim()) return setError("Email is required.");
-    if (!values.phone.trim()) return setError("Phone is required.");
-    if (!values.cnic.trim()) return setError("CNIC is required.");
+    if (!/^\+92-\d{3}-\d{7}$/.test(values.phone.trim()))
+      return setError("Enter a valid Pakistani phone number.");
+    if (!/^\d{5}-\d{7}-\d{1}$/.test(values.cnic.trim()))
+      return setError("CNIC must follow the format 12345-1234567-1.");
+    if (!isAllowedGujranwalaCnic(values.cnic))
+      return setError(
+        "Invalid region — LawFlow is available only to Gujranwala residents.",
+      );
 
     // No password validation here — the backend generates a temporary
     // password server-side on create and emails it to the registrar.
@@ -180,7 +193,9 @@ export default function RegistrarForm({
               <input
                 className="w-full rounded-lg border border-gray-300 px-4 py-2 focus:outline-none focus:ring-2 focus:ring-[#01411C]"
                 value={values.phone}
-                onChange={(e) => setValues({ ...values, phone: e.target.value })}
+                onChange={(e) =>
+                  setValues({ ...values, phone: formatPkPhone(e.target.value) })
+                }
                 placeholder="+92 300 1234567"
                 disabled={submitting}
               />
@@ -190,11 +205,10 @@ export default function RegistrarForm({
           <div className="grid md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <label className="text-sm font-medium">CNIC Number *</label>
-              <input
+              <CnicInput
                 className="w-full rounded-lg border border-gray-300 px-4 py-2 focus:outline-none focus:ring-2 focus:ring-[#01411C] disabled:bg-gray-100"
                 value={values.cnic}
-                onChange={(e) => setValues({ ...values, cnic: e.target.value })}
-                placeholder="12345-1234567-1"
+                onChange={(cnic) => setValues({ ...values, cnic })}
                 disabled={submitting || editMode}
                 readOnly={editMode}
               />

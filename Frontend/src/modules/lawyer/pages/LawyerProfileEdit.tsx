@@ -6,6 +6,7 @@ import { Trash2 } from "lucide-react";
 import LawyerLayout from "../components/LawyerLayout";
 import ProfileCard from "../../../shared/components/profile/ProfileCard";
 import AvatarCropperModal from "../../../shared/components/profile/AvatarCropperModal";
+import { formatPkPhone } from "../../../shared/utils/pkFormat";
 import {
   useCurrentUser,
   type CurrentUser,
@@ -311,7 +312,7 @@ export default function LawyerProfileEdit() {
               <EditableField
                 label="Phone Number"
                 value={form.phone}
-                onChange={(v) => handleChange("phone", v)}
+                onChange={(v) => handleChange("phone", formatPkPhone(v))}
               />
               {/* CNIC is set at registration and treated as immutable —
                   same lock applies to clients and registrars. Backend

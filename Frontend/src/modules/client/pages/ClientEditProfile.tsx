@@ -1,11 +1,12 @@
 import { useNavigate } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Trash2 } from "lucide-react";
 
 import ClientLayout from "../components/ClientLayout";
 import ProfileCard from "../../../shared/components/profile/ProfileCard";
 import AvatarCropperModal from "../../../shared/components/profile/AvatarCropperModal";
+import { formatPkPhone } from "../../../shared/utils/pkFormat";
 import {
   useCurrentUser,
   type CurrentUser,
@@ -89,8 +90,10 @@ export default function ClientProfileEdit() {
   const [avatarError, setAvatarError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  useEffect(() => {
-    if (!currentUser || form) return;
+  // Seed the editable form once the current user loads. Done during render
+  // (React's recommended way to derive state from freshly-arrived data) rather
+  // than in an effect — the `!form` guard makes it run once and converge.
+  if (currentUser && !form) {
     setForm({
       firstName: currentUser.firstName ?? "",
       lastName: currentUser.lastName ?? "",
@@ -101,7 +104,7 @@ export default function ClientProfileEdit() {
       city: currentUser.city ?? "",
       tehsil: currentUser.tehsil ?? "",
     });
-  }, [currentUser, form]);
+  }
 
   const mutation = useMutation({
     mutationFn: authApi.updateMyProfile,
@@ -291,7 +294,7 @@ export default function ClientProfileEdit() {
             <EditableField
               label="Phone Number"
               value={form.phone}
-              onChange={(v) => handleChange("phone", v)}
+              onChange={(v) => handleChange("phone", formatPkPhone(v))}
             />
             {/* CNIC is set at registration and treated as immutable —
                 changing it would silently rewrite the identity that
