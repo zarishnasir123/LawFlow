@@ -5,6 +5,9 @@ export interface ChatClient {
   name: string;
   initials: string;
   status: ChatParticipantStatus;
+  // Public URL of the person's uploaded profile photo; null when they have
+  // none (the UI falls back to their initials).
+  avatarUrl?: string | null;
 }
 
 export interface ChatLawyer {
@@ -12,6 +15,30 @@ export interface ChatLawyer {
   name: string;
   initials: string;
   status: ChatParticipantStatus;
+  avatarUrl?: string | null;
+}
+
+// The real profile of the OTHER participant in a conversation, for the
+// interaction side-panel. The backend returns the counterpart of the caller:
+// a lawyer receives the client's contact fields (cnic/city/tehsil); a client
+// receives the lawyer's professional fields (specialization/districtBar/...).
+// The fields not relevant to a given counterpart are omitted/null.
+export interface ChatParticipantProfile {
+  id: string;
+  role: ChatSender;
+  name: string;
+  initials: string;
+  email: string | null;
+  // Client counterpart (shown to the lawyer)
+  cnic?: string | null;
+  city?: string | null;
+  tehsil?: string | null;
+  address?: string | null;
+  // Lawyer counterpart (shown to the client)
+  specialization?: string | null;
+  districtBar?: string | null;
+  barLicenseNumber?: string | null;
+  experienceYears?: number | null;
 }
 
 export interface LawyerChatThread {
@@ -20,6 +47,8 @@ export interface LawyerChatThread {
   caseId?: string;
   tags: string[];
   lastMessage: string;
+  // Kind of the last message, so the inbox can show a Mic/Paperclip icon.
+  lastMessageKind?: ChatMessageKind | null;
   lastMessageAt: string; // ISO
   unreadCount: number;
 }
@@ -30,6 +59,8 @@ export interface ClientChatThread {
   caseId?: string;
   tags: string[];
   lastMessage: string;
+  // Kind of the last message, so the inbox can show a Mic/Paperclip icon.
+  lastMessageKind?: ChatMessageKind | null;
   lastMessageAt: string; // ISO
   unreadCount: number;
 }

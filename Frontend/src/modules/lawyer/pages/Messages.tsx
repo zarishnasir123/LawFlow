@@ -3,13 +3,15 @@ import {
   Search,
   MessageCircle,
   ArrowLeft,
-  Download,
+  Mic,
+  Paperclip,
 } from "lucide-react";
 import LawyerLayout from "../components/LawyerLayout";
 import ChatMessageBubble from "../components/ChatMessageBubble";
 import ChatComposer from "../components/ChatComposer";
 import ChatDateSeparator from "../../../shared/components/ChatDateSeparator";
 import ClientInfoSidebar from "../components/ClientInfoSidebar";
+import ChatAvatar from "../../../shared/components/ChatAvatar";
 import type { LawyerChatThread, ChatMessage } from "../../../types/chat";
 import {
   getLawyerThreads,
@@ -31,8 +33,8 @@ import {
 
 // Inbox preview text for a message (attachments show a label, not blank).
 function previewOf(message: ChatMessage): string {
-  if (message.kind === "file") return "📎 Document";
-  if (message.kind === "voice") return "🎤 Voice message";
+  if (message.kind === "file") return "Document";
+  if (message.kind === "voice") return "Voice message";
   return message.text;
 }
 
@@ -45,9 +47,6 @@ export default function Messages() {
   const [messagesLoading, setMessagesLoading] = useState(false);
   const [showClientInfo, setShowClientInfo] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const [uploadedFiles, setUploadedFiles] = useState<
-    Array<{ name: string; size: number; uploadedAt: string }>
-  >([]);
   // Which conversation currently shows "…typing" from the other person.
   const [typingThreadId, setTypingThreadId] = useState<string | null>(null);
   const typingClearRef = useRef<number | null>(null);
@@ -82,6 +81,7 @@ export default function Messages() {
           return {
             ...t,
             lastMessage: previewOf(message),
+            lastMessageKind: message.kind ?? null,
             lastMessageAt: message.createdAt,
             unreadCount: isOpen
               ? 0
@@ -239,17 +239,6 @@ export default function Messages() {
       try {
         const msg = await sendThreadFile(selectedThreadId, file);
         setMessages((prev) => upsertMessage(prev, msg));
-        setUploadedFiles((prev) => [
-          ...prev,
-          {
-            name: file.name,
-            size: file.size,
-            uploadedAt: new Date().toLocaleTimeString([], {
-              hour: "2-digit",
-              minute: "2-digit",
-            }),
-          },
-        ]);
       } catch (error) {
         console.error("Error uploading file:", error);
         alert(getApiErrorMessage(error, "Could not upload that file."));
@@ -330,9 +319,12 @@ export default function Messages() {
                 >
                   <div className="flex items-center gap-3">
                     <div className="relative flex-shrink-0">
-                      <div className="w-10 h-10 rounded-full bg-[#01411C] text-white text-xs font-bold flex items-center justify-center">
-                        {thread.client.initials}
-                      </div>
+                      <ChatAvatar
+                        name={thread.client.name}
+                        initials={thread.client.initials}
+                        avatarUrl={thread.client.avatarUrl}
+                        className="w-10 h-10 text-xs"
+                      />
                       <div
                         className={`absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border-2 border-white ${
                           thread.client.status === "online"
@@ -352,8 +344,14 @@ export default function Messages() {
                           </span>
                         )}
                       </div>
-                      <p className="text-xs text-gray-500 truncate mt-1">
-                        {thread.lastMessage}
+                      <p className="text-xs text-gray-500 truncate mt-1 flex items-center gap-1">
+                        {thread.lastMessageKind === "voice" && (
+                          <Mic className="h-3 w-3 flex-shrink-0" />
+                        )}
+                        {thread.lastMessageKind === "file" && (
+                          <Paperclip className="h-3 w-3 flex-shrink-0" />
+                        )}
+                        <span className="truncate">{thread.lastMessage}</span>
                       </p>
                       <p
                         className={`text-xs mt-1 ${
@@ -410,9 +408,12 @@ export default function Messages() {
                     </button>
                   )}
                     <div className="relative cursor-pointer hover:opacity-80 transition" onClick={() => setShowClientInfo(!showClientInfo)}>
-                    <div className="w-11 h-11 rounded-full bg-[#01411C] text-white text-sm font-bold flex items-center justify-center shadow-sm">
-                      {selectedThread.client.initials}
-                    </div>
+                    <ChatAvatar
+                      name={selectedThread.client.name}
+                      initials={selectedThread.client.initials}
+                      avatarUrl={selectedThread.client.avatarUrl}
+                      className="w-11 h-11 text-sm shadow-sm"
+                    />
                     <div
                       className={`absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full border-2 border-white ${
                         selectedThread.client.status === "online"
@@ -486,40 +487,6 @@ export default function Messages() {
                     <div ref={messagesEndRef} />
                   </div>
 
-                  {/* Shared Documents Section */}
-                  {uploadedFiles.length > 0 && (
-                    <div className="flex-shrink-0 bg-white border-t-2 border-gray-300 px-5 sm:px-8 py-2">
-                      <div className="mb-1">
-                        <h3 className="text-sm font-bold text-gray-900 mb-3">
-                          📎 Shared Documents
-                        </h3>
-                        <div className="space-y-2 max-h-32 overflow-y-auto">
-                          {uploadedFiles.map((file, index) => (
-                            <div
-                              key={index}
-                              className="flex items-center justify-between bg-gradient-to-r from-gray-50 to-white p-3 rounded-lg border-2 border-gray-300 hover:bg-gray-100/50 transition"
-                            >
-                              <div className="flex-1 min-w-0">
-                                <p className="text-sm font-medium text-gray-900 truncate">
-                                  {file.name}
-                                </p>
-                                <p className="text-xs text-gray-500">
-                                  {(file.size / 1024).toFixed(2)} KB • {file.uploadedAt}
-                                </p>
-                              </div>
-                              <button
-                                className="ml-2 text-[#01411C] hover:bg-green-100 p-2 rounded-lg transition flex-shrink-0"
-                                title="Download"
-                              >
-                                <Download className="h-4 w-4" />
-                              </button>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
                   {/* Message Composer - No scroll */}
                   <div className="flex-shrink-0 border-t-2 border-gray-300">
                     <ChatComposer
@@ -545,7 +512,7 @@ export default function Messages() {
               thread={selectedThread}
               isOpen={showClientInfo}
               onClose={() => setShowClientInfo(false)}
-              sharedDocuments={uploadedFiles}
+              messages={messages}
             />
           )}
         </div>

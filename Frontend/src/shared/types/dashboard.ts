@@ -13,6 +13,8 @@ export type QuickActionItem = {
   icon: LucideIcon;
   className: string;
   to: string;
+  // Optional count bubble (e.g. unread messages). Rendered only when > 0.
+  badge?: number;
 };
 
 export type CaseItem = {

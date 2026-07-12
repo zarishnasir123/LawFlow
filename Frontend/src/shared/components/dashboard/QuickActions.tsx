@@ -21,10 +21,15 @@ export default function QuickActions({ actions, onNavigate }: QuickActionsProps)
               type="button"
               onClick={() => onNavigate(action.to)}
               className={[
-                "flex h-full flex-col items-center justify-center gap-2 rounded-xl px-4 py-4 text-sm font-semibold text-white transition",
+                "relative flex h-full flex-col items-center justify-center gap-2 rounded-xl px-4 py-4 text-sm font-semibold text-white transition",
                 action.className,
               ].join(" ")}
             >
+              {action.badge !== undefined && action.badge > 0 && (
+                <span className="absolute right-2 top-2 flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-xs font-bold text-white">
+                  {action.badge > 99 ? "99+" : action.badge}
+                </span>
+              )}
               <Icon className="h-6 w-6" />
               <span>{action.label}</span>
             </button>

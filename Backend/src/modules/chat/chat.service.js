@@ -2,6 +2,7 @@ import { pool } from "../../config/db.js";
 import { ApiError } from "../../utils/apiError.js";
 import {
   getChatAttachmentSignedUrl,
+  getUserAvatarPublicUrl,
   uploadChatAttachment,
 } from "../../services/storage.service.js";
 
@@ -32,8 +33,8 @@ function initialsFor(name) {
 // (empty) text.
 function previewFor(row) {
   if (!row || !row.message_kind) return "";
-  if (row.message_kind === "file") return "📎 Document";
-  if (row.message_kind === "voice") return "🎤 Voice message";
+  if (row.message_kind === "file") return "Document";
+  if (row.message_kind === "voice") return "Voice message";
   return row.body || "";
 }
 
@@ -76,8 +77,8 @@ function fullName(first, last, fallback) {
 
 // One-line preview of a message (used inside a quoted reply bar).
 function messagePreview(kind, body) {
-  if (kind === "file") return "📎 Document";
-  if (kind === "voice") return "🎤 Voice message";
+  if (kind === "file") return "Document";
+  if (kind === "voice") return "Voice message";
   return body || "";
 }
 
@@ -130,8 +131,10 @@ export async function assertConversationParticipant(conversationId, userId) {
        conv.lawyer_user_id,
        cu.first_name AS client_first,
        cu.last_name  AS client_last,
+       cu.avatar_storage_path AS client_avatar,
        lu.first_name AS lawyer_first,
-       lu.last_name  AS lawyer_last
+       lu.last_name  AS lawyer_last,
+       lu.avatar_storage_path AS lawyer_avatar
      FROM chat_conversations conv
      JOIN users cu ON cu.id = conv.client_user_id
      JOIN users lu ON lu.id = conv.lawyer_user_id
@@ -157,6 +160,7 @@ export async function assertConversationParticipant(conversationId, userId) {
         id: row.lawyer_user_id,
         name: lawyerName,
         initials: initialsFor(lawyerName),
+        avatarUrl: getUserAvatarPublicUrl(row.lawyer_avatar),
       },
     };
   }
@@ -171,6 +175,7 @@ export async function assertConversationParticipant(conversationId, userId) {
         id: row.client_user_id,
         name: clientName,
         initials: initialsFor(clientName),
+        avatarUrl: getUserAvatarPublicUrl(row.client_avatar),
       },
     };
   }
@@ -187,7 +192,7 @@ export async function startConversationForClient({ clientUserId, lawyerUserId })
   }
 
   const lawyer = await pool.query(
-    `SELECT u.id, u.first_name, u.last_name
+    `SELECT u.id, u.first_name, u.last_name, u.avatar_storage_path
      FROM users u
      JOIN roles r ON r.id = u.role_id
      WHERE u.id = $1 AND r.name = 'lawyer'`,
@@ -222,9 +227,11 @@ export async function startConversationForClient({ clientUserId, lawyerUserId })
       id: lawyerUserId,
       name: lawyerName,
       initials: initialsFor(lawyerName),
+      avatarUrl: getUserAvatarPublicUrl(lawyer.rows[0].avatar_storage_path),
       status: "offline",
     },
     lastMessage: "",
+    lastMessageKind: null,
     lastMessageAt: conv.updated_at,
     unreadCount: 0,
   };
@@ -260,6 +267,7 @@ export async function listConversationsForUser({ userId, role }) {
       conv.updated_at,
       other.id AS counterpart_id,
       TRIM(other.first_name || ' ' || other.last_name) AS counterpart_name,
+      other.avatar_storage_path AS counterpart_avatar,
       lm.body AS last_body,
       lm.message_kind AS last_kind,
       lm.created_at AS last_message_at,
@@ -296,9 +304,11 @@ export async function listConversationsForUser({ userId, role }) {
         id: row.counterpart_id,
         name,
         initials: initialsFor(name),
+        avatarUrl: getUserAvatarPublicUrl(row.counterpart_avatar),
         status: "offline",
       },
       lastMessage: previewFor({ body: row.last_body, message_kind: row.last_kind }),
+      lastMessageKind: row.last_kind || null,
       lastMessageAt: row.last_message_at || row.updated_at,
       unreadCount: Number(row.unread_count) || 0,
     };
@@ -311,6 +321,69 @@ export async function getConversationHeader({ conversationId, userId }) {
   return {
     id: participant.conversationId,
     counterpart: { ...participant.counterpart, status: "offline" },
+  };
+}
+
+// Full profile of the OTHER participant, for the interaction side-panel.
+// Symmetric: a lawyer gets the client's contact details (name, CNIC, phone,
+// email, city/tehsil); a client gets the lawyer's professional details
+// (name, specialization, district bar, license number, phone, email — never
+// the lawyer's CNIC or payout account). assertConversationParticipant is the
+// authoritative authz gate (404s a non-participant), so we only ever return the
+// counterpart of a conversation the caller genuinely belongs to.
+export async function getConversationParticipant({ conversationId, userId }) {
+  const participant = await assertConversationParticipant(conversationId, userId);
+  const counterpartId = participant.counterpart.id;
+
+  // participant.role is the CALLER's role; the counterpart is the opposite.
+  if (participant.role === "lawyer") {
+    const { rows } = await pool.query(
+      `SELECT u.first_name, u.last_name, u.email, u.cnic,
+              cp.city, cp.tehsil, cp.address
+         FROM users u
+         LEFT JOIN client_profiles cp ON cp.user_id = u.id
+        WHERE u.id = $1`,
+      [counterpartId]
+    );
+    const r = rows[0] || {};
+    const name = fullName(r.first_name, r.last_name, "Client");
+    return {
+      id: counterpartId,
+      role: "client",
+      name,
+      initials: initialsFor(name),
+      email: r.email || null,
+      cnic: r.cnic || null,
+      city: r.city || null,
+      tehsil: r.tehsil || null,
+      address: r.address || null,
+    };
+  }
+
+  const { rows } = await pool.query(
+    `SELECT u.first_name, u.last_name, u.email,
+            lp.specialization, lp.district_bar, lp.bar_license_number,
+            lp.experience_years
+       FROM users u
+       LEFT JOIN lawyer_profiles lp ON lp.user_id = u.id
+      WHERE u.id = $1`,
+    [counterpartId]
+  );
+  const r = rows[0] || {};
+  const name = fullName(r.first_name, r.last_name, "Advocate");
+  return {
+    id: counterpartId,
+    role: "lawyer",
+    name,
+    initials: initialsFor(name),
+    email: r.email || null,
+    specialization: r.specialization || null,
+    districtBar: r.district_bar || null,
+    barLicenseNumber: r.bar_license_number || null,
+    experienceYears:
+      r.experience_years === null || r.experience_years === undefined
+        ? null
+        : Number(r.experience_years),
   };
 }
 

@@ -9,6 +9,7 @@ import {
   createAttachmentMessage,
   createTextMessage,
   getConversationHeader,
+  getConversationParticipant,
   listConversationsForUser,
   listMessages,
   markConversationRead,
@@ -17,8 +18,8 @@ import {
 
 // Short preview used in the bell notification.
 function previewOf(message) {
-  if (message.kind === "file") return "📎 Document";
-  if (message.kind === "voice") return "🎤 Voice message";
+  if (message.kind === "file") return "Document";
+  if (message.kind === "voice") return "Voice message";
   return message.text || "New message";
 }
 
@@ -88,6 +89,16 @@ export async function getConversation(req, res) {
     userId: req.user.sub,
   });
   return res.status(200).json({ conversation });
+}
+
+// GET /api/chat/conversations/:conversationId/participant -> { participant }
+// The other person's real profile for the interaction side-panel.
+export async function getParticipant(req, res) {
+  const participant = await getConversationParticipant({
+    conversationId: req.params.conversationId,
+    userId: req.user.sub,
+  });
+  return res.status(200).json({ participant });
 }
 
 // GET /api/chat/conversations/:conversationId/messages -> { messages }
