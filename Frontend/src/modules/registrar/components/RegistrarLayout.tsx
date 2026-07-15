@@ -15,11 +15,15 @@ type RegistrarLayoutProps = {
   // Legacy prop, retained for callers; the live unread count from the
   // notifications hook now drives the badge.
   notificationBadge?: number;
+  // Opt into the full-height app-shell (non-scrolling header + a single
+  // flex-1 content region) so a page can build its own split-screen workspace.
+  fullHeight?: boolean;
   children: ReactNode;
 };
 
 export default function RegistrarLayout({
   pageSubtitle = "Registrar Portal",
+  fullHeight = false,
   children,
 }: RegistrarLayoutProps) {
   const navigate = useNavigate();
@@ -94,6 +98,7 @@ export default function RegistrarLayout({
         pageSubtitle={pageSubtitle}
         actions={actions}
         profileMenu={profileMenu}
+        fullHeight={fullHeight}
       >
         {children}
       </DashboardLayout>

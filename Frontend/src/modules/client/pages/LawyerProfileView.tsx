@@ -253,11 +253,9 @@ export default function LawyerProfileView() {
                   </div>
                   <div className="rounded-xl border border-gray-100 bg-gray-50/70 p-3">
                     <p className="text-xs text-gray-500">Cases Handled</p>
-                    <p className="mt-1 text-sm font-semibold text-gray-900">{PENDING}</p>
-                  </div>
-                  <div className="rounded-xl border border-gray-100 bg-gray-50/70 p-3">
-                    <p className="text-xs text-gray-500">Success Rate</p>
-                    <p className="mt-1 text-sm font-semibold text-emerald-700">{PENDING}</p>
+                    <p className="mt-1 text-sm font-semibold text-gray-900">
+                      {lawyer.casesHandled}
+                    </p>
                   </div>
                 </div>
               </div>
@@ -311,7 +309,9 @@ export default function LawyerProfileView() {
                   </div>
                   <div className="flex items-center justify-between rounded-xl border border-gray-100 bg-gray-50/70 px-4 py-3 text-sm">
                     <span className="text-gray-500">Cases handled</span>
-                    <span className="font-semibold text-gray-400">{PENDING}</span>
+                    <span className="font-semibold text-gray-900">
+                      {lawyer.casesHandled}
+                    </span>
                   </div>
                   {/* District bar pinned at the bottom as a real
                       data point so the right column isn't all
