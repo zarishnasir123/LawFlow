@@ -30,7 +30,7 @@ export default function ForgotPassword() {
       await authApi.forgotPassword(values.email);
       setSubmittedEmail(values.email);
       setSubmitted(true);
-    } catch (err: any) {
+    } catch (err) {
       const message = getAuthErrorMessage(err);
       setError(message);
     }

@@ -1,0 +1,79 @@
+# LawFlow CI — runs automatically on every push and pull request to main.
+# Each app is checked in its own job so a failure shows exactly which app broke.
+# No repository secrets are required: tests run fully self-contained.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-typecheck:
+    name: Lint + typecheck (frontends)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            Frontend/package-lock.json
+            Frontend-Admin/package-lock.json
+      - run: npm --prefix Frontend ci
+      - run: npm --prefix Frontend-Admin ci
+      - run: npm --prefix Frontend run lint
+      - run: npm --prefix Frontend-Admin run lint
+      - run: npm --prefix Frontend run build
+      - run: npm --prefix Frontend-Admin run build
+
+  backend-unit:
+    name: Backend unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: Backend/package-lock.json
+      - run: npm --prefix Backend ci
+      - run: npm --prefix Backend run test:unit
+
+  frontend-tests:
+    name: Frontend tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: Frontend/package-lock.json
+      - run: npm --prefix Frontend ci
+      - run: npm --prefix Frontend run test
+
+  admin-tests:
+    name: Admin tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: Frontend-Admin/package-lock.json
+      - run: npm --prefix Frontend-Admin ci
+      - run: npm --prefix Frontend-Admin run test
