@@ -84,6 +84,7 @@ export default function ClientSignatureViewer() {
       showBackButton
       onBackClick={() => navigate({ to: "/case-tracking" })}
       backLabel="Back to pending"
+      fullHeight
     >
       <SignatureSigningScreen
         request={request}
