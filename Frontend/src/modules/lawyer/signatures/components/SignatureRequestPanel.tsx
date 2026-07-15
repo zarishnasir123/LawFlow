@@ -45,6 +45,29 @@ interface SignatureRequestPanelProps {
 
 type SignerChoice = SignerRole | "both";
 
+// Small per-signer badge on a page row: emerald once that signer has
+// signed the page (permanent), amber while their request is pending.
+function CoverageChip({
+  role,
+  state,
+}: {
+  role: "Client" | "Lawyer";
+  state?: "pending" | "signed";
+}) {
+  if (!state) return null;
+  return (
+    <span
+      className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ring-1 ${
+        state === "signed"
+          ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
+          : "bg-amber-100 text-amber-800 ring-amber-200"
+      }`}
+    >
+      {role} {state === "signed" ? "signed" : "pending"}
+    </span>
+  );
+}
+
 function derivePageLabel(page: HTMLElement, fallback: string): string {
   const heading = page.querySelector("h1, h2, h3, h4, h5, h6");
   if (heading?.textContent?.trim()) {
@@ -160,41 +183,56 @@ export default function SignatureRequestPanel({
     return { activeRequests: active, historyRequests: history };
   }, [requests]);
 
-  // Set of page indices that already have a pending signature
-  // request. Used to gate the per-page checkbox: once a page has
-  // been sent to a signer, it stays locked until that batch is
-  // either cancelled (status → 'cancelled') or completed
-  // (status → 'signed'). Defence-in-depth: the backend would also
-  // reject a duplicate request, but the UI shouldn't tempt the
-  // lawyer to try.
-  const pendingPageIndices = useMemo(() => {
-    const set = new Set<number>();
+  // Per-signer page coverage. A page+signer combination is "covered" —
+  // and can never be requested again — when that signer either already
+  // SIGNED the page (permanent) or has an in-flight PENDING request for
+  // it. Coverage drives three things: fully-covered pages render as
+  // locked rows, partially-covered pages restrict the signer dropdown
+  // to the free signer, and handleSend sanitizes the final assignments.
+  // The backend enforces the same rule with a 409 as the authoritative
+  // gate, so bypassing the UI can't create duplicates either.
+  const pageCoverage = useMemo(() => {
+    const client = new Map<number, "pending" | "signed">();
+    const lawyer = new Map<number, "pending" | "signed">();
     for (const req of requests) {
-      if (req.status !== "pending") continue;
-      for (const idx of req.pageIndices || []) set.add(idx);
+      if (req.status !== "pending" && req.status !== "signed") continue;
+      const map = req.signerRole === "client" ? client : lawyer;
+      for (const idx of req.pageIndices || []) {
+        // 'signed' outranks 'pending' for display purposes.
+        if (req.status === "signed" || !map.has(idx)) map.set(idx, req.status);
+      }
     }
-    return set;
+    return { client, lawyer };
   }, [requests]);
 
-  // If the requests cache lands after the panel mounted (or a
-  // request was just created), strip any pending pages out of the
-  // ticked selection so we never submit a Send action against
-  // already-locked pages.
-  useEffect(() => {
-    if (pendingPageIndices.size === 0) return;
-    setSelectedPages((prev) => {
-      let changed = false;
-      const next = new Set<number>();
-      for (const idx of prev) {
-        if (pendingPageIndices.has(idx)) {
-          changed = true;
-          continue;
-        }
-        next.add(idx);
-      }
-      return changed ? next : prev;
-    });
-  }, [pendingPageIndices]);
+  const clientCoveredAt = (idx: number) => pageCoverage.client.get(idx);
+  const lawyerCoveredAt = (idx: number) => pageCoverage.lawyer.get(idx);
+  const isFullyLocked = (idx: number) =>
+    Boolean(clientCoveredAt(idx) && lawyerCoveredAt(idx));
+
+  // Sanitized signer choice for a page: covered signers are stripped
+  // from whatever the lawyer picked, falling back to the free signer.
+  // Returns null when no signer is free (fully locked page).
+  const effectiveSignerFor = (idx: number): SignerChoice | null => {
+    const clientFree = !clientCoveredAt(idx);
+    const lawyerFree = !lawyerCoveredAt(idx);
+    if (!clientFree && !lawyerFree) return null;
+    const choice = signerByPage[idx] || (clientFree ? "client" : "lawyer");
+    if (choice === "both") {
+      if (clientFree && lawyerFree) return "both";
+      return clientFree ? "client" : "lawyer";
+    }
+    if (choice === "client") return clientFree ? "client" : "lawyer";
+    return lawyerFree ? "lawyer" : "client";
+  };
+
+  // Selection with fully-locked pages filtered out at render time — a
+  // requests-cache refresh can lock a page after it was ticked, and
+  // deriving (rather than pruning state in an effect) means the UI can
+  // never submit against a page that just became locked.
+  const effectiveSelectedPages = new Set(
+    Array.from(selectedPages).filter((idx) => !isFullyLocked(idx))
+  );
 
   const pageItems = useMemo(
     () =>
@@ -206,20 +244,19 @@ export default function SignatureRequestPanel({
   );
 
   // Any page that requires a client signature means we need an email.
-  const needsClientEmail = useMemo(
-    () =>
-      Array.from(selectedPages).some((idx) => {
-        const choice = signerByPage[idx] || "client";
-        return choice === "client" || choice === "both";
-      }),
-    [selectedPages, signerByPage]
-  );
+  // Plain per-render computation over the sanitized selection (tiny
+  // arrays, no memo needed).
+  const needsClientEmail = Array.from(effectiveSelectedPages).some((idx) => {
+    const choice = effectiveSignerFor(idx);
+    return choice === "client" || choice === "both";
+  });
 
   const togglePage = (index: number) => {
-    // Pages with a pending request are locked — re-sending would
-    // overwrite an in-flight signature workflow on the recipient's
-    // side. The lawyer must cancel the existing request first.
-    if (pendingPageIndices.has(index)) return;
+    // Fully-covered pages (every signer already signed or pending) are
+    // locked — re-sending would duplicate a completed or in-flight
+    // signature. Partially-covered pages stay selectable for the free
+    // signer only.
+    if (isFullyLocked(index)) return;
     setSelectedPages((prev) => {
       const next = new Set(prev);
       if (next.has(index)) {
@@ -231,7 +268,8 @@ export default function SignatureRequestPanel({
     });
     setSignerByPage((prev) => {
       if (prev[index]) return prev;
-      return { ...prev, [index]: "client" };
+      // Default to the free signer (client when both are free).
+      return { ...prev, [index]: clientCoveredAt(index) ? "lawyer" : "client" };
     });
   };
 
@@ -240,7 +278,7 @@ export default function SignatureRequestPanel({
   };
 
   const handleSend = async () => {
-    if (selectedPages.size === 0) {
+    if (effectiveSelectedPages.size === 0) {
       setError("Pick at least one page that needs to be signed.");
       return;
     }
@@ -249,14 +287,23 @@ export default function SignatureRequestPanel({
       return;
     }
 
-    const pageAssignments = Array.from(selectedPages)
+    // Assignments are built from the SANITIZED signer per page — covered
+    // signers are stripped, so a stale UI can never re-request a page
+    // someone already signed or was already asked to sign.
+    const pageAssignments = Array.from(effectiveSelectedPages)
       .sort((a, b) => a - b)
-      .map((pageIndex) => {
-        const choice = signerByPage[pageIndex] || "client";
+      .flatMap((pageIndex) => {
+        const choice = effectiveSignerFor(pageIndex);
+        if (!choice) return [];
         const signers: SignerRole[] =
           choice === "both" ? ["client", "lawyer"] : [choice];
-        return { pageIndex, signers };
+        return [{ pageIndex, signers }];
       });
+
+    if (pageAssignments.length === 0) {
+      setError("Pick at least one page that needs to be signed.");
+      return;
+    }
 
     // Snapshot the live editor HTML at this exact moment so the
     // recipient sees what the lawyer was looking at — including any
@@ -334,39 +381,54 @@ export default function SignatureRequestPanel({
           ) : (
             <ul className="mt-3 space-y-2">
               {pageItems.map((item) => {
-                const isPending = pendingPageIndices.has(item.index);
-                const ticked = selectedPages.has(item.index);
-                const signer = signerByPage[item.index] || "client";
+                const clientState = clientCoveredAt(item.index);
+                const lawyerState = lawyerCoveredAt(item.index);
+                const locked = Boolean(clientState && lawyerState);
+                const ticked = effectiveSelectedPages.has(item.index);
+                const signer = effectiveSignerFor(item.index) ?? "client";
 
-                // Pending pages render as locked rows — no checkbox,
-                // muted styling, a "Pending signature" badge — so the
-                // lawyer immediately understands why the page can't be
-                // re-selected. Cancelling the existing request unlocks
-                // the row (the cache refresh strips it from
-                // pendingPageIndices).
-                if (isPending) {
+                // Fully-covered pages render as locked rows — no
+                // checkbox, muted styling, per-signer badges — so the
+                // lawyer immediately sees why the page can't be
+                // re-selected. A signed page is complete forever;
+                // cancelling a pending request unlocks that signer.
+                if (locked) {
+                  const bothSigned =
+                    clientState === "signed" && lawyerState === "signed";
                   return (
                     <li
                       key={item.index}
-                      className="rounded-lg border border-amber-200 bg-amber-50/40 p-3"
+                      className={`rounded-lg border p-3 ${
+                        bothSigned
+                          ? "border-emerald-200 bg-emerald-50/40"
+                          : "border-amber-200 bg-amber-50/40"
+                      }`}
                     >
                       <div className="flex items-start gap-3">
                         <div
                           aria-hidden
-                          className="mt-1 flex h-4 w-4 items-center justify-center rounded border border-amber-300 bg-white"
+                          className={`mt-1 flex h-4 w-4 items-center justify-center rounded border bg-white ${
+                            bothSigned ? "border-emerald-300" : "border-amber-300"
+                          }`}
                         >
-                          <span className="block h-1.5 w-1.5 rounded-full bg-amber-400" />
+                          <span
+                            className={`block h-1.5 w-1.5 rounded-full ${
+                              bothSigned ? "bg-emerald-400" : "bg-amber-400"
+                            }`}
+                          />
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="truncate text-sm font-medium text-gray-600">
                             {item.index + 1}. {item.label}
                           </p>
-                          <span className="mt-1.5 inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800 ring-1 ring-amber-200">
-                            Pending signature
-                          </span>
+                          <div className="mt-1.5 flex flex-wrap gap-1.5">
+                            <CoverageChip role="Client" state={clientState} />
+                            <CoverageChip role="Lawyer" state={lawyerState} />
+                          </div>
                           <p className="mt-1 text-[11px] text-gray-500">
-                            Cancel the active request below to re-send
-                            this page.
+                            {bothSigned
+                              ? "This page is fully signed — it can't be sent again."
+                              : "Cancel the active request below to re-send this page."}
                           </p>
                         </div>
                       </div>
@@ -394,11 +456,23 @@ export default function SignatureRequestPanel({
                         <p className="text-sm font-medium text-gray-900 truncate">
                           {item.index + 1}. {item.label}
                         </p>
+                        {/* Partially-covered page: show who already
+                            holds it so the restricted dropdown below
+                            makes sense at a glance. */}
+                        {(clientState || lawyerState) && (
+                          <div className="mt-1.5 flex flex-wrap gap-1.5">
+                            <CoverageChip role="Client" state={clientState} />
+                            <CoverageChip role="Lawyer" state={lawyerState} />
+                          </div>
+                        )}
                         {ticked && (
                           <div className="mt-2 flex items-center gap-2">
                             <span className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">
                               Signer
                             </span>
+                            {/* Covered signers are not offered — a page
+                                the client already signed can only be
+                                sent to the lawyer, and vice versa. */}
                             <select
                               value={signer}
                               onChange={(e) =>
@@ -409,9 +483,15 @@ export default function SignatureRequestPanel({
                               }
                               className="rounded-md border border-gray-300 px-2 py-1 text-xs"
                             >
-                              <option value="client">Client</option>
-                              <option value="lawyer">Lawyer</option>
-                              <option value="both">Both</option>
+                              {!clientState && (
+                                <option value="client">Client</option>
+                              )}
+                              {!lawyerState && (
+                                <option value="lawyer">Lawyer</option>
+                              )}
+                              {!clientState && !lawyerState && (
+                                <option value="both">Both</option>
+                              )}
                             </select>
                           </div>
                         )}
@@ -584,7 +664,7 @@ export default function SignatureRequestPanel({
         <button
           type="button"
           onClick={handleSend}
-          disabled={submitting || selectedPages.size === 0}
+          disabled={submitting || effectiveSelectedPages.size === 0}
           className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-[var(--primary)] px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[var(--primary)]/90 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {submitting ? (
@@ -600,9 +680,9 @@ export default function SignatureRequestPanel({
           )}
         </button>
         <p className="mt-2 text-[11px] text-gray-500 text-center">
-          {selectedPages.size === 0
+          {effectiveSelectedPages.size === 0
             ? "Tick at least one page above."
-            : `${selectedPages.size} page${selectedPages.size === 1 ? "" : "s"} selected.`}
+            : `${effectiveSelectedPages.size} page${effectiveSelectedPages.size === 1 ? "" : "s"} selected.`}
         </p>
       </footer>
     </div>

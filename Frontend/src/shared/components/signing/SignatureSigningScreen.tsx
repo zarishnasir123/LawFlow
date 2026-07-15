@@ -98,17 +98,34 @@ function ensureSignatureFontsLoaded() {
   document.head.appendChild(link);
 }
 
-// Render a typed name onto a transparent canvas in the chosen font and
-// return as PNG data URL. Transparent so it composites cleanly over the
-// page background.
-function createTypedSignatureDataUrl(name: string, fontFamily: string): string {
+// Frequently-used signature ink colours. Black + blue are the common
+// choices on legal documents (blue distinguishes a wet original from a
+// photocopy); green is LawFlow's default; navy + red round out the set.
+const SIGNATURE_COLORS = [
+  { label: "Black", value: "#111827" },
+  { label: "Blue", value: "#1d4ed8" },
+  { label: "Navy", value: "#1e3a8a" },
+  { label: "Green", value: "#01411C" },
+  { label: "Red", value: "#b91c1c" },
+] as const;
+
+const DEFAULT_SIGNATURE_COLOR = "#01411C";
+
+// Render a typed name onto a transparent canvas in the chosen font +
+// colour and return as PNG data URL. Transparent so it composites
+// cleanly over the page background.
+function createTypedSignatureDataUrl(
+  name: string,
+  fontFamily: string,
+  color: string
+): string {
   const canvas = document.createElement("canvas");
   canvas.width = 600;
   canvas.height = 140;
   const ctx = canvas.getContext("2d");
   if (!ctx) return "";
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.fillStyle = "#01411C";
+  ctx.fillStyle = color;
   ctx.font = `60px ${fontFamily}`;
   ctx.textBaseline = "middle";
   ctx.fillText(name, 16, canvas.height / 2);
@@ -206,6 +223,11 @@ export default function SignatureSigningScreen({
   const [fontId, setFontId] = useState<(typeof SIGNATURE_FONTS)[number]["id"]>(
     "dancing"
   );
+  // Signature ink colour, shared by Type + Draw (Upload keeps the image's
+  // own colours). Defaults to LawFlow green.
+  const [signatureColor, setSignatureColor] = useState<string>(
+    DEFAULT_SIGNATURE_COLOR
+  );
   const [signatureDataUrl, setSignatureDataUrl] = useState<string | null>(null);
   const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
@@ -284,7 +306,9 @@ export default function SignatureSigningScreen({
     let cancelled = false;
     const render = () => {
       if (cancelled) return;
-      setSignatureDataUrl(createTypedSignatureDataUrl(trimmed, font.family));
+      setSignatureDataUrl(
+        createTypedSignatureDataUrl(trimmed, font.family, signatureColor)
+      );
     };
     if (typeof document !== "undefined" && "fonts" in document) {
       (document as Document & { fonts: { ready: Promise<unknown> } }).fonts.ready
@@ -296,13 +320,13 @@ export default function SignatureSigningScreen({
     return () => {
       cancelled = true;
     };
-  }, [mode, typedName, fontId]);
+  }, [mode, typedName, fontId, signatureColor]);
 
   // Size + style the draw pad whenever draw mode opens. The canvas is
-  // scaled by devicePixelRatio for crisp ink, and the 2D context is set
-  // up once here (brand-green pen, round caps). Re-entering draw mode
-  // starts a fresh blank pad — any previously exported signature stays
-  // in the preview until a new one is drawn.
+  // scaled by devicePixelRatio for crisp ink, round caps for a pen feel.
+  // The pen colour is applied per-stroke in handleDrawStart from the
+  // current signatureColor, so switching ink never has to clear the pad
+  // here. Re-entering draw mode starts a fresh blank pad.
   useEffect(() => {
     if (mode !== "draw") return;
     const canvas = drawCanvasRef.current;
@@ -321,8 +345,6 @@ export default function SignatureSigningScreen({
     ctx.lineWidth = 2.5;
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
-    ctx.strokeStyle = "#01411C";
-    ctx.fillStyle = "#01411C";
   }, [mode]);
 
   // Export the drawing cropped to its ink (plus padding) so the placed
@@ -384,6 +406,10 @@ export default function SignatureSigningScreen({
     const ctx = canvas?.getContext("2d");
     if (!canvas || !ctx) return;
     canvas.setPointerCapture(e.pointerId);
+    // Pen colour is applied at stroke time so switching ink affects the
+    // next stroke without wiping what's already on the pad.
+    ctx.strokeStyle = signatureColor;
+    ctx.fillStyle = signatureColor;
     drawingRef.current = true;
     const p = { x: e.nativeEvent.offsetX, y: e.nativeEvent.offsetY };
     lastPointRef.current = p;
@@ -847,6 +873,38 @@ export default function SignatureSigningScreen({
                     </button>
                   </div>
 
+                  {/* Ink colour — applies to Type + Draw. Upload keeps the
+                      uploaded image's own colours, so the picker is hidden
+                      there. */}
+                  {mode !== "upload" && (
+                    <div className="flex items-center gap-2.5">
+                      <span className="text-[11px] font-medium text-gray-500">
+                        Ink colour
+                      </span>
+                      <div className="flex items-center gap-1.5">
+                        {SIGNATURE_COLORS.map((c) => {
+                          const selected = signatureColor === c.value;
+                          return (
+                            <button
+                              key={c.value}
+                              type="button"
+                              onClick={() => setSignatureColor(c.value)}
+                              title={c.label}
+                              aria-label={`${c.label} ink`}
+                              aria-pressed={selected}
+                              className={`h-6 w-6 rounded-full ring-offset-1 transition-transform ${
+                                selected
+                                  ? "scale-110 ring-2 ring-gray-500"
+                                  : "ring-1 ring-gray-200 hover:scale-105"
+                              }`}
+                              style={{ backgroundColor: c.value }}
+                            />
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
                   {mode === "type" ? (
                     <div className="space-y-3">
                       <input
@@ -870,7 +928,7 @@ export default function SignatureSigningScreen({
                             style={{
                               fontFamily: f.family,
                               fontSize: "20px",
-                              color: "#01411C",
+                              color: signatureColor,
                               lineHeight: 1.15,
                             }}
                           >
@@ -991,8 +1049,8 @@ export default function SignatureSigningScreen({
                         {hasPlaced ? (
                           <span className="inline-flex items-center gap-1 font-medium text-emerald-700">
                             <CheckCircle2 className="h-3.5 w-3.5" />
-                            Placed — drag it on the paper to fine-tune, or use the
-                            corner dots to resize.
+                            Your signature is on the document. Drag it to move it,
+                            or pull a corner to make it bigger or smaller.
                           </span>
                         ) : (
                           "Hold and drag the preview onto the page where you want to sign."
