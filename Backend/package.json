@@ -6,6 +6,11 @@
   "scripts": {
     "dev": "nodemon src/server.js",
     "start": "node src/server.js",
+    "test": "vitest run",
+    "test:unit": "vitest run --project unit",
+    "test:integration": "vitest run --project integration",
+    "test:watch": "vitest --project unit",
+    "coverage": "vitest run --coverage",
     "email:check": "node src/scripts/checkEmailConfig.js",
     "generate:case-templates": "node src/scripts/generateCaseTemplates.js",
     "sync:supabase-users": "node src/scripts/syncSupabaseUsers.js",
@@ -35,7 +40,10 @@
   },
   "devDependencies": {
     "@faker-js/faker": "^10.4.0",
+    "@vitest/coverage-v8": "^4.1.10",
     "docx": "^9.5.0",
-    "nodemon": "^3.1.9"
+    "nodemon": "^3.1.9",
+    "supertest": "^7.2.2",
+    "vitest": "^4.1.10"
   }
 }
