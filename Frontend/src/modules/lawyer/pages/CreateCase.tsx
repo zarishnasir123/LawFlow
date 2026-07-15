@@ -202,8 +202,8 @@ export default function CreateCase() {
                   ))}
                 </select>
                 <p className="mt-1.5 text-xs text-gray-500">
-                  Routes the case to the registrar for this jurisdiction. Required
-                  before the case can be submitted.
+                  Choose the court where this case will be filed. You'll need this
+                  before you can submit the case.
                 </p>
               </div>
             </div>

@@ -316,20 +316,46 @@ export const useDocumentEditorStore = create<DocumentEditorState>((set, get) => 
     defaultDocs: ReadonlyArray<{ id: string; title: string; url?: string }>
   ) => {
     const state = get();
-    if (state.bundleItems.length > 0 || state.draftLoaded) {
+
+    // The document-editor store is a GLOBAL singleton shared by every case.
+    // A template doc's `id`/`refId` is the case_types.code, so we can tell
+    // whether the store already holds THIS case's template. If it does, the
+    // loaded draft genuinely belongs to this case — keep the user's edits.
+    const expectedRefIds = new Set(defaultDocs.map((doc) => doc.id));
+    const currentTemplate = state.bundleItems.find(
+      (item) =>
+        item.type === "DOC" && state.documentsById[item.refId]?.isTemplate
+    );
+    const alreadySeededForThisCase =
+      currentTemplate !== undefined &&
+      expectedRefIds.has(currentTemplate.refId);
+
+    if (alreadySeededForThisCase) {
       return;
     }
 
-    const bundleItems: BundleItem[] = defaultDocs.map(doc => ({
+    // Otherwise the store is empty OR still holds a DIFFERENT case's document.
+    // Navigating from one case to another (or restoring a localStorage draft
+    // that belongs to a different case type) leaves the previous case's
+    // template in place; left unchecked, autosave then writes that WRONG
+    // template into this case (e.g. a family case ending up with the civil
+    // "Recovery of Money" plaint). Drop every stale DOC entry and seed this
+    // case's real template. Attachment rows are preserved — reconcile keeps
+    // them in sync with the server — and draftLoaded resets so the next save
+    // persists this case cleanly.
+    const templateBundleItems: BundleItem[] = defaultDocs.map((doc) => ({
       id: `bundle_doc_${doc.id}`,
-      type: 'DOC',
+      type: "DOC",
       refId: doc.id,
       title: doc.title,
       createdAt: new Date().toISOString(),
     }));
+    const attachmentItems = state.bundleItems.filter(
+      (item) => item.type === "ATTACHMENT"
+    );
 
     const documentsById: Record<string, DocumentData> = {};
-    defaultDocs.forEach(doc => {
+    defaultDocs.forEach((doc) => {
       documentsById[doc.id] = {
         id: doc.id,
         title: doc.title,
@@ -339,7 +365,13 @@ export const useDocumentEditorStore = create<DocumentEditorState>((set, get) => 
       };
     });
 
-    set({ bundleItems, documentsById });
+    set({
+      bundleItems: [...templateBundleItems, ...attachmentItems],
+      documentsById,
+      documentContents: {},
+      currentDocId: null,
+      draftLoaded: false,
+    });
   },
 
   saveDraft: (caseId?: string) => {

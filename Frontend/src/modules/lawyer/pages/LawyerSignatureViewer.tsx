@@ -82,6 +82,7 @@ export default function LawyerSignatureViewer() {
       showBackButton
       onBackClick={() => navigate({ to: "/lawyer-signatures" })}
       backLabel="Back to inbox"
+      fullHeight
     >
       <SignatureSigningScreen
         request={request}

@@ -14,6 +14,11 @@ type DashboardLayoutProps = {
   showBackButton?: boolean;
   onBackClick?: () => void;
   backLabel?: string;
+  // Opt-in app-shell: pins the page to the viewport height with a
+  // non-scrolling header and a single `flex-1` content region, so a
+  // page can build its own full-height split view (e.g. the signing
+  // workspace) instead of the default padded, page-scrolling `main`.
+  fullHeight?: boolean;
   children: ReactNode;
 };
 
@@ -75,11 +80,23 @@ export default function DashboardLayout(props: DashboardLayoutProps) {
     pageSubtitle,
     actions = [],
     profileMenu,
+    fullHeight = false,
     children,
   } = props;
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-[#01411C] px-4 py-4 text-white shadow-md sm:px-6 lg:px-10">
+    <div
+      className={
+        fullHeight
+          ? // h-[100dvh] (dynamic viewport height) not h-screen (100vh): on
+            // mobile the visible area shrinks/grows as the browser toolbar
+            // shows/hides, and dvh tracks that — so the bottom of a full-height
+            // page (e.g. the signing panel's Submit button) is never stranded
+            // behind the toolbar.
+            "flex h-[100dvh] flex-col overflow-hidden bg-gray-50"
+          : "min-h-screen bg-gray-50"
+      }
+    >
+      <header className="flex-shrink-0 bg-[#01411C] px-4 py-4 text-white shadow-md sm:px-6 lg:px-10">
         <div className="mx-auto flex w-full max-w-none items-center justify-between">
           <div className="flex items-center gap-3">
             <Scale className="h-8 w-8" />
@@ -100,7 +117,13 @@ export default function DashboardLayout(props: DashboardLayoutProps) {
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-none px-4 py-8 sm:px-6 lg:px-10">
+      <main
+        className={
+          fullHeight
+            ? "min-h-0 flex-1 overflow-hidden"
+            : "mx-auto w-full max-w-none px-4 py-8 sm:px-6 lg:px-10"
+        }
+      >
         {children}
       </main>
     </div>

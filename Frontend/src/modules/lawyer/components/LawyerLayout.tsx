@@ -18,6 +18,7 @@ type LawyerLayoutProps = {
   showBackButton?: boolean;
   onBackClick?: () => void;
   backLabel?: string;
+  fullHeight?: boolean;
   children: ReactNode;
 };
 
@@ -28,6 +29,7 @@ export default function LawyerLayout({
   showBackButton = false,
   onBackClick,
   backLabel,
+  fullHeight = false,
   children,
 }: LawyerLayoutProps) {
   const navigate = useNavigate();
@@ -85,6 +87,7 @@ export default function LawyerLayout({
         showBackButton={showBackButton}
         onBackClick={onBackClick}
         backLabel={backLabel}
+        fullHeight={fullHeight}
       >
         {children}
       </DashboardLayout>

@@ -8,6 +8,7 @@ import {
   queueSignatureCompletionEmail,
 } from "../../services/email.service.js";
 import { compileCaseSignedPdf } from "./signatures.compiler.js";
+import { createNotification } from "../notifications/notifications.service.js";
 
 // Signature requests expire 14 days after creation. Long enough for the
 // signer to get around to signing, short enough that stale rows don't
@@ -335,6 +336,32 @@ export async function createSignatureRequestBatch({
         const pageCount = Array.isArray(row.page_indices)
           ? row.page_indices.length
           : 0;
+
+        // In-app bell notification for the recipient. Unlike the email
+        // (which the user can mute in preferences), the in-app alert always
+        // fires. Per-recipient try/catch so one failure never blocks the
+        // others or the HTTP response.
+        try {
+          await createNotification({
+            userId: row.recipient_user_id,
+            type: "document",
+            title: "Signature requested",
+            message: `${lawyerName} sent you "${row.case_title}" to sign${
+              pageCount > 0
+                ? ` (${pageCount} page${pageCount === 1 ? "" : "s"})`
+                : ""
+            }.`,
+            caseId,
+          });
+        } catch (notifyErr) {
+          console.error("[SIGNATURE NOTIFICATION FAILED]", {
+            batchId,
+            recipientUserId: row.recipient_user_id,
+            message:
+              notifyErr instanceof Error ? notifyErr.message : String(notifyErr),
+          });
+        }
+
         queueSignatureRequestEmail({
           email: row.recipient_email,
           firstName: row.recipient_first_name,
@@ -653,7 +680,7 @@ export async function submitSignature({
            WHERE sr.id = $1`,
           [updatedRow.id]
         )
-        .then(({ rows }) => {
+        .then(async ({ rows }) => {
           const r = rows[0];
           if (!r || !r.lawyer_email) return;
           const signerName =
@@ -661,6 +688,27 @@ export async function submitSignature({
               .filter(Boolean)
               .join(" ")
               .trim() || r.signer_email;
+
+          // In-app bell notification for the case's owning lawyer, so a
+          // completed signature shows up without waiting on email.
+          try {
+            await createNotification({
+              userId: r.lawyer_user_id,
+              type: "document",
+              title: "Document signed",
+              message: `${signerName} signed "${r.case_title}".`,
+              caseId: updatedRow.case_id,
+            });
+          } catch (notifyErr) {
+            console.error("[SIGNED NOTIFICATION FAILED]", {
+              requestId: updatedRow.id,
+              message:
+                notifyErr instanceof Error
+                  ? notifyErr.message
+                  : String(notifyErr),
+            });
+          }
+
           return queueSignatureCompletionEmail({
             lawyerEmail: r.lawyer_email,
             lawyerFirstName: r.lawyer_first_name,
@@ -842,14 +890,25 @@ export async function getSignedCasePdfDownload({ caseId, lawyerUserId }) {
   const { getSignedCasePdfDownloadUrl } = await import(
     "../../services/storage.service.js"
   );
+  const { getSupabaseStorageConfig } = await import(
+    "../../config/supabase.js"
+  );
   const signed = await getSignedCasePdfDownloadUrl({
     storagePath: row.signed_pdf_storage_path,
     expiresInSeconds: 300,
   });
   if (!signed) {
+    // getSignedCasePdfDownloadUrl returns null both when Supabase isn't
+    // configured AND when it IS configured but the project is unreachable
+    // (e.g. a paused free-tier project) or the object is missing. Report
+    // the accurate cause so a connectivity outage isn't mistaken for a
+    // config problem.
+    const configured = getSupabaseStorageConfig().mode === "supabase";
     throw new ApiError(
       503,
-      "Storage is not configured to mint signed URLs"
+      configured
+        ? "Signed PDF storage is temporarily unavailable — the storage service could not be reached. Try again once it is back up."
+        : "Signed PDF storage is not configured on this server."
     );
   }
 

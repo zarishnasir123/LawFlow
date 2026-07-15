@@ -17,6 +17,7 @@ type ClientLayoutProps = {
   onBackClick?: () => void;
   backLabel?: string;
   notificationBadge?: number;
+  fullHeight?: boolean;
   children: ReactNode;
 };
 
@@ -28,6 +29,7 @@ export default function ClientLayout({
   onBackClick,
   backLabel,
   notificationBadge,
+  fullHeight = false,
   children,
 }: ClientLayoutProps) {
   const navigate = useNavigate();
@@ -137,6 +139,7 @@ export default function ClientLayout({
         showBackButton={showBackButton}
         onBackClick={onBackClick}
         backLabel={backLabel}
+        fullHeight={fullHeight}
       >
         {children}
       </DashboardLayout>
