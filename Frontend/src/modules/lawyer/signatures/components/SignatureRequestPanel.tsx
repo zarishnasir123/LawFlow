@@ -16,6 +16,7 @@ import {
   type SignerRole,
 } from "../api/signatures.api";
 import { buildEditorSnapshot } from "../../utils/editorSnapshot";
+import { derivePageLabel } from "../../utils/pageLabel";
 
 // Lawyer-side signature panel (FE-1, FE-2, FE-3, FE-4 entry surface).
 //
@@ -68,26 +69,8 @@ function CoverageChip({
   );
 }
 
-function derivePageLabel(page: HTMLElement, fallback: string): string {
-  const heading = page.querySelector("h1, h2, h3, h4, h5, h6");
-  if (heading?.textContent?.trim()) {
-    return heading.textContent.trim().replace(/[─—-]+/g, "").trim();
-  }
-  const paragraphs = page.querySelectorAll("p");
-  for (const p of Array.from(paragraphs)) {
-    const text = p.textContent?.trim() || "";
-    if (/^[─—-]{2,}\s*.+?\s*[─—-]{2,}$/.test(text)) {
-      return text.replace(/[─—-]+/g, "").trim();
-    }
-  }
-  for (const p of Array.from(paragraphs)) {
-    const text = p.textContent?.trim();
-    if (text && text.length > 2) {
-      return text.length > 40 ? `${text.slice(0, 40)}…` : text;
-    }
-  }
-  return fallback;
-}
+// derivePageLabel moved to ../../utils/pageLabel so the Submit-Case page can
+// reuse the exact same page-naming logic.
 
 // The snapshot helper used to live here; auto-save in
 // CaseDocumentEditor now reuses the same logic, so it moved to

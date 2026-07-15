@@ -2,8 +2,7 @@ import { apiClient } from "../../../shared/api/axios";
 
 // Public lawyer directory entry returned by GET /api/lawyers. Mirrors
 // the sanitized backend payload — no CNIC, phone, documents, or
-// verification audit fields. (Cases handled / success rate are still
-// absent pending those tables.)
+// verification audit fields.
 export type DirectoryLawyer = {
   lawyerProfileId: string;
   userId: string;
@@ -21,6 +20,9 @@ export type DirectoryLawyer = {
   // averageRating is null when the lawyer has no reviews yet.
   averageRating: number | null;
   reviewCount: number;
+  // Real count of the lawyer's cases a registrar accepted or that concluded
+  // (disposed) — cases that actually reached the court. 0 when none yet.
+  casesHandled: number;
 };
 
 export type LawyerDirectoryResponse = {

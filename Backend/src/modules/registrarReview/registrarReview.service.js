@@ -75,11 +75,27 @@ function mapCaseSummary(row) {
 // fresh signed view URL per attachment. Mirrors the lawyer side's
 // mapCaseAttachment (cases.service.js) but trims to the four fields the
 // registrar review page needs. `url` is null when minting fails — the page
-// degrades to a disabled "View" link rather than erroring the whole detail.
+// degrades to a Retry prompt rather than erroring the whole detail.
+//
+// The mint is wrapped so a genuinely THROWN storage error (e.g. the storage
+// service is asleep and supabase-js surfaces a "fetch failed" instead of the
+// usual {error} result) degrades this one attachment to url:null instead of
+// rejecting the Promise.all and 500-ing the entire case detail. The detail
+// itself comes from Postgres and must always render so the registrar can still
+// read and action the case; only the storage-backed URLs are best-effort.
 async function mapRegistrarAttachment(row) {
-  const url = row.storage_path
-    ? await getCaseAttachmentSignedUrl(row.storage_path)
-    : null;
+  let url = null;
+  if (row.storage_path) {
+    try {
+      url = await getCaseAttachmentSignedUrl(row.storage_path);
+    } catch (err) {
+      console.warn(
+        `[registrar] failed to mint signed URL for attachment ${row.id}:`,
+        err?.message ?? err
+      );
+      url = null;
+    }
+  }
   return {
     id: row.id,
     fileName: row.file_name,
@@ -147,6 +163,53 @@ async function loadSignedPageIndices(caseId) {
   return [...indices].sort((a, b) => a - b);
 }
 
+// Per-page signer breakdown for the review sidebar: which signer(s) have SIGNED
+// each page (client, lawyer, or both). Unlike loadSignedPageIndices (which
+// collapses the signer away into a flat page list), this keeps signer_role so
+// the UI can show the same "Client + Lawyer Signed" / "Client Signed" /
+// "Lawyer Signed" badges as the editor. Exposes only the role — never a name or
+// any PII. Detail-only: called from mapCaseDetail inside the tehsil-checked
+// getCaseForRegistrar path. Parameterised SQL.
+async function loadSignedPageRoles(caseId) {
+  const result = await pool.query(
+    `SELECT signer_role, page_indices
+     FROM signature_requests
+     WHERE case_id = $1
+       AND status = 'signed'`,
+    [caseId]
+  );
+
+  const byPage = new Map();
+  for (const row of result.rows) {
+    let pages = row.page_indices;
+    if (typeof pages === "string") {
+      try {
+        pages = JSON.parse(pages);
+      } catch {
+        continue;
+      }
+    }
+    if (!Array.isArray(pages)) continue;
+    const isClient = row.signer_role === "client";
+    for (const pageIndex of pages) {
+      if (typeof pageIndex !== "number") continue;
+      const cur =
+        byPage.get(pageIndex) ?? { clientSigned: false, lawyerSigned: false };
+      if (isClient) cur.clientSigned = true;
+      else cur.lawyerSigned = true;
+      byPage.set(pageIndex, cur);
+    }
+  }
+
+  return [...byPage.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([pageIndex, s]) => ({
+      pageIndex,
+      clientSigned: s.clientSigned,
+      lawyerSigned: s.lawyerSigned
+    }));
+}
+
 // CaseDetail = CaseSummary + the review trail + a short-lived signed URL for
 // the signed PDF (null when no PDF has been compiled yet) + the COMPLETE case
 // file: the prepared-document HTML snapshot (cases.edited_html) and every
@@ -161,11 +224,13 @@ async function mapCaseDetail(row) {
 
   const attachments = await loadCaseAttachments(row.id);
   const signedPageIndices = await loadSignedPageIndices(row.id);
+  const pageSignatures = await loadSignedPageRoles(row.id);
 
   return {
     ...mapCaseSummary(row),
     signedPdfUrl: signed?.downloadUrl ?? null,
     signedPageIndices,
+    pageSignatures,
     editedHtml: row.edited_html ?? null,
     attachments,
     reviewRemarks: row.review_remarks,
@@ -249,7 +314,8 @@ export async function getCaseForRegistrar({ caseId, registrarUserId }) {
   const result = await pool.query(
     `${selectRegistrarCase()}
      WHERE cases.id = $1
-       AND LOWER(cases.assigned_tehsil) = LOWER($2)`,
+       AND LOWER(cases.assigned_tehsil) = LOWER($2)
+       AND cases.status IN ('submitted', 'accepted', 'returned')`,
     [caseId, tehsil]
   );
 

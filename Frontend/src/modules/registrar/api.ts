@@ -72,6 +72,14 @@ export type CaseDetail = CaseSummary & {
   signedPdfUrl: string | null;
   editedHtml: string | null;
   signedPageIndices: number[];
+  // Per-page signer breakdown for the review sidebar's "who signed" badges:
+  // which signer(s) completed each page (client, lawyer, or both). Only the
+  // signer ROLE is exposed — never a name or any PII.
+  pageSignatures: {
+    pageIndex: number;
+    clientSigned: boolean;
+    lawyerSigned: boolean;
+  }[];
   attachments: RegistrarCaseAttachment[];
   reviewRemarks: string | null;
   reviewedAt: string | null;

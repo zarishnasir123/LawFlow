@@ -47,8 +47,25 @@ async function mapDirectoryLawyer(row) {
       row.review_count !== null && row.review_count !== undefined
         ? Number(row.review_count)
         : 0,
+    // Real "Cases Handled" count: the lawyer's cases a registrar has accepted
+    // (in progress) or that concluded (disposed) — i.e. cases that actually
+    // reached the court. Cases still in draft / awaiting review / returned are
+    // NOT counted. 0 when the lawyer has none yet.
+    casesHandled:
+      row.cases_handled !== null && row.cases_handled !== undefined
+        ? Number(row.cases_handled)
+        : 0,
   };
 }
+
+// Scalar subquery: how many of this lawyer's cases reached the court
+// (accepted or disposed). Joined by the lawyer's users.id. Kept as a shared
+// constant so the list + detail queries stay in sync.
+const CASES_HANDLED_SUBQUERY = `(
+  SELECT COUNT(*) FROM cases c
+  WHERE c.lawyer_user_id = users.id
+    AND c.status IN ('accepted', 'disposed')
+) AS cases_handled`;
 
 // Normalise the search keyword into the same lowercase form ILIKE
 // will use. Returns null when the keyword is empty so the WHERE
@@ -103,6 +120,7 @@ export async function listApprovedLawyers({
       lawyer_profiles.bio,
       rev.avg_rating,
       rev.review_count,
+      ${CASES_HANDLED_SUBQUERY},
       COUNT(*) OVER () AS total_count
     FROM lawyer_profiles
     JOIN users ON users.id = lawyer_profiles.user_id
@@ -114,7 +132,7 @@ export async function listApprovedLawyers({
     WHERE lawyer_profiles.verification_status = 'approved'
       AND users.account_status = 'active'
       AND users.deactivated_at IS NULL
-      AND ($3::text IS NULL OR lawyer_profiles.specialization = $3)
+      AND ($3::text IS NULL OR LOWER(lawyer_profiles.specialization) = LOWER($3))
       AND (
         $4::text IS NULL
         OR users.first_name ILIKE $4
@@ -162,7 +180,8 @@ export async function getApprovedLawyerById(lawyerProfileId) {
       lawyer_profiles.experience_years,
       lawyer_profiles.bio,
       rev.avg_rating,
-      rev.review_count
+      rev.review_count,
+      ${CASES_HANDLED_SUBQUERY}
     FROM lawyer_profiles
     JOIN users ON users.id = lawyer_profiles.user_id
     LEFT JOIN LATERAL (

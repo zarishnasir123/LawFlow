@@ -569,7 +569,19 @@ export async function getCaseAttachmentSignedUrl(storagePath, expiresInSeconds =
     .from(config.caseAttachmentBucket)
     .createSignedUrl(storagePath, ttl);
 
-  if (error || !data?.signedUrl) return null;
+  // Log (don't throw) so a storage outage is diagnosable instead of showing up
+  // downstream as a silent null url / broken image. This branch also fires when
+  // the storage project is asleep/unreachable (the mint request errors), which
+  // is the usual real-world cause of a null here.
+  if (error || !data?.signedUrl) {
+    if (error) {
+      console.warn(
+        `[storage] createSignedUrl failed for case attachment "${storagePath}":`,
+        error.message
+      );
+    }
+    return null;
+  }
   return data.signedUrl;
 }
 

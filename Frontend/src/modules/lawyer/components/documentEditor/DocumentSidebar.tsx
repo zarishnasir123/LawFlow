@@ -283,6 +283,8 @@ export default function DocumentSidebar({
     attachmentsById,
     reorderBundleItems,
     removeFromBundle,
+    removeAttachment,
+    saveDraft,
   } = useDocumentEditorStore();
   // Per-bundle-item signature badges are off in Phase 1 — the new
   // signature_requests model keys off pages, not bundle items, so the
@@ -487,32 +489,39 @@ export default function DocumentSidebar({
                             }
                           : undefined
                       }
-                      onRemove={async () => {
-                        // ATTACHMENT items get a real backend delete
-                        // so the row vanishes permanently, not just
-                        // until the next refresh. DOC items stay
-                        // client-side (the case template + uploaded
-                        // docs don't have a backend representation
-                        // beyond cases.edited_html). Fire-and-forget
-                        // the network call — the UI removes the row
-                        // optimistically; a backend failure leaves
-                        // an orphan record that the next reconcile
-                        // will surface.
-                        if (
-                          item.type === "ATTACHMENT" &&
-                          caseId &&
-                          caseId !== "default-case"
-                        ) {
-                          try {
-                            await casesApi.deleteAttachment(caseId, item.refId);
-                          } catch (err) {
-                            console.error(
-                              "[attachment] delete failed:",
-                              err
-                            );
+                      onRemove={() => {
+                        if (item.type === "ATTACHMENT") {
+                          // Remove from the UI IMMEDIATELY (optimistic).
+                          // Prune EVERY in-store copy (bundleItems +
+                          // attachmentsById + the legacy attachments array) —
+                          // removeFromBundle alone left the attachment in
+                          // attachmentsById/localStorage, so it reappeared in
+                          // the sidebar on reload and in the Complete Case File
+                          // preview. Persist immediately so loadDraft can't
+                          // resurrect it from a stale draft.
+                          removeAttachment(item.refId);
+                          saveDraft(caseId);
+
+                          // Fire the backend delete in the BACKGROUND — never
+                          // await it. The delete endpoint can block on a
+                          // cold/asleep storage round-trip (tens of seconds),
+                          // and awaiting it here froze the row in place so it
+                          // looked like "remove didn't work". The DB row is
+                          // deleted regardless, and submit-time reconciliation
+                          // is the safety net if this call is dropped/fails.
+                          if (caseId && caseId !== "default-case") {
+                            void casesApi
+                              .deleteAttachment(caseId, item.refId)
+                              .catch((err) => {
+                                console.error(
+                                  "[attachment] delete failed:",
+                                  err
+                                );
+                              });
                           }
+                        } else {
+                          removeFromBundle(item.id);
                         }
-                        removeFromBundle(item.id);
                       }}
                     />
                   );

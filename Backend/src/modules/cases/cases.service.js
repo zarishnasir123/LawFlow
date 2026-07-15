@@ -668,9 +668,70 @@ export async function getCaseForLawyer({ caseId, lawyerUserId }) {
 // surface a specific 400 telling the lawyer which step is missing. On success
 // the case moves to 'submitted' and is stamped with submitted_at so the
 // registrar queue can order by oldest-first.
+// Prune case_attachments rows that are no longer referenced anywhere in the
+// submitted document. Every attachment is an image the lawyer PLACED on a page;
+// each placement (floating image, inline image, or attachment block) carries
+// data-attachment-id="<case_attachments.id>" in edited_html. When the lawyer
+// removes an image — the sidebar trash, the canvas red-X, or the Delete key —
+// edited_html drops that id, but the DB row (which the registrar's Documents
+// list reads verbatim) would otherwise linger. So at submit/resubmit time we
+// delete every case_attachments row whose id no longer appears in edited_html
+// and best-effort sweep its storage object. Reference-counting is inherent: a
+// row survives as long as ANY placement of its id remains in the document.
+//
+// Guard: only run when edited_html is a non-empty string — never prune against
+// a missing snapshot (that could wipe legitimately-placed attachments if an
+// autosave hadn't landed). Submit already requires a compiled signed PDF built
+// from the same rendered pages, so edited_html is current at this point.
+async function pruneUnreferencedAttachments({ caseId, editedHtml }) {
+  if (typeof editedHtml !== "string" || editedHtml.trim() === "") return;
+
+  const referenced = new Set(
+    [...editedHtml.matchAll(/data-attachment-id="([0-9a-fA-F-]{36})"/g)].map((m) =>
+      m[1].toLowerCase()
+    )
+  );
+
+  const rows = (
+    await pool.query(
+      `SELECT id, storage_path FROM case_attachments WHERE case_id = $1`,
+      [caseId]
+    )
+  ).rows;
+
+  const orphans = rows.filter(
+    (row) => !referenced.has(String(row.id).toLowerCase())
+  );
+  if (orphans.length === 0) return;
+
+  await pool.query(`DELETE FROM case_attachments WHERE id = ANY($1::uuid[])`, [
+    orphans.map((row) => row.id),
+  ]);
+  console.warn(
+    `[cases] pruned ${orphans.length} unreferenced attachment(s) on submit of case ${caseId}`
+  );
+
+  // Best-effort storage sweep — an orphaned object is reconciled out-of-band;
+  // never let a storage hiccup fail the submit.
+  try {
+    await Promise.all(
+      orphans
+        .map((row) => row.storage_path)
+        .filter(Boolean)
+        .map((storagePath) => deleteCaseAttachmentObject(storagePath))
+    );
+  } catch (storageErr) {
+    console.error("[STORAGE CLEANUP FAILED]", {
+      task: "prune-unreferenced-attachments",
+      caseId,
+      message: storageErr?.message,
+    });
+  }
+}
+
 export async function submitCase({ caseId, lawyerUserId }) {
   const result = await pool.query(
-    `SELECT status, assigned_tehsil, signed_pdf_storage_path, title
+    `SELECT status, assigned_tehsil, signed_pdf_storage_path, title, edited_html
      FROM cases
      WHERE id = $1 AND lawyer_user_id = $2`,
     [caseId, lawyerUserId]
@@ -680,7 +741,8 @@ export async function submitCase({ caseId, lawyerUserId }) {
     throw new ApiError(404, "Case not found");
   }
 
-  const { status, assigned_tehsil, signed_pdf_storage_path, title } = result.rows[0];
+  const { status, assigned_tehsil, signed_pdf_storage_path, title, edited_html } =
+    result.rows[0];
 
   if (status !== "draft" && status !== "returned") {
     throw new ApiError(409, "Only draft or returned cases can be submitted");
@@ -702,6 +764,19 @@ export async function submitCase({ caseId, lawyerUserId }) {
      WHERE id = $1 AND lawyer_user_id = $2`,
     [caseId, lawyerUserId]
   );
+
+  // Reconcile attachments against the final document so the registrar never
+  // sees a file the lawyer already removed. Best-effort: a prune failure must
+  // never fail an otherwise-successful submit (worst case the stale row lingers
+  // and is swept on the next submit).
+  try {
+    await pruneUnreferencedAttachments({ caseId, editedHtml: edited_html });
+  } catch (pruneErr) {
+    console.error(
+      `Failed to prune unreferenced attachments for case ${caseId}:`,
+      pruneErr?.message ?? pruneErr
+    );
+  }
 
   // Best-effort audit event AFTER the status=submitted UPDATE commits. The
   // CURRENT status (captured above, before the UPDATE) decides whether this
@@ -1134,8 +1209,11 @@ export async function deleteCaseAttachment({
     throw new ApiError(404, "Attachment not found");
   }
 
-  // Best-effort storage cleanup — leaving an orphan object is far
-  // better than blocking the user's delete click. Same convention
-  // as the avatar deletion path.
-  await deleteCaseAttachmentObject(result.rows[0].storage_path);
+  // Best-effort storage cleanup — fired WITHOUT await so the endpoint returns
+  // as soon as the DB row (the source of truth for what the UI/registrar see)
+  // is gone. The storage service can be cold/asleep and take tens of seconds to
+  // respond; awaiting that froze the delete request and made the UI look stuck.
+  // The helper swallows its own errors; an orphaned object is reconciled
+  // out-of-band and is far better than a hung delete.
+  void deleteCaseAttachmentObject(result.rows[0].storage_path).catch(() => {});
 }

@@ -1,12 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useParams } from "@tanstack/react-router";
+import { useNavigate, useParams } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertCircle,
   CheckCircle2,
   ClipboardCheck,
-  FileText,
-  Paperclip,
   Printer,
   UploadCloud,
 } from "lucide-react";
@@ -16,12 +14,15 @@ import { signaturesApi, getSignaturesErrorMessage } from "../signatures/api/sign
 import LawyerLayout from "../components/LawyerLayout";
 import DocxPreviewSurface from "../components/documentEditor/DocxPreviewSurface";
 import { applyPriorCapturesToHost } from "../utils/capturePages";
+import { derivePageLabel } from "../utils/pageLabel";
+import { deriveSignatureBadge } from "../utils/pageSignatures";
 import type { SignedPageCapture } from "../../../shared/api/mySignatures.api";
 import { useDocumentEditorStore } from "../store/documentEditor.store";
 import SubmitConfirmationModal from "../components/caseFiling/SubmitConfirmationModal";
 import { useCaseFilingStore } from "../store/caseFiling.store";
 import { formatFilingDateTime } from "../utils/caseFiling.utils";
 import { getCaseDisplayTitle } from "../../../shared/utils/caseDisplay";
+import { printHtmlDocument } from "../../../shared/utils/printHtml";
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL(
   "pdfjs-dist/build/pdf.worker.min.mjs",
@@ -54,6 +55,7 @@ async function renderPdfPagesToDataUrls(url: string): Promise<string[]> {
 
 export default function LawyerCaseFilingSubmissionPage() {
   const params = useParams({ strict: false }) as { caseId?: string };
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const {
     ensureCaseContext,
@@ -208,6 +210,39 @@ export default function LawyerCaseFilingSubmissionPage() {
   const [signedCaptures, setSignedCaptures] = useState<SignedPageCapture[]>([]);
   const [renderedPages, setRenderedPages] = useState<HTMLElement[]>([]);
 
+  // Signing status grouped BY PAGE — same shape + badge the editor's page
+  // sidebar uses. For each page with signature activity we track which signers
+  // have signed it and whether one is still pending, and name it by its
+  // rendered section title (falling back to "Page N" until the preview loads).
+  const signaturePageRows = useMemo(() => {
+    const byPage = new Map<
+      number,
+      { clientSigned: boolean; lawyerSigned: boolean; pending: boolean }
+    >();
+    for (const r of signatureData?.signatureRequests ?? []) {
+      if (r.status !== "signed" && r.status !== "pending") continue;
+      for (const idx of r.pageIndices ?? []) {
+        const cur =
+          byPage.get(idx) ??
+          { clientSigned: false, lawyerSigned: false, pending: false };
+        if (r.status === "signed") {
+          if (r.signerRole === "client") cur.clientSigned = true;
+          else cur.lawyerSigned = true;
+        } else {
+          cur.pending = true;
+        }
+        byPage.set(idx, cur);
+      }
+    }
+    const labelFor = (idx: number) => {
+      const el = renderedPages[idx];
+      return el ? derivePageLabel(el, `Page ${idx + 1}`) : `Page ${idx + 1}`;
+    };
+    return Array.from(byPage.entries())
+      .sort((a, b) => a[0] - b[0])
+      .map(([idx, status]) => ({ idx, label: labelFor(idx), status }));
+  }, [signatureData, renderedPages]);
+
   // Refetch a fresh signed URL whenever the signed-pdf path appears / changes
   // on the case row. Storage paths can rotate if the lawyer re-collects
   // signatures, so we key the effect on the path (not just a boolean).
@@ -359,15 +394,6 @@ export default function LawyerCaseFilingSubmissionPage() {
       });
       return;
     }
-    const printWindow = window.open("", "_blank");
-    if (!printWindow) {
-      setFeedback({
-        tone: "error",
-        message: "Popup blocked. Please allow popups to print the case file.",
-      });
-      return;
-    }
-
     // docx-preview keeps its per-document page styles in <style> tags inside the
     // host; carry them over so the print matches the on-screen pages.
     const styleHtml = Array.from(host.querySelectorAll("style"))
@@ -376,54 +402,41 @@ export default function LawyerCaseFilingSubmissionPage() {
     const wrapper = host.querySelector(".docx-wrapper");
     const bodyHtml = wrapper ? wrapper.outerHTML : host.innerHTML;
 
-    printWindow.document.write(
-      `<!doctype html><html><head><meta charset="utf-8" />` +
-        `<title>Complete Case File</title><style>` +
-        `body{margin:0;background:#fff;}` +
-        `.docx-wrapper{background:transparent!important;padding:0!important;}` +
-        `.docx-wrapper>section.docx{box-shadow:none!important;outline:none!important;border:none!important;margin:0 auto!important;overflow:hidden!important;page-break-after:always;page-break-inside:avoid;break-inside:avoid;}` +
-        // Keep each A4 page on ONE sheet — without this each page's sub-pixel
-        // overflow spilled onto a second, blank sheet. The last page mustn't
-        // force a trailing break (which would add a final blank sheet).
-        `.docx-wrapper>section.docx:last-child{page-break-after:auto!important;break-after:auto!important;}` +
-        // Force the whole case file to the templates' Times New Roman so typed
-        // text (party names, etc.) prints in the document font, not the
-        // sans-serif fallback it picked up while being typed.
-        `.docx-wrapper>section.docx,.docx-wrapper>section.docx *{font-family:'Times New Roman',Times,serif!important;}` +
-        `.lawflow-resize-handle,.lawflow-image-delete{display:none!important;}` +
-        `.lawflow-floating-image{outline:none!important;}` +
-        `@page{margin:0;}` +
-        `</style>${styleHtml}</head><body>${bodyHtml}</body></html>`
-    );
-    printWindow.document.close();
+    const printStyles =
+      `<style>` +
+      `body{margin:0;background:#fff;}` +
+      `.docx-wrapper{background:transparent!important;padding:0!important;}` +
+      `.docx-wrapper>section.docx{box-shadow:none!important;outline:none!important;border:none!important;margin:0 auto!important;overflow:hidden!important;page-break-after:always;page-break-inside:avoid;break-inside:avoid;}` +
+      // Keep each A4 page on ONE sheet — without this each page's sub-pixel
+      // overflow spilled onto a second, blank sheet. The last page mustn't
+      // force a trailing break (which would add a final blank sheet).
+      `.docx-wrapper>section.docx:last-child{page-break-after:auto!important;break-after:auto!important;}` +
+      // Force the whole case file to the templates' Times New Roman so typed
+      // text (party names, etc.) prints in the document font, not the
+      // sans-serif fallback it picked up while being typed.
+      `.docx-wrapper>section.docx,.docx-wrapper>section.docx *{font-family:'Times New Roman',Times,serif!important;}` +
+      `.lawflow-resize-handle,.lawflow-image-delete{display:none!important;}` +
+      `.lawflow-floating-image{outline:none!important;}` +
+      `@page{margin:0;}` +
+      `</style>`;
 
-    // Don't open the print dialog until images (attachments + signed-page
-    // captures) have loaded, or the printout comes out blank/partial.
-    const images = Array.from(printWindow.document.images);
-    let remaining = images.filter((img) => !img.complete).length;
-    const fire = () => {
-      printWindow.focus();
-      printWindow.print();
-    };
-    if (remaining === 0) {
-      window.setTimeout(fire, 200);
-    } else {
-      images.forEach((img) => {
-        if (img.complete) return;
-        const done = () => {
-          remaining -= 1;
-          if (remaining <= 0) fire();
-        };
-        img.addEventListener("load", done);
-        img.addEventListener("error", done);
+    // Print in an off-screen iframe (image-load waiting handled inside the
+    // shared printer) — the case file shows only in the print dialog and no
+    // stray about:blank tab lingers when the dialog is cancelled.
+    const started = printHtmlDocument({
+      title: "Complete Case File",
+      headHtml: `${printStyles}${styleHtml}`,
+      bodyHtml,
+      // Clear the "Opening the print dialog…" note the moment the dialog opens,
+      // so it doesn't linger on the page afterwards.
+      onBeforePrint: () => setFeedback(null),
+    });
+    if (!started) {
+      setFeedback({
+        tone: "error",
+        message: "Couldn't open the print dialog. Please try again.",
       });
-      // Safety net: print anyway after 5s if an image never resolves.
-      window.setTimeout(() => {
-        if (remaining > 0) {
-          remaining = 0;
-          fire();
-        }
-      }, 5000);
+      return;
     }
 
     setFeedback({ tone: "info", message: "Opening the print dialog…" });
@@ -436,64 +449,57 @@ export default function LawyerCaseFilingSubmissionPage() {
   };
 
   return (
-    <LawyerLayout brandTitle="LawFlow" brandSubtitle="Case Filing Submission">
-      <div className="space-y-6">
-        <div className="rounded-2xl border border-emerald-100 bg-gradient-to-br from-white via-emerald-50/30 to-white p-6">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <div className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-white px-3 py-1 text-xs font-semibold text-emerald-700">
-                <ClipboardCheck className="h-3.5 w-3.5" />
-                Submit Case File
-              </div>
-              <h1 className="mt-2 text-2xl font-semibold text-gray-900">
-                Complete Case File Checklist
-              </h1>
-              <p className="mt-1 text-sm text-gray-600">
-                Review included documents in the final PDF bundle, then submit to registrar.
-              </p>
-              <p className="mt-1 text-xs text-gray-500">
-                Case: {displayCaseTitle}
-              </p>
-            </div>
+    <LawyerLayout
+      brandTitle="LawFlow"
+      brandSubtitle="Case Filing Submission"
+      pageSubtitle={displayCaseTitle}
+      showBackButton
+      onBackClick={() => navigate({ to: "/lawyer-cases" })}
+      backLabel="Back to cases"
+      fullHeight
+    >
+      {!(filingCase && bundle) ? (
+        // Case context still loading (or missing) — fill the shell with a
+        // single centered message instead of an empty scroll.
+        <div className="flex h-full items-center justify-center bg-slate-50 p-8">
+          <div className="rounded-xl border border-dashed border-gray-200 bg-white px-6 py-8 text-center text-sm text-gray-500">
+            Loading the case file…
           </div>
         </div>
-
-        {filingCase && bundle && (
-          <>
-            {/* Complete case-file preview — the full edited document (every
-                section, rendered from cases.edited_html, NOT the blank
-                template), shown read-only. Signed sections are overlaid with
-                their signed capture (pulled back out of the compiled
-                signed.pdf) so the registrar-bound file reads exactly as it
-                will be sent. Preview only: not editable, no drop / context
-                menu. */}
-            <div className="rounded-xl border border-emerald-200 bg-white p-4">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <div className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-700">
-                    <CheckCircle2 className="h-3.5 w-3.5" />
-                    {signedPdfStoragePath ? "Signed Case File" : "Case File"}
-                  </div>
-                  <h2 className="mt-2 text-base font-semibold text-gray-900">
-                    Complete Case File — Preview
-                  </h2>
-                  <p className="mt-1 text-xs text-gray-500">
-                    {signedPdfStoragePath && backendCase?.signedPdfGeneratedAt
-                      ? `All sections in order, signed pages included · Compiled ${formatFilingDateTime(
-                          backendCase.signedPdfGeneratedAt
-                        )}`
-                      : "All sections in order, with your latest edits."}
-                  </p>
-                </div>
+      ) : (
+        // Full-height split: big scrollable document preview (left) beside a
+        // sticky action sidebar (right) whose Submit / Print buttons stay
+        // pinned and visible. Mirrors the signing screen's workspace.
+        <div className="flex h-full flex-col overflow-hidden bg-white">
+          <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
+            {/* ── Left: full-height document preview ─────────────────── */}
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-slate-50">
+              {/* Slim strip naming the surface + signed status. */}
+              <div className="flex flex-shrink-0 flex-wrap items-center justify-between gap-2 border-b border-slate-200 bg-white/70 px-4 py-2.5">
+                <span className="inline-flex items-center gap-2 text-xs font-semibold text-gray-700">
+                  <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+                  {signedPdfStoragePath ? "Signed Case File" : "Case File"} —
+                  Preview
+                </span>
+                <span className="text-[11px] text-gray-500">
+                  {signedPdfStoragePath && backendCase?.signedPdfGeneratedAt
+                    ? `Signed pages included · Compiled ${formatFilingDateTime(
+                        backendCase.signedPdfGeneratedAt
+                      )}`
+                    : "All sections in order, with your latest edits."}
+                </span>
               </div>
 
               {signedPdfError && (
-                <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
+                <div className="flex-shrink-0 border-b border-rose-100 bg-rose-50 px-4 py-2 text-xs text-rose-700">
                   {signedPdfError}
                 </div>
               )}
 
-              <div className="mt-4 h-[70vh] overflow-hidden rounded-lg border border-gray-200">
+              {/* The preview owns the ONLY scroll here — DocxPreviewSurface's
+                  root is h-full overflow-auto, so it fills this cell and
+                  scrolls internally (no nested h-[70vh] trap, no page scroll). */}
+              <div className="relative min-h-0 flex-1 overflow-hidden">
                 {backendCase && !backendCase.editedHtml ? (
                   <div className="flex h-full items-center justify-center p-6 text-center text-sm text-gray-500">
                     No edited document yet. Open the editor and make changes to
@@ -512,126 +518,80 @@ export default function LawyerCaseFilingSubmissionPage() {
               </div>
             </div>
 
-            <div className="rounded-xl border border-gray-200 bg-white p-4">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <h2 className="text-base font-semibold text-gray-900">
-                  Documents Included in Complete PDF Case File
-                </h2>
-                <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">
-                  {bundle.orderedDocuments.length} document{bundle.orderedDocuments.length === 1 ? "" : "s"}
-                </span>
-              </div>
-
-              <p className="mt-1 text-xs text-gray-500">
-                Updated {formatFilingDateTime(bundle.generatedAt)}
-              </p>
-
-              {bundle.orderedDocuments.length === 0 ? (
-                <div className="mt-3 rounded-lg border border-dashed border-gray-200 bg-gray-50 p-4 text-sm text-gray-500">
-                  No documents found in this case bundle yet.
+            {/* ── Right: sticky action sidebar (never scrolls with the doc) ── */}
+            <aside className="flex min-h-0 flex-col border-t border-slate-200 bg-white max-lg:max-h-[55dvh] lg:w-[380px] lg:flex-shrink-0 lg:border-l lg:border-t-0">
+              <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-5">
+                <div>
+                  <div className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-700">
+                    <ClipboardCheck className="h-3.5 w-3.5" />
+                    Submit Case File
+                  </div>
+                  <h1 className="mt-2 text-lg font-semibold text-gray-900">
+                    Complete PDF Case File
+                  </h1>
+                  <p className="mt-1 text-xs leading-relaxed text-gray-500">
+                    Preview the full case file on the left, print it, and submit
+                    it to the registrar.
+                  </p>
                 </div>
-              ) : (
-                <div className="mt-3 space-y-2">
-                  {bundle.orderedDocuments.map((doc, index) => (
-                    <div
-                      key={doc.id}
-                      className="flex items-center justify-between rounded-xl border border-gray-200 bg-[#f8fafc] px-4 py-3 text-sm"
-                    >
-                      <div className="flex items-start gap-3">
-                        {doc.source === "evidence" ? (
-                          <Paperclip className="mt-0.5 h-4 w-4 text-gray-500" />
-                        ) : (
-                          <FileText className="mt-0.5 h-4 w-4 text-blue-600" />
-                        )}
-                        <div>
-                          <p className="font-medium text-gray-900">
-                            {index + 1}. {doc.title}
+
+                {backendCase?.status === "submitted" &&
+                  backendCase.submittedAt && (
+                    <div className="inline-flex items-center gap-2 rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">
+                      <CheckCircle2 className="h-3.5 w-3.5" />
+                      Submitted {formatFilingDateTime(backendCase.submittedAt)}
+                    </div>
+                  )}
+
+                {/* Registrar return reason — the lawyer fixes the file in the
+                    editor, then resubmits with the button below. */}
+                {backendCase?.status === "returned" && (
+                  <div className="rounded-lg border-l-4 border-red-500 bg-red-50 p-3">
+                    <div className="flex items-start gap-2">
+                      <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0 text-red-600" />
+                      <div className="space-y-1">
+                        <p className="text-xs font-semibold text-red-900">
+                          Returned by the registrar
+                        </p>
+                        <p className="text-xs leading-relaxed text-red-800">
+                          {backendCase.reviewRemarks?.trim() ||
+                            "Returned without a written reason — contact the registrar for details."}
+                        </p>
+                        {backendCase.reviewedAt && (
+                          <p className="text-[11px] text-red-700">
+                            Returned {formatFilingDateTime(backendCase.reviewedAt)}
                           </p>
-                          <p className="text-xs text-gray-500">
-                            {doc.source === "evidence"
-                              ? "Attachment"
-                              : "Prepared Document"}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        {doc.signedRequired && (
-                          <span
-                            className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
-                              doc.signedCompleted
-                                ? "bg-emerald-100 text-emerald-700"
-                                : "bg-amber-100 text-amber-700"
-                            }`}
-                          >
-                            {doc.signedCompleted ? "Signed" : "Signature Pending"}
-                          </span>
                         )}
-                        <span className="rounded-full bg-white px-2 py-0.5 text-xs font-semibold text-slate-700 border border-slate-200">
-                          Included
-                        </span>
+                        <p className="pt-0.5 text-[11px] text-red-700">
+                          Open the editor to fix the file, then submit again.
+                        </p>
                       </div>
                     </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Registrar return reason — shown when the backend reports the
-                case was sent back. The lawyer addresses this, re-opens the
-                editor to fix the file, then resubmits with the same flow. */}
-            {backendCase?.status === "returned" && (
-              <div className="rounded-xl border-l-4 border-red-500 bg-red-50 p-4">
-                <div className="flex items-start gap-3">
-                  <AlertCircle className="mt-0.5 h-5 w-5 flex-shrink-0 text-red-600" />
-                  <div className="space-y-1">
-                    <p className="text-sm font-semibold text-red-900">
-                      Returned by the registrar — reason for return
-                    </p>
-                    <p className="text-sm leading-relaxed text-red-800">
-                      {backendCase.reviewRemarks?.trim() ||
-                        "The registrar returned this case without a written reason. Please contact them for details."}
-                    </p>
-                    {backendCase.reviewedAt && (
-                      <p className="text-xs text-red-700">
-                        Returned on {formatFilingDateTime(backendCase.reviewedAt)}
-                      </p>
-                    )}
-                    <p className="pt-1 text-xs text-red-700">
-                      Open the editor to fix the file, then submit again below.
-                    </p>
                   </div>
-                </div>
-              </div>
-            )}
+                )}
 
-            {/* Court / tehsil (jurisdiction). Normally chosen at case creation,
-                so it's shown read-only here. The picker only appears as a
-                rescue for cases that have no tehsil yet (e.g. created before
-                tehsil routing existed) so they can still be submitted. */}
-            <div className="rounded-xl border border-gray-200 bg-white p-4">
-              <h3 className="text-base font-semibold text-gray-900">
-                Court / Tehsil (Jurisdiction)
-              </h3>
-              <p className="mt-1 text-xs text-gray-500">
-                Routes this case to the registrar for that tehsil.
-              </p>
+                {/* Court / tehsil. Read-only once set; a rescue picker appears
+                    only for cases with no tehsil yet so they can still be
+                    submitted. */}
+                <div className="border-t border-gray-100 pt-4">
+                  <h3 className="text-sm font-semibold text-gray-900">
+                    Court / Tehsil
+                  </h3>
+                  <p className="mt-0.5 text-xs text-gray-500">
+                    The court where this case will be filed.
+                  </p>
 
-              {backendCase?.assignedTehsil ? (
-                <p className="mt-3 text-sm font-medium text-gray-900">
-                  {backendCase.assignedTehsil}
-                </p>
-              ) : isCaseEditable ? (
-                <>
-                  <div className="mt-3 flex flex-wrap items-end gap-3">
-                    <div className="space-y-1">
-                      <label className="text-xs font-medium text-gray-700">
-                        Assigned tehsil
-                      </label>
+                  {backendCase?.assignedTehsil ? (
+                    <p className="mt-2 text-sm font-medium text-gray-900">
+                      {backendCase.assignedTehsil}
+                    </p>
+                  ) : isCaseEditable ? (
+                    <div className="mt-2 space-y-2">
                       <select
                         value={effectiveTehsil}
                         onChange={(event) => setTehsilDraft(event.target.value)}
                         disabled={saveTehsilMutation.isPending}
-                        className="w-64 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#01411C] disabled:bg-gray-100"
+                        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#01411C] disabled:bg-gray-100"
                       >
                         <option value="">— Select court / tehsil —</option>
                         {SUPPORTED_TEHSILS.map((tehsil) => (
@@ -640,85 +600,111 @@ export default function LawyerCaseFilingSubmissionPage() {
                           </option>
                         ))}
                       </select>
+                      <button
+                        onClick={() => saveTehsilMutation.mutate(effectiveTehsil)}
+                        disabled={
+                          saveTehsilMutation.isPending || !effectiveTehsil
+                        }
+                        className="w-full rounded-lg bg-[#01411C] px-4 py-2 text-sm font-semibold text-white hover:bg-[#024a23] disabled:cursor-not-allowed disabled:bg-gray-300"
+                      >
+                        {saveTehsilMutation.isPending ? "Saving…" : "Save tehsil"}
+                      </button>
+                      <p className="text-xs font-medium text-amber-700">
+                        Pick a court and save before submitting.
+                      </p>
                     </div>
-                    <button
-                      onClick={() => saveTehsilMutation.mutate(effectiveTehsil)}
-                      disabled={saveTehsilMutation.isPending || !effectiveTehsil}
-                      className="rounded-lg bg-[#01411C] px-4 py-2 text-sm font-semibold text-white hover:bg-[#024a23] disabled:cursor-not-allowed disabled:bg-gray-300"
-                    >
-                      {saveTehsilMutation.isPending ? "Saving…" : "Save tehsil"}
-                    </button>
-                  </div>
-                  <p className="mt-2 text-xs font-medium text-amber-700">
-                    No tehsil set yet — pick one and save before submitting.
-                  </p>
-                </>
-              ) : (
-                <p className="mt-3 text-sm font-medium text-gray-900">
-                  Not assigned
-                </p>
-              )}
-            </div>
-
-            <div className="rounded-xl border border-gray-200 bg-white p-4">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <h3 className="text-base font-semibold text-gray-900">
-                    Submission Actions
-                  </h3>
-                  {backendCase?.status === "submitted" && backendCase.submittedAt && (
-                    <div className="mt-1 inline-flex items-center gap-2 rounded-full bg-emerald-100 px-3 py-1 text-sm font-semibold text-emerald-700">
-                      <CheckCircle2 className="h-4 w-4" />
-                      Submitted on {formatFilingDateTime(backendCase.submittedAt)}
-                    </div>
+                  ) : (
+                    <p className="mt-2 text-sm font-medium text-gray-900">
+                      Not assigned
+                    </p>
                   )}
                 </div>
+
+                {/* Signing status — one row per page with the same combined
+                    "who signed" badge as the editor's page sidebar. */}
+                {signaturePageRows.length > 0 && (
+                  <div className="border-t border-gray-100 pt-4">
+                    <h3 className="text-sm font-semibold text-gray-900">
+                      Signatures
+                    </h3>
+                    <p className="mt-0.5 text-xs text-gray-500">
+                      Who signed which pages.
+                    </p>
+                    <ul className="mt-2 space-y-2">
+                      {signaturePageRows.map((row) => {
+                        const badge = deriveSignatureBadge(row.status);
+                        return (
+                          <li
+                            key={row.idx}
+                            className="flex items-center justify-between gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2"
+                          >
+                            <p className="min-w-0 flex-1 truncate text-xs font-medium text-gray-900">
+                              {row.label}
+                            </p>
+                            {badge ? (
+                              <span
+                                className={`flex-shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${badge.className}`}
+                              >
+                                {badge.label}
+                              </span>
+                            ) : (
+                              <span className="flex-shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800 ring-1 ring-amber-200">
+                                Pending
+                              </span>
+                            )}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                )}
+
+                {feedback && (
+                  <div
+                    className={`rounded-lg px-3 py-2 text-xs ${
+                      feedback.tone === "error"
+                        ? "border border-rose-200 bg-rose-50 text-rose-700"
+                        : "border border-blue-200 bg-blue-50 text-blue-700"
+                    }`}
+                  >
+                    <div className="flex items-start gap-2">
+                      {feedback.tone === "error" ? (
+                        <AlertCircle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
+                      ) : (
+                        <ClipboardCheck className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
+                      )}
+                      <span>{feedback.message}</span>
+                    </div>
+                  </div>
+                )}
               </div>
 
-              <div className="mt-4 flex flex-wrap gap-2">
-                <button
-                  onClick={handlePrintBundle}
-                  disabled={bundle.orderedDocuments.length === 0}
-                  className="inline-flex items-center gap-2 rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  <Printer className="h-4 w-4" />
-                  Print Complete PDF
-                </button>
+              {/* Pinned actions — always visible, never scroll away. */}
+              <div className="flex-shrink-0 space-y-2 border-t border-slate-200 p-4">
                 <button
                   onClick={() => {
                     setTechnicalError(undefined);
                     setConfirmOpen(true);
                   }}
                   disabled={!canSubmit}
-                  className="inline-flex items-center gap-2 rounded-lg bg-[#01411C] px-4 py-2 text-sm font-semibold text-white hover:bg-[#024a23] disabled:cursor-not-allowed disabled:bg-gray-300"
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-[#01411C] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#024a23] disabled:cursor-not-allowed disabled:bg-gray-300"
                 >
                   <UploadCloud className="h-4 w-4" />
                   {submitButtonLabel}
                 </button>
+                <button
+                  onClick={handlePrintBundle}
+                  disabled={bundle.orderedDocuments.length === 0}
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-gray-300 px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <Printer className="h-4 w-4" />
+                  Print Complete PDF
+                </button>
               </div>
-            </div>
-          </>
-        )}
-
-        {feedback && (
-          <div
-            className={`rounded-xl px-4 py-3 text-sm ${
-              feedback.tone === "error"
-                ? "border border-rose-200 bg-rose-50 text-rose-700"
-                : "border border-blue-200 bg-blue-50 text-blue-700"
-            }`}
-          >
-            <div className="flex items-start gap-2">
-              {feedback.tone === "error" ? (
-                <AlertCircle className="mt-0.5 h-4 w-4" />
-              ) : (
-                <ClipboardCheck className="mt-0.5 h-4 w-4" />
-              )}
-              <span>{feedback.message}</span>
-            </div>
+            </aside>
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {filingCase && (
         <SubmitConfirmationModal
