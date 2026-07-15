@@ -21,11 +21,8 @@ export default defineConfig({
         'src/test/**',
         'src/**/*.test.*',
         'src/main.tsx',
-        // Dead code slated for removal (see AGENTS.md Testing Rules / cleanup phase):
-        'src/modules/payments/components/AgreementForm.tsx',
-        'src/**/registrars.store.ts',
+        // Seed/config data files, not logic:
         'src/**/*.mock.ts',
-        'src/modules/auth/pages/VerifyCNIC.tsx',
       ],
     },
   },
