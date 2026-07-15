@@ -164,6 +164,55 @@ export async function createSignatureRequestBatch({
     throw new ApiError(400, "At least one signer must be assigned to a page");
   }
 
+  // Duplicate-request guard (authoritative — the panel UI enforces the
+  // same rule client-side). A page+signer combination that is already
+  // SIGNED can never be requested again (the signature is complete and
+  // signed requests can't be cancelled), and one with an in-flight
+  // PENDING request must be cancelled first. Without this, a re-send
+  // would let a signer sign the same page twice and the newest capture
+  // would silently replace the earlier one in the compiled PDF.
+  const existingRows = await pool.query(
+    `SELECT signer_role, page_indices, status, expires_at
+     FROM signature_requests
+     WHERE case_id = $1
+       AND status IN ('pending', 'signed')`,
+    [caseId]
+  );
+  const covered = { client: new Map(), lawyer: new Map() };
+  for (const row of existingRows.rows) {
+    // Lazily-expired pending rows don't block a re-send.
+    if (row.status === "pending" && row.expires_at < new Date()) continue;
+    const map = covered[row.signer_role];
+    if (!map) continue;
+    const indices = Array.isArray(row.page_indices) ? row.page_indices : [];
+    for (const idx of indices) {
+      if (row.status === "signed" || !map.has(idx)) map.set(idx, row.status);
+    }
+  }
+  const conflicts = [];
+  for (const [role, pagesList] of [
+    ["client", clientPages],
+    ["lawyer", lawyerPages],
+  ]) {
+    for (const idx of pagesList) {
+      const state = covered[role].get(idx);
+      if (!state) continue;
+      conflicts.push(
+        `page ${idx + 1} ${
+          state === "signed"
+            ? `is already signed by the ${role}`
+            : `already has a pending ${role} request`
+        }`
+      );
+    }
+  }
+  if (conflicts.length > 0) {
+    throw new ApiError(
+      409,
+      `Cannot send: ${conflicts.join("; ")}. Cancel the pending request or pick different pages.`
+    );
+  }
+
   // Snapshot source: prefer the live HTML the editor sends in the
   // payload (the most up-to-date state of what the lawyer is looking
   // at). Fall back to cases.edited_html if the frontend doesn't ship
