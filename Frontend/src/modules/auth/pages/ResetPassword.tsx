@@ -53,7 +53,7 @@ export default function ResetPassword() {
         confirmPassword: values.confirmPassword,
       });
       setSubmitted(true);
-    } catch (err: any) {
+    } catch (err) {
       const message = getAuthErrorMessage(err);
       setError(message);
     }

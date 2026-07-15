@@ -449,6 +449,64 @@ Severity guide:
 
 If there are no issues, say that clearly and mention any testing gaps.
 
+## Testing Rules
+
+LawFlow uses three levels of automated testing plus documented manual test
+cases. Every app owns its tests and they run independently.
+
+Test stack:
+
+```text
+Backend/         Vitest + Supertest; tests in Backend/tests/{unit,integration}/
+Frontend/        Vitest + React Testing Library + jsdom + MSW; tests colocated as src/**/*.test.ts(x)
+Frontend-Admin/  same as Frontend
+e2e/             Playwright system tests across all three apps (added later phase)
+```
+
+How to run (from each app folder):
+
+- `npm test` — run everything for that app.
+- `npm run test:unit` / `npm run test:integration` — Backend only.
+- `npm run test:watch` — re-run on save while developing.
+- `npm run coverage` (Backend) / `npm run test:coverage` (frontends) — coverage report.
+
+Database safety (non-negotiable):
+
+- Integration tests provision a throwaway database from `schema.sql`, which
+  DROPS AND RECREATES EVERYTHING. Tests must never point at the real
+  Supabase database.
+- `Backend/tests/setup/guard.js` enforces this: `TEST_DATABASE_URL` must be
+  set, must be localhost, must end in `_test` (or `_e2e`), must not contain
+  `supabase`/`pooler`/`amazonaws`/`neon`/`render`, and must not equal the
+  `DATABASE_URL` in `Backend/.env`. Never weaken or bypass the guard.
+- Each developer keeps their local test DB URL in `Backend/.env.test.local`
+  (gitignored). Example: `postgresql://postgres:<pw>@localhost:5432/lawflow_test`.
+
+Test-case design standard:
+
+- Every input gets valid, invalid, AND boundary values (equivalence
+  partitioning + boundary value analysis). Example: password of exactly 8
+  chars passes, 7 fails; installment count 1 and 48 pass, 0 and 49 fail.
+- Test behavior through public seams (HTTP endpoints, rendered components,
+  exported functions). Do not assert on SQL strings or implementation details.
+
+External services are always faked in tests:
+
+- Email → capture mock on `email.service.js` (OTPs are stored hashed, so
+  capture-at-send is the only way to read them).
+- Supabase storage → in-memory mock of `storage.service.js`.
+- Safepay SDK, Groq/Gemini, DNS MX lookups → module mocks. Never call live
+  services or use real keys in tests. CI runs with zero secrets.
+
+Rules:
+
+- New features and bug fixes must arrive with tests in the same PR.
+- Tests run automatically on GitHub Actions for every push and PR
+  (`.github/workflows/ci.yml`). A PR must be green before merge.
+- Do not commit `.env.test.local`, coverage output, or Playwright reports.
+- Frontend test files are excluded from the production build via
+  `tsconfig.app.json` — keep new test files matching `src/**/*.test.ts(x)`.
+
 ## Git Rules
 
 - Work on feature branches.

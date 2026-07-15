@@ -19,5 +19,11 @@ export default defineConfig([
       ecmaVersion: 2020,
       globals: globals.browser,
     },
+    rules: {
+      // Pre-existing violations in 8 modal components (state reset inside
+      // useEffect). Downgraded to warn until the dead-code/cleanup phase
+      // fixes them under component-test coverage; do not add new ones.
+      'react-hooks/set-state-in-effect': 'warn',
+    },
   },
 ])

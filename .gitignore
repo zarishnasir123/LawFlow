@@ -59,3 +59,8 @@ Icon
 # Test scripts
 Backend/src/scripts/verifyChunk*
 
+# Test output (coverage reports, Playwright artifacts)
+coverage/
+playwright-report/
+test-results/
+

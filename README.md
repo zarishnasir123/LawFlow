@@ -2,6 +2,8 @@
 
 # ⚖️ LawFlow
 
+![CI](https://github.com/zarishnasir123/LawFlow/actions/workflows/ci.yml/badge.svg)
+
 ### A digital case-management platform for Pakistan's civil & family courts
 
 *Prepare the case. Sign it. Submit it to the court. Track it — all online.*
