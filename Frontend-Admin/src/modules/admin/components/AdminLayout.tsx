@@ -32,6 +32,7 @@ import { usePendingLawyerCount } from "../hooks/usePendingLawyerCount";
 import { useOpenPayoutCount } from "../hooks/useOpenPayoutCount";
 import { useLiveNotifications } from "../../../shared/hooks/useLiveNotifications";
 import { notificationSocket } from "../../../shared/api/notificationSocket";
+import { clearStoredAuth } from "../../auth/utils/authStorage";
 import {
   avatarInitial,
   displayFullName,
@@ -123,7 +124,9 @@ export default function AdminLayout() {
   const profileActive = location.pathname === "/profile";
 
   const handleLogout = () => {
-    localStorage.clear();
+    // Clear only auth state (user + in-memory token) — never localStorage.clear(),
+    // which would also wipe unrelated preferences like the sidebar collapse state.
+    clearStoredAuth();
     // Close the live socket so it isn't left authed as this admin for whoever
     // logs in next on the same tab (no full reload happens here).
     notificationSocket.disconnect();

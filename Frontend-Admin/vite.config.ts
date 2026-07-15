@@ -18,13 +18,7 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       include: ["src/**"],
-      exclude: [
-        "src/test/**",
-        "src/**/*.test.*",
-        "src/main.tsx",
-        // Orphaned page with no route (see cleanup phase):
-        "src/modules/admin/pages/Users.tsx",
-      ],
+      exclude: ["src/test/**", "src/**/*.test.*", "src/main.tsx"],
     },
   },
 });
