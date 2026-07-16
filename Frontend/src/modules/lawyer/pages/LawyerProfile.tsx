@@ -126,6 +126,15 @@ export default function LawyerProfile() {
             <ProfileField label="CNIC Number" value={currentUser.cnic ?? ""} />
           </div>
 
+          <ProfileField label="Address" value={currentUser.address ?? ""} />
+
+          {/* City + tehsil are editable on /lawyer-profile/edit, same
+              pattern as the client profile. */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <ProfileField label="City" value={currentUser.city ?? ""} />
+            <ProfileField label="Tehsil" value={currentUser.tehsil ?? ""} />
+          </div>
+
           {/* Practice details — what the bar council + the client-
               matching layer cares about. Bar license number is
               displayed here but is read-only on the edit form. */}

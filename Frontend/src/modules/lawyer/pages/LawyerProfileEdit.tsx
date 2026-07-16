@@ -50,6 +50,9 @@ interface FormState {
   email: string;
   phone: string;
   cnic: string;
+  address: string;
+  city: string;
+  tehsil: string;
   specialization: string;
   districtBar: string;
   experienceYears: string;
@@ -75,6 +78,13 @@ function buildPatch(initial: CurrentUser, form: FormState): UpdateMyProfilePaylo
   if (form.phone !== (initial.phone ?? "")) patch.phone = form.phone;
   // CNIC is intentionally not diffed — it's locked in the UI and the
   // backend's updateMyProfileValidator rejects any cnic in the body.
+
+  // Address / city / tehsil mirror the client edit page: explicit
+  // values win; when city/tehsil are left empty the backend derives
+  // them from the address as a fallback.
+  if (form.address !== (initial.address ?? "")) patch.address = form.address;
+  if (form.city !== (initial.city ?? "")) patch.city = form.city;
+  if (form.tehsil !== (initial.tehsil ?? "")) patch.tehsil = form.tehsil;
 
   const initialSpec = initial.specialization ?? "";
   if (form.specialization !== initialSpec) {
@@ -116,6 +126,9 @@ function buildInitialForm(user: CurrentUser): FormState {
     email: user.email,
     phone: user.phone ?? "",
     cnic: user.cnic ?? "",
+    address: user.address ?? "",
+    city: user.city ?? "",
+    tehsil: user.tehsil ?? "",
     specialization: user.specialization ?? "",
     districtBar: user.districtBar ?? "",
     experienceYears:
@@ -329,6 +342,29 @@ export default function LawyerProfileEdit() {
                   Contact support if your CNIC was set incorrectly.
                 </p>
               </div>
+            </div>
+
+            {/* Address + location — same behavior as the client edit
+                page: city/tehsil are free-text explicit fields; when
+                left empty the backend derives them from the address. */}
+            <div className="mt-4">
+              <EditableField
+                label="Address"
+                value={form.address}
+                onChange={(v) => handleChange("address", v)}
+              />
+            </div>
+            <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+              <EditableField
+                label="City"
+                value={form.city}
+                onChange={(v) => handleChange("city", v)}
+              />
+              <EditableField
+                label="Tehsil"
+                value={form.tehsil}
+                onChange={(v) => handleChange("tehsil", v)}
+              />
             </div>
           </div>
 
