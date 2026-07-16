@@ -29,7 +29,6 @@ export default async function globalSetup() {
   const { url: testUrl, databaseName } = runTestDatabaseGuard();
   await ensureDatabaseExists(testUrl, databaseName);
   await applySchema(testUrl);
-  console.log(`[tests] provisioned throwaway database "${databaseName}" from schema.sql`);
 }
 
 async function ensureDatabaseExists(testUrl, databaseName) {
@@ -56,7 +55,23 @@ async function applySchema(testUrl) {
   const client = new pg.Client({ connectionString: testUrl });
   await client.connect();
   try {
+    // Skip the ~25s rebuild when the schema is already in place (tests
+    // truncate data themselves). Set TEST_DB_REBUILD=1 after changing
+    // schema.sql to force a clean rebuild.
+    const { rows } = await client.query(
+      `SELECT 1 FROM pg_tables WHERE schemaname = 'public' AND tablename = 'roles'`
+    );
+    const alreadyProvisioned = rows.length > 0;
+    if (alreadyProvisioned && process.env.TEST_DB_REBUILD !== "1") {
+      console.log("[tests] test database schema already provisioned (TEST_DB_REBUILD=1 to force rebuild)");
+      return;
+    }
+    if (alreadyProvisioned) {
+      await client.query("DROP SCHEMA public CASCADE");
+      await client.query("CREATE SCHEMA public");
+    }
     await client.query(sql);
+    console.log("[tests] provisioned throwaway database schema from schema.sql");
   } finally {
     await client.end();
   }
