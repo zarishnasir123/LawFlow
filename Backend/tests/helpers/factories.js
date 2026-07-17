@@ -90,3 +90,43 @@ export async function createRegistrar(overrides = {}) {
 export async function createAdmin(overrides = {}) {
   return createUser({ role: "admin", firstName: "Admin", ...overrides });
 }
+
+// Insert a case directly in any lifecycle state — going through the full
+// editor + signature flow is E2E territory, not integration setup.
+export async function createCase({
+  lawyer,
+  status = "draft",
+  assignedTehsil = null,
+  signedPdfPath = null,
+  clientUserId = null,
+  clientEmail = null,
+  clientName = "Ali Khan",
+  title = `Case ${unique()}`,
+  caseTypeId,
+} = {}) {
+  const typeId =
+    caseTypeId ?? (await pool.query(`SELECT id FROM case_types LIMIT 1`)).rows[0].id;
+  const { rows } = await pool.query(
+    `INSERT INTO cases (
+       lawyer_user_id, case_type_id, title, client_name, opposite_party_name,
+       status, assigned_tehsil, signed_pdf_storage_path, client_user_id, client_email,
+       submitted_at
+     )
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+     RETURNING *`,
+    [
+      lawyer.id,
+      typeId,
+      title,
+      clientName,
+      "Bashir Ahmed",
+      status,
+      assignedTehsil,
+      signedPdfPath,
+      clientUserId,
+      clientEmail,
+      ["submitted", "accepted", "returned"].includes(status) ? new Date() : null,
+    ]
+  );
+  return rows[0];
+}
