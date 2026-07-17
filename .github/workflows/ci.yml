@@ -76,6 +76,10 @@ jobs:
           cache: npm
           cache-dependency-path: Backend/package-lock.json
       - run: npm --prefix Backend ci
+      # Case-type .docx templates are generated artifacts (gitignored via
+      # *.docx) — the app hides any case type whose template is missing,
+      # so CI must generate them just like a fresh dev checkout does.
+      - run: npm --prefix Backend run generate:case-templates
       - run: npm --prefix Backend run test:integration
 
   frontend-tests:
