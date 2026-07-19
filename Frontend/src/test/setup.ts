@@ -1,6 +1,13 @@
 import "@testing-library/jest-dom/vitest";
-import { afterEach, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, vi } from "vitest";
 import { setInMemoryAccessToken } from "../modules/auth/utils/authStorage";
+import { server } from "./msw/server";
+
+// Fake backend for component/form tests. Unhandled requests error loudly so a
+// forgotten handler is obvious rather than a silent hang.
+beforeAll(() => server.listen({ onUnhandledRequest: "error" }));
+afterEach(() => server.resetHandlers());
+afterAll(() => server.close());
 
 // jsdom does not implement several browser APIs that pages touch at mount
 // time; provide quiet stand-ins so component tests can render.
