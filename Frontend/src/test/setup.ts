@@ -32,6 +32,9 @@ class ResizeObserverStub {
 }
 globalThis.ResizeObserver = ResizeObserverStub as unknown as typeof ResizeObserver;
 
+// Wrong-role guards call alert(); jsdom has no implementation.
+window.alert = vi.fn();
+
 Element.prototype.scrollIntoView =
   vi.fn() as unknown as typeof Element.prototype.scrollIntoView;
 URL.createObjectURL = vi.fn(() => "blob:mock") as typeof URL.createObjectURL;
