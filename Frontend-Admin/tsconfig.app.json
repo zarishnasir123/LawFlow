@@ -24,6 +24,8 @@
     "noFallthroughCasesInSwitch": true,
     "noUncheckedSideEffectImports": true
   },
-  "include": ["src"],
-  "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx", "src/test"]
+  // Test files are included so the editor type-checks them with the same
+  // module resolution and types as the app (they are never bundled — Vite
+  // only bundles what the entry point imports).
+  "include": ["src"]
 }
