@@ -39,6 +39,24 @@ const FAKE_PASSWORD = "FakeLawyer@123";
 
 const SPECIALIZATIONS = ["Civil", "Family"];
 
+// Realistic Pakistani (Punjab/Gujranwala-region) names so the demo
+// directory looks authentic for a Pakistani civil/family-court app —
+// faker's default locale produces Western names that look out of place.
+const PK_FIRST_NAMES = [
+  "Ahmed", "Ali", "Hassan", "Hussain", "Bilal", "Usman", "Omar", "Hamza",
+  "Faisal", "Kamran", "Imran", "Asif", "Tariq", "Zain", "Saad", "Fahad",
+  "Waqar", "Rizwan", "Noman", "Adnan", "Junaid", "Shahzaib", "Danish",
+  "Ayesha", "Fatima", "Zainab", "Maryam", "Hina", "Sana", "Amna", "Sadia",
+  "Nida", "Iqra", "Rabia", "Mahnoor", "Areeba", "Komal", "Saba", "Bushra",
+  "Nimra", "Sidra", "Aiman", "Laiba",
+];
+const PK_LAST_NAMES = [
+  "Khan", "Ahmed", "Ali", "Malik", "Butt", "Chaudhry", "Sheikh", "Qureshi",
+  "Hussain", "Iqbal", "Raza", "Nawaz", "Farooq", "Aslam", "Javed", "Mahmood",
+  "Bhatti", "Gondal", "Tarar", "Cheema", "Sindhu", "Warraich", "Bajwa",
+  "Awan", "Rana", "Shah", "Siddiqui", "Abbasi", "Mughal", "Dar", "Sial",
+];
+
 const DISTRICT_BARS = [
   "Gujranwala",
   "Lahore",
@@ -105,8 +123,8 @@ async function clearFakeLawyers(client) {
 }
 
 async function insertFakeLawyer(client, lawyerRoleId, passwordHash) {
-  const firstName = faker.person.firstName();
-  const lastName = faker.person.lastName();
+  const firstName = faker.helpers.arrayElement(PK_FIRST_NAMES);
+  const lastName = faker.helpers.arrayElement(PK_LAST_NAMES);
   // Email is uniqued by the users table; the random UUID
   // disambiguates a name that happens to collide with a real or
   // previously-seeded row.
